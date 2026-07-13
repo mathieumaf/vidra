@@ -48,7 +48,7 @@ pub struct AudioStream {
     pub language: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum QualityLevel {
     MaximumCompression,
@@ -59,15 +59,43 @@ pub enum QualityLevel {
 }
 
 impl QualityLevel {
-    pub fn crf(&self) -> &'static str {
-        match self {
-            Self::MaximumCompression => "30",
-            Self::SmallerFile => "26",
-            Self::Balanced => "22",
-            Self::HighQuality => "19",
-            Self::NearSource => "17",
+    pub fn crf(self, codec: VideoCodec) -> &'static str {
+        match (codec, self) {
+            (VideoCodec::H264, Self::MaximumCompression) => "30",
+            (VideoCodec::H264, Self::SmallerFile) => "26",
+            (VideoCodec::H264, Self::Balanced) => "22",
+            (VideoCodec::H264, Self::HighQuality) => "19",
+            (VideoCodec::H264, Self::NearSource) => "17",
+            (VideoCodec::H265, Self::MaximumCompression) => "34",
+            (VideoCodec::H265, Self::SmallerFile) => "30",
+            (VideoCodec::H265, Self::Balanced) => "26",
+            (VideoCodec::H265, Self::HighQuality) => "23",
+            (VideoCodec::H265, Self::NearSource) => "21",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputContainer {
+    Mp4,
+    Mkv,
+}
+
+impl OutputContainer {
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Mp4 => "mp4",
+            Self::Mkv => "mkv",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum VideoCodec {
+    H264,
+    H265,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -76,6 +104,8 @@ pub struct EncodeRequest {
     pub input_path: String,
     pub output_path: String,
     pub quality: QualityLevel,
+    pub container: OutputContainer,
+    pub video_codec: VideoCodec,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,16 +144,22 @@ fn validate_input(path: &str) -> ApiResult<PathBuf> {
     Ok(canonical)
 }
 
-fn validate_output(path: &str, input: &Path) -> ApiResult<PathBuf> {
+fn validate_output(path: &str, input: &Path, container: OutputContainer) -> ApiResult<PathBuf> {
     let output = PathBuf::from(path);
     if !output.is_absolute() {
         return Err(ApiError::invalid_input("The output path must be absolute."));
     }
 
-    if output.extension().and_then(|value| value.to_str()) != Some("mp4") {
-        return Err(ApiError::invalid_input(
-            "The current preset requires an .mp4 output.",
-        ));
+    let extension_matches = output
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case(container.extension()));
+
+    if !extension_matches {
+        return Err(ApiError::invalid_input(format!(
+            "The selected container requires a .{} output.",
+            container.extension()
+        )));
     }
 
     let parent = output

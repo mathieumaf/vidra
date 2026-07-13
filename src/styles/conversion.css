@@ -15,12 +15,22 @@
 .picker-action { margin-top: 14px; padding: 7px 11px; border: 1px solid var(--line); border-radius: var(--radius-small); background: #fafbfa; font-size: var(--text-small); font-weight: var(--weight-semibold); }
 
 .conversion-workspace { height: 100%; display: flex; flex-direction: column; gap: 9px; }
-.source-card, .quality-card, .audio-card, .progress-panel { border: 1px solid #e4e8e4; border-radius: 13px; background: #fff; box-shadow: 0 2px 8px rgba(34, 54, 43, 0.025); }
+.source-card, .encoding-options-card, .quality-card, .audio-card, .progress-panel { border: 1px solid #e4e8e4; border-radius: 13px; background: #fff; box-shadow: 0 2px 8px rgba(34, 54, 43, 0.025); }
 .source-card { min-height: 64px; display: flex; align-items: center; gap: 13px; padding: 10px 14px; }
 .source-details { min-width: 0; display: flex; flex-direction: column; }
 .source-details strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-body); }
 .media-summary { display: flex; flex-wrap: wrap; margin-top: 4px; color: var(--muted); font-size: var(--text-caption); }
 .media-summary span:not(:last-child)::after { content: "·"; margin: 0 6px; color: #b2b8b4; }
+
+.encoding-options-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 10px 12px 12px; }
+.option-group { min-width: 0; }
+.segmented-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 10px; background: #f0f3f0; }
+.segmented-options button { min-width: 0; min-height: 42px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 5px 9px; border: 0; border-radius: 7px; color: #667069; background: transparent; text-align: left; cursor: pointer; }
+.segmented-options button:hover:not(:disabled):not(.active) { color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+.segmented-options button.active { color: #195d40; background: var(--surface); box-shadow: 0 1px 4px rgba(29, 54, 40, 0.11); }
+.segmented-options button:disabled { opacity: 0.56; cursor: not-allowed; }
+.segmented-options strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-small); font-weight: var(--weight-semibold); }
+.segmented-options span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-caption); }
 
 .quality-card { padding: 12px 16px 10px; }
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }

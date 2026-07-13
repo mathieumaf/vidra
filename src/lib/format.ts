@@ -1,4 +1,4 @@
-import type { ApiError } from "../types/media";
+import type { ApiError, OutputContainer } from "../types/media";
 
 export function formatBytes(bytes: number): string {
   if (!bytes) return "Unknown size";
@@ -30,9 +30,9 @@ export function errorMessage(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-export function defaultOutputPath(inputPath: string): string {
+export function defaultOutputPath(inputPath: string, container: OutputContainer): string {
   const extensionIndex = inputPath.lastIndexOf(".");
   const separatorIndex = Math.max(inputPath.lastIndexOf("/"), inputPath.lastIndexOf("\\"));
   const base = extensionIndex > separatorIndex ? inputPath.slice(0, extensionIndex) : inputPath;
-  return `${base}-vidra.mp4`;
+  return `${base}-vidra.${container}`;
 }

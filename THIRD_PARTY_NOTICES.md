@@ -4,7 +4,7 @@
 
 Vidra uses FFmpeg and FFprobe for media inspection and conversion.
 
-FFmpeg is licensed under the GNU Lesser General Public License 2.1 or later by default. Builds that include optional GPL components, including libx264, are covered by the GNU General Public License 2 or later. Vidra is licensed under GPL-3.0-or-later to support those builds.
+FFmpeg is licensed under the GNU Lesser General Public License 2.1 or later by default. Builds that include optional GPL components, including libx264 and libx265, are covered by the applicable GNU General Public License terms. Vidra is licensed under GPL-3.0-or-later to support GPL-enabled FFmpeg builds.
 
 The macOS Apple Silicon binaries prepared by the current development script are development-only artifacts from [OSXExperts](https://www.osxexperts.net/). They are not committed to this repository and must not be used for a public Vidra release.
 

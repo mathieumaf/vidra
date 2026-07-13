@@ -9,6 +9,7 @@ import { DragRegion } from "../components/layout/DragRegion";
 import { HistoryView } from "../components/views/HistoryView";
 import { QueueView } from "../components/views/QueueView";
 import { SettingsView } from "../components/views/SettingsView";
+import { outputContainer as getOutputContainer } from "../config/encoding";
 import { QUALITY_LEVELS } from "../config/quality";
 import { defaultOutputPath, errorMessage } from "../lib/format";
 import type {
@@ -16,6 +17,8 @@ import type {
   EncodeProgress,
   FfmpegStatus,
   MediaInfo,
+  OutputContainer,
+  VideoCodec,
   View,
 } from "../types/media";
 import "../styles/tokens.css";
@@ -44,6 +47,8 @@ export default function App() {
   const [status, setStatus] = useState<FfmpegStatus | null>(null);
   const [media, setMedia] = useState<MediaInfo | null>(null);
   const [qualityIndex, setQualityIndex] = useState(2);
+  const [outputContainer, setOutputContainer] = useState<OutputContainer>("mp4");
+  const [videoCodec, setVideoCodec] = useState<VideoCodec>("h264");
   const [isProbing, setIsProbing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState(initialProgress);
@@ -108,10 +113,11 @@ export default function App() {
     if (!media || !isReady) return;
     setError(null);
     setResult(null);
+    const container = getOutputContainer(outputContainer);
     const outputPath = await save({
       title: "Save encoded video",
-      defaultPath: defaultOutputPath(media.path),
-      filters: [{ name: "MPEG-4 video", extensions: ["mp4"] }],
+      defaultPath: defaultOutputPath(media.path, outputContainer),
+      filters: [{ name: container.filterName, extensions: [container.extension] }],
     });
     if (!outputPath) return;
 
@@ -121,6 +127,8 @@ export default function App() {
           inputPath: media.path,
           outputPath,
           quality: quality.id,
+          container: outputContainer,
+          videoCodec,
         },
       });
       setProgress({ ...initialProgress, jobId: id });
@@ -146,6 +154,18 @@ export default function App() {
     setError(null);
     setProgress(initialProgress);
     setView("convert");
+  }
+
+  function changeOutputContainer(container: OutputContainer) {
+    setOutputContainer(container);
+    setResult(null);
+    setError(null);
+  }
+
+  function changeVideoCodec(codec: VideoCodec) {
+    setVideoCodec(codec);
+    setResult(null);
+    setError(null);
   }
 
   return (
@@ -177,6 +197,8 @@ export default function App() {
               media={media}
               status={status}
               qualityIndex={qualityIndex}
+              outputContainer={outputContainer}
+              videoCodec={videoCodec}
               isReady={isReady}
               isProbing={isProbing}
               isEncoding={isEncoding}
@@ -185,6 +207,8 @@ export default function App() {
               error={error}
               onSelectVideo={selectVideo}
               onQualityChange={setQualityIndex}
+              onOutputContainerChange={changeOutputContainer}
+              onVideoCodecChange={changeVideoCodec}
               onStartEncoding={startEncoding}
               onCancelEncoding={cancelEncoding}
             />
@@ -194,6 +218,8 @@ export default function App() {
               isEncoding={isEncoding}
               media={media}
               quality={quality}
+              outputContainer={outputContainer}
+              videoCodec={videoCodec}
               progress={progress}
               onCancel={cancelEncoding}
               onGoToConvert={() => setView("convert")}

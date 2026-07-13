@@ -1,6 +1,8 @@
 import { formatBitrate, formatDuration } from "../../lib/format";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
+import type { OutputContainer, VideoCodec } from "../../types/media";
 import { Icon } from "../ui/Icon";
+import { EncodingOptions } from "./EncodingOptions";
 import { MediaSourceCard } from "./MediaSourceCard";
 import { QualitySlider } from "./QualitySlider";
 
@@ -8,6 +10,8 @@ type ConvertViewProps = {
   media: MediaInfo | null;
   status: FfmpegStatus | null;
   qualityIndex: number;
+  outputContainer: OutputContainer;
+  videoCodec: VideoCodec;
   isReady: boolean;
   isProbing: boolean;
   isEncoding: boolean;
@@ -16,6 +20,8 @@ type ConvertViewProps = {
   error: string | null;
   onSelectVideo: () => void;
   onQualityChange: (qualityIndex: number) => void;
+  onOutputContainerChange: (container: OutputContainer) => void;
+  onVideoCodecChange: (codec: VideoCodec) => void;
   onStartEncoding: () => void;
   onCancelEncoding: () => void;
 };
@@ -24,6 +30,8 @@ export function ConvertView({
   media,
   status,
   qualityIndex,
+  outputContainer,
+  videoCodec,
   isReady,
   isProbing,
   isEncoding,
@@ -32,6 +40,8 @@ export function ConvertView({
   error,
   onSelectVideo,
   onQualityChange,
+  onOutputContainerChange,
+  onVideoCodecChange,
   onStartEncoding,
   onCancelEncoding,
 }: ConvertViewProps) {
@@ -64,14 +74,23 @@ export function ConvertView({
 
   const primaryAudio = media.audio[0] ?? null;
   const audioWillCopy =
-    media.audio.length > 0 && media.audio.every((stream) => stream.codec.toLowerCase() === "aac");
+    media.audio.length > 0 &&
+    (outputContainer === "mkv" || media.audio.every((stream) => stream.codec.toLowerCase() === "aac"));
 
   return (
     <div className="convert-view">
       <div className="conversion-workspace">
         <MediaSourceCard media={media} />
+        <EncodingOptions
+          container={outputContainer}
+          videoCodec={videoCodec}
+          disabled={isEncoding}
+          onContainerChange={onOutputContainerChange}
+          onVideoCodecChange={onVideoCodecChange}
+        />
         <QualitySlider
           qualityIndex={qualityIndex}
+          videoCodec={videoCodec}
           disabled={isEncoding}
           onChange={onQualityChange}
         />
@@ -80,9 +99,17 @@ export function ConvertView({
           <div className="audio-icon">♪</div>
           <div>
             <span className="section-label">AUDIO PROTECTION</span>
-            <strong>{audioWillCopy ? "Original audio preserved" : "Source bitrate protected"}</strong>
+            <strong>
+              {outputContainer === "mkv" && audioWillCopy
+                ? "All audio tracks preserved"
+                : audioWillCopy
+                  ? "Original audio preserved"
+                  : "Source bitrate protected"}
+            </strong>
             <p>
-              {audioWillCopy
+              {outputContainer === "mkv" && audioWillCopy
+                ? "MKV keeps the original audio without quality loss. Compatible subtitles, metadata and chapters are preserved."
+                : audioWillCopy
                 ? `Compatible AAC audio will be copied without quality loss${primaryAudio ? ` · ${formatBitrate(primaryAudio.bitRate)}` : ""}.`
                 : "Audio conversion will never exceed the known source bitrate."}
             </p>
@@ -102,7 +129,7 @@ export function ConvertView({
         {error && <div className="error-message" role="alert">{error}</div>}
 
         <div className="conversion-actions">
-          <span>Output format <strong>MP4</strong></span>
+          <span>Output <strong>{outputContainer.toUpperCase()} · {videoCodec === "h264" ? "H.264" : "H.265"}</strong></span>
           {isEncoding ? (
             <button className="secondary-button" type="button" onClick={onCancelEncoding}>
               Cancel encoding

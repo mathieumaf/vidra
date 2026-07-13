@@ -1,14 +1,18 @@
 import type { CSSProperties } from "react";
 import { QUALITY_LEVELS } from "../../config/quality";
+import { videoCodec as getVideoCodec } from "../../config/encoding";
+import type { VideoCodec } from "../../types/media";
 
 type QualitySliderProps = {
   qualityIndex: number;
+  videoCodec: VideoCodec;
   disabled: boolean;
   onChange: (qualityIndex: number) => void;
 };
 
-export function QualitySlider({ qualityIndex, disabled, onChange }: QualitySliderProps) {
+export function QualitySlider({ qualityIndex, videoCodec, disabled, onChange }: QualitySliderProps) {
   const quality = QUALITY_LEVELS[qualityIndex];
+  const codec = getVideoCodec(videoCodec);
 
   return (
     <section className="quality-card">
@@ -18,7 +22,7 @@ export function QualitySlider({ qualityIndex, disabled, onChange }: QualitySlide
           <strong>{quality.label}</strong>
           <p>{quality.description}</p>
         </div>
-        <span className="codec-pill">H.264 · CRF {quality.crf}</span>
+        <span className="codec-pill">{codec.label} · CRF {quality.crf[videoCodec]}</span>
       </div>
       <div className="quality-slider-wrap">
         <input

@@ -1,4 +1,6 @@
 export type View = "convert" | "queue" | "history" | "settings";
+export type OutputContainer = "mp4" | "mkv";
+export type VideoCodec = "h264" | "h265";
 
 export type FfmpegStatus = {
   ready: boolean;
