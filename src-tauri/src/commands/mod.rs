@@ -3,6 +3,7 @@ use crate::{
     ffmpeg::{self, EncodeRequest, FfmpegStatus, MediaInfo, QueuedEncode},
     history::{self, HistoryEntry, HistoryManager},
     jobs::JobManager,
+    output,
 };
 use tauri::{AppHandle, State};
 
@@ -72,4 +73,9 @@ pub fn clear_conversion_history(history: State<'_, HistoryManager>) -> ApiResult
 #[tauri::command]
 pub fn reveal_history_output(history: State<'_, HistoryManager>, id: String) -> ApiResult<()> {
     history::reveal_output(&history, &id)
+}
+
+#[tauri::command]
+pub fn reveal_output_file(path: String) -> ApiResult<()> {
+    output::reveal(&path)
 }

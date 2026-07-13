@@ -3,6 +3,7 @@ mod error;
 mod ffmpeg;
 mod history;
 mod jobs;
+mod output;
 
 use history::HistoryManager;
 use jobs::JobManager;
@@ -30,7 +31,8 @@ pub fn run() {
             commands::list_conversion_history,
             commands::delete_history_entry,
             commands::clear_conversion_history,
-            commands::reveal_history_output
+            commands::reveal_history_output,
+            commands::reveal_output_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vidra");
