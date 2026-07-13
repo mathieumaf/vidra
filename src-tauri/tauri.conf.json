@@ -4,17 +4,25 @@
   "version": "0.1.0",
   "identifier": "io.github.mathieumaf.vidra",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm ffmpeg:prepare && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm ffmpeg:prepare && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "vidra",
-        "width": 800,
-        "height": 600
+        "title": "Vidra",
+        "width": 1040,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 650,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 18
+        }
       }
     ],
     "security": {
@@ -24,6 +32,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/ffmpeg",
+      "binaries/ffprobe"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

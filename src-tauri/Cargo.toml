@@ -1,9 +1,11 @@
 [package]
 name = "vidra"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Open-source video conversion and encoding for the desktop"
+authors = ["Mathieu Mafille"]
 edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/mathieumaf/vidra"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -19,6 +21,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"

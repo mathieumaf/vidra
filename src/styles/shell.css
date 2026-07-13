@@ -1,0 +1,76 @@
+.desktop-shell {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+.sidebar {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 14px;
+  border-right: 1px solid #dde2dd;
+  background: var(--sidebar);
+}
+
+.window-drag-region, .native-titlebar {
+  cursor: default;
+}
+.window-drag-region { height: 42px; flex: 0 0 auto; }
+.native-titlebar { min-height: 42px; border-bottom: 1px solid rgba(226, 230, 226, 0.65); background: rgba(250, 251, 249, 0.96); }
+
+.brand { height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: var(--text-title); font-weight: var(--weight-bold); letter-spacing: -0.02em; }
+.brand-mark { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: var(--green); font-size: var(--text-body); box-shadow: 0 4px 12px rgba(31, 113, 77, 0.2); }
+
+.new-conversion {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 4px 10px;
+  padding: 0 11px;
+  border: 1px solid #d8ded9;
+  border-radius: var(--radius-small);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(30, 42, 34, 0.04);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.new-conversion:hover:not(:disabled) { border-color: #bec8c1; background: #fdfefd; }
+.new-conversion:disabled { opacity: 0.48; cursor: not-allowed; }
+.new-conversion svg, nav svg, .privacy-note svg, .utility-icon svg { width: var(--icon-medium); height: var(--icon-medium); stroke-width: var(--icon-stroke); }
+
+nav { display: flex; flex-direction: column; gap: 2px; }
+nav button { height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 11px; border: 0; border-radius: var(--radius-small); color: #59625c; background: transparent; font-size: var(--text-body); font-weight: var(--weight-medium); cursor: pointer; }
+nav button:hover { color: var(--ink); background: rgba(219, 225, 220, 0.62); }
+nav button.active { color: #1e5f43; background: #ddeae2; font-weight: var(--weight-semibold); }
+.nav-badge { min-width: 19px; height: 19px; display: grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 10px; color: #fff; background: var(--green); font-size: var(--text-caption); font-weight: var(--weight-bold); }
+.nav-badge.muted { color: #5d6861; background: #dce1dd; }
+.sidebar-spacer { flex: 1; min-height: 12px; }
+
+.privacy-note { display: flex; gap: 9px; margin: 0 7px 12px; color: #78817b; font-size: var(--text-caption); line-height: var(--leading-normal); }
+.privacy-note svg { flex: 0 0 auto; width: var(--icon-small); height: var(--icon-small); color: var(--green); }
+.privacy-note span { display: flex; flex-direction: column; }
+.privacy-note strong { color: #59635d; font-weight: var(--weight-semibold); }
+.engine-status { height: 33px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-top: 1px solid #dde2dd; color: #7a837d; font-size: var(--text-caption); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #a5ada8; }
+.engine-status.ready .status-dot { background: #36a56f; box-shadow: 0 0 0 3px rgba(54, 165, 111, 0.1); }
+.engine-status.unavailable .status-dot { background: #c86156; }
+
+.main-panel { min-width: 0; min-height: 0; display: grid; grid-template-rows: 42px 62px minmax(0, 1fr); background: var(--canvas); }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 11px 26px 10px; border-bottom: 1px solid #e7eae7; background: rgba(250, 251, 249, 0.92); }
+.toolbar h1 { margin: 0; font-size: var(--text-title); font-weight: var(--weight-bold); letter-spacing: -0.025em; }
+.toolbar p { max-width: 540px; margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7f8882; font-size: var(--text-small); }
+.toolbar-button { padding: 7px 11px; border: 1px solid #dce1dd; border-radius: var(--radius-small); background: #fff; font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; }
+.content-area { min-height: 0; overflow: hidden; padding: 18px 26px 22px; }
+.convert-view, .utility-view, .settings-view { width: min(720px, 100%); height: 100%; margin: 0 auto; }
+
+@media (max-width: 860px) {
+  .desktop-shell { grid-template-columns: 184px minmax(0, 1fr); }
+  .content-area { padding-inline: 18px; }
+  .toolbar { padding-inline: 19px; }
+}

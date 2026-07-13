@@ -1,0 +1,47 @@
+:root {
+  /* Typography */
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --text-caption: 11px;
+  --text-small: 12px;
+  --text-body: 13px;
+  --text-ui: 14px;
+  --text-title: 18px;
+  --text-heading: 36px;
+  --leading-tight: 1.15;
+  --leading-normal: 1.45;
+  --weight-medium: 560;
+  --weight-semibold: 650;
+  --weight-bold: 730;
+
+  /* Iconography */
+  --icon-small: 16px;
+  --icon-medium: 18px;
+  --icon-large: 24px;
+  --icon-stroke: 1.8;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Shape */
+  --radius-small: 8px;
+  --radius-medium: 12px;
+  --radius-large: 16px;
+
+  /* Color */
+  --ink: #1c231f;
+  --muted: #6c756f;
+  --line: #e2e6e2;
+  --surface: #ffffff;
+  --sidebar: #f1f3f0;
+  --canvas: #fafbf9;
+  --green: #1f714d;
+  --green-dark: #17583b;
+  --green-soft: #e8f4ed;
+}
