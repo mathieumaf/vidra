@@ -2,23 +2,25 @@
   <title id="title">Vidra</title>
   <desc id="description">Two converging ribbons form a geometric V on a forest green rounded square.</desc>
   <defs>
-    <linearGradient id="background" x1="174" y1="130" x2="850" y2="894" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2A8B61" />
-      <stop offset="0.52" stop-color="#1F714D" />
-      <stop offset="1" stop-color="#15583B" />
+    <linearGradient id="background" x1="512" y1="0" x2="512" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#61A689" />
+      <stop offset="0.5" stop-color="#4B876C" />
+      <stop offset="1" stop-color="#376A4F" />
     </linearGradient>
     <linearGradient id="leftRibbon" x1="274" y1="266" x2="523" y2="773" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" />
-      <stop offset="1" stop-color="#E8F4ED" />
+      <stop offset="0.5" stop-color="#F2F7F5" />
+      <stop offset="1" stop-color="#A0C2B0" />
     </linearGradient>
     <linearGradient id="rightRibbon" x1="746" y1="266" x2="516" y2="773" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#DDF5E7" />
-      <stop offset="1" stop-color="#BFE5CF" />
+      <stop offset="0" stop-color="#D8EEE0" />
+      <stop offset="0.5" stop-color="#CEE6D8" />
+      <stop offset="1" stop-color="#9EC0AE" />
     </linearGradient>
   </defs>
 
-  <rect x="100" y="100" width="824" height="824" rx="190" fill="url(#background)" />
-  <rect x="102" y="102" width="820" height="820" rx="188" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="4" />
+  <rect width="1024" height="1024" rx="224" fill="url(#background)" />
+  <rect x="4" y="4" width="1016" height="1016" rx="220" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="8" />
 
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="M278 284L512 744" stroke="url(#leftRibbon)" stroke-width="136" />
