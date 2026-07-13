@@ -66,5 +66,6 @@
 .conversion-actions { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: auto; padding-top: 7px; border-top: 1px solid #e8ebe8; color: #78827c; font-size: var(--text-small); }
 .conversion-actions > span strong { margin-left: 4px; color: #515b55; }
 .conversion-action-buttons { display: flex; align-items: center; gap: 7px; }
+.queued-action-copy { color: var(--muted); font-size: var(--text-small); }
 .danger-button { color: #9b4038; }
 .danger-button:hover:not(:disabled) { border-color: #e5c3bf; color: #8f332c; background: #faecea; }

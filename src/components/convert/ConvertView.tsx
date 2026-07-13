@@ -15,7 +15,9 @@ type ConvertViewProps = {
   videoCodec: VideoCodec;
   isReady: boolean;
   isProbing: boolean;
-  isEncoding: boolean;
+  isActive: boolean;
+  canEdit: boolean;
+  canResume: boolean;
   isPaused: boolean;
   progress: EncodeProgress;
   result: EncodeFinished | null;
@@ -38,7 +40,9 @@ export function ConvertView({
   videoCodec,
   isReady,
   isProbing,
-  isEncoding,
+  isActive,
+  canEdit,
+  canResume,
   isPaused,
   progress,
   result,
@@ -90,14 +94,14 @@ export function ConvertView({
         <EncodingOptions
           container={outputContainer}
           videoCodec={videoCodec}
-          disabled={isEncoding}
+          disabled={!canEdit}
           onContainerChange={onOutputContainerChange}
           onVideoCodecChange={onVideoCodecChange}
         />
         <QualitySlider
           qualityIndex={qualityIndex}
           videoCodec={videoCodec}
-          disabled={isEncoding}
+          disabled={!canEdit}
           onChange={onQualityChange}
         />
 
@@ -126,33 +130,41 @@ export function ConvertView({
           </div>
         </section>
 
-        {isEncoding && <EncodingProgress progress={progress} isPaused={isPaused} />}
-        {!isEncoding && result?.status === "completed" && (
+        {isActive && <EncodingProgress progress={progress} isPaused={isPaused} />}
+        {!isActive && result?.status === "completed" && (
           <div className="success-message">
             <span>✓</span>
             <div><strong>Encoding complete</strong><p>{result.outputPath}</p></div>
           </div>
         )}
-        {!isEncoding && result?.status === "cancelled" && (
+        {!isActive && result?.status === "cancelled" && (
           <div className="notice-message">Encoding cancelled. The partial output was removed.</div>
         )}
         {error && <div className="error-message" role="alert">{error}</div>}
 
         <div className="conversion-actions">
           <span>Output <strong>{outputContainer.toUpperCase()} · {videoCodec === "h264" ? "H.264" : "H.265"}</strong></span>
-          {isEncoding ? (
+          {isActive ? (
             <div className="conversion-action-buttons">
-              <button className="secondary-button" type="button" onClick={onTogglePause}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={onTogglePause}
+                disabled={isPaused && !canResume}
+                title={isPaused && !canResume ? "Pause the current encoding before resuming this video" : undefined}
+              >
                 {isPaused ? "Resume encoding" : "Pause encoding"}
               </button>
               <button className="secondary-button danger-button" type="button" onClick={onCancelEncoding}>
                 Cancel current
               </button>
             </div>
-          ) : (
+          ) : canEdit ? (
             <button className="primary-button" type="button" onClick={onStartEncoding} disabled={!isReady}>
               {mediaCount > 1 ? `Choose folder and encode ${mediaCount} videos` : "Choose output and encode"} <span>→</span>
             </button>
+          ) : (
+            <span className="queued-action-copy">Waiting in the queue</span>
           )}
         </div>
       </div>

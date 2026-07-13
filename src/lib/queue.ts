@@ -1,5 +1,5 @@
 import { join } from "@tauri-apps/api/path";
-import type { EncodeProgress, EncodeQueueItem, MediaInfo, OutputContainer } from "../types/media";
+import type { EncodingSettings, EncodeProgress, EncodeQueueItem, MediaInfo } from "../types/media";
 import { defaultOutputName } from "./format";
 
 export const TERMINAL_JOB_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -15,11 +15,12 @@ export function emptyProgress(jobId = ""): EncodeProgress {
   };
 }
 
-export function createQueueItem(media: MediaInfo): EncodeQueueItem {
+export function createQueueItem(media: MediaInfo, settings: EncodingSettings): EncodeQueueItem {
   return {
     clientId: crypto.randomUUID(),
     jobId: null,
     media,
+    settings: { ...settings },
     outputPath: null,
     status: "ready",
     progress: emptyProgress(),
@@ -30,13 +31,27 @@ export function createQueueItem(media: MediaInfo): EncodeQueueItem {
 export async function batchOutputPaths(
   items: EncodeQueueItem[],
   directory: string,
-  container: OutputContainer,
+  reservedPaths: string[] = [],
 ): Promise<string[]> {
-  const nameCounts = new Map<string, number>();
-  return Promise.all(items.map(async (item) => {
-    const baseName = defaultOutputName(item.media.name, container);
-    const count = (nameCounts.get(baseName.toLowerCase()) ?? 0) + 1;
-    nameCounts.set(baseName.toLowerCase(), count);
-    return join(directory, defaultOutputName(item.media.name, container, count));
-  }));
+  const usedPaths = new Set(reservedPaths.map((path) => path.toLowerCase()));
+  const paths: string[] = [];
+
+  for (const item of items) {
+    let suffix = 1;
+    let outputPath = await join(
+      directory,
+      defaultOutputName(item.media.name, item.settings.container, suffix),
+    );
+    while (usedPaths.has(outputPath.toLowerCase())) {
+      suffix += 1;
+      outputPath = await join(
+        directory,
+        defaultOutputName(item.media.name, item.settings.container, suffix),
+      );
+    }
+    usedPaths.add(outputPath.toLowerCase());
+    paths.push(outputPath);
+  }
+
+  return paths;
 }

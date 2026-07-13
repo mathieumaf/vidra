@@ -20,6 +20,7 @@ import {
   startEncodeQueue,
 } from "../services/encoding";
 import type {
+  EncodingSettings,
   EncodeFinished,
   EncodePauseChanged,
   EncodeProgress,
@@ -30,6 +31,18 @@ import type {
 } from "../types/media";
 
 const supportedExtensions = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts"]);
+const WORKING_JOB_STATUSES = new Set(["queued", "encoding", "paused"]);
+
+function promoteWorkingItem(items: EncodeQueueItem[], clientId: string): EncodeQueueItem[] {
+  const index = items.findIndex((item) => item.clientId === clientId);
+  const firstWorking = items.findIndex((item) => WORKING_JOB_STATUSES.has(item.status));
+  if (index < 0 || firstWorking < 0 || index <= firstWorking) return items;
+
+  const next = [...items];
+  const [item] = next.splice(index, 1);
+  next.splice(firstWorking, 0, item);
+  return next;
+}
 
 type EncodingQueueOptions = {
   isReady: boolean;
@@ -49,27 +62,46 @@ export function useEncodingQueue({
   const [result, setResult] = useState<EncodeFinished | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
-  const itemsRef = useRef(items);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const defaultSettingsRef = useRef<EncodingSettings>({
+    quality: quality.id,
+    container: outputContainer,
+    videoCodec,
+  });
 
   useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
+    defaultSettingsRef.current = {
+      quality: quality.id,
+      container: outputContainer,
+      videoCodec,
+    };
+  }, [quality.id, outputContainer, videoCodec]);
 
   useEffect(() => {
     const subscriptions = Promise.all([
       listen<EncodeStarted>("encode-started", ({ payload }) => {
-        setItems((current) => current.map((item) => (
-          item.jobId === payload.jobId
-            ? { ...item, status: "encoding", progress: emptyProgress(payload.jobId) }
-            : item
-        )));
+        setItems((current) => {
+          const item = current.find((candidate) => candidate.jobId === payload.jobId);
+          const updated = current.map((candidate) => (
+            candidate.jobId === payload.jobId
+              ? { ...candidate, status: "encoding" as const, progress: emptyProgress(payload.jobId) }
+              : candidate
+          ));
+          return item ? promoteWorkingItem(updated, item.clientId) : updated;
+        });
       }),
       listen<EncodePauseChanged>("encode-pause-changed", ({ payload }) => {
-        setItems((current) => current.map((item) => (
-          item.jobId === payload.jobId
-            ? { ...item, status: payload.paused ? "paused" : "encoding" }
-            : item
-        )));
+        setItems((current) => {
+          const item = current.find((candidate) => candidate.jobId === payload.jobId);
+          const updated = current.map((candidate) => (
+            candidate.jobId === payload.jobId
+              ? { ...candidate, status: payload.paused ? "paused" as const : "encoding" as const }
+              : candidate
+          ));
+          return !payload.paused && item
+            ? promoteWorkingItem(updated, item.clientId)
+            : updated;
+        });
       }),
       listen<EncodeProgress>("encode-progress", ({ payload }) => {
         setItems((current) => current.map((item) => (
@@ -125,8 +157,12 @@ export function useEncodingQueue({
   const activeItems = items.filter((item) => (
     item.status === "queued" || item.status === "encoding" || item.status === "paused"
   ));
-  const encodingItem = items.find((item) => item.status === "encoding" || item.status === "paused") ?? null;
-  const primaryItem = readyItems[0] ?? encodingItem ?? items[0] ?? null;
+  const encodingItem = items.find((item) => item.status === "encoding") ?? null;
+  const queueControlItem = encodingItem ?? items.find((item) => (
+    item.status === "paused" || item.status === "queued"
+  )) ?? null;
+  const selectedItem = items.find((item) => item.clientId === selectedClientId) ?? null;
+  const primaryItem = selectedItem ?? readyItems[0] ?? encodingItem ?? items[0] ?? null;
   const hasActiveJobs = activeItems.length > 0;
   const queueCount = activeItems.length + readyItems.length;
   const finishedCount = items.filter((item) => TERMINAL_JOB_STATUSES.has(item.status)).length;
@@ -150,13 +186,9 @@ export function useEncodingQueue({
   }
 
   async function addVideoPaths(selectedPaths: string[]): Promise<number> {
-    const current = itemsRef.current;
-    const currentPaths = current.every((item) => TERMINAL_JOB_STATUSES.has(item.status))
-      ? new Set<string>()
-      : new Set(current.map((item) => item.media.path));
     const paths = selectedPaths.filter((path) => {
       const extension = path.split(".").pop()?.toLowerCase() ?? "";
-      return supportedExtensions.has(extension) && !currentPaths.has(path);
+      return supportedExtensions.has(extension);
     });
     if (paths.length === 0) return 0;
 
@@ -165,12 +197,14 @@ export function useEncodingQueue({
       const probes = await Promise.allSettled(paths.map(probeMedia));
       const media = probes.flatMap((probe) => probe.status === "fulfilled" ? [probe.value] : []);
       const failures = probes.length - media.length;
+      const newItems = media.map((item) => createQueueItem(item, defaultSettingsRef.current));
       setItems((currentItems) => {
         const base = currentItems.every((item) => TERMINAL_JOB_STATUSES.has(item.status))
           ? []
           : currentItems;
-        return [...base, ...media.map(createQueueItem)];
+        return [...base, ...newItems];
       });
+      if (newItems.length > 0) setSelectedClientId(newItems[0].clientId);
       if (failures > 0) {
         setError(`${failures} ${failures === 1 ? "file could" : "files could"} not be read.`);
       }
@@ -185,15 +219,26 @@ export function useEncodingQueue({
 
   async function startEncoding(): Promise<number> {
     if (readyItems.length === 0 || !isReady) return 0;
+    const shouldStartQueue = activeItems.length === 0;
     setError(null);
     setResult(null);
-    const container = getOutputContainer(outputContainer);
     let outputPaths: string[];
 
     if (readyItems.length === 1) {
+      const item = readyItems[0];
+      const container = getOutputContainer(item.settings.container);
+      const matchingSources = items.filter((candidate) => (
+        candidate.clientId !== item.clientId &&
+        candidate.media.path === item.media.path &&
+        candidate.settings.container === item.settings.container
+      )).length;
       const outputPath = await save({
         title: "Save encoded video",
-        defaultPath: defaultOutputPath(readyItems[0].media.path, outputContainer),
+        defaultPath: defaultOutputPath(
+          item.media.path,
+          item.settings.container,
+          matchingSources + 1,
+        ),
         filters: [{ name: container.filterName, extensions: [container.extension] }],
       });
       if (!outputPath) return 0;
@@ -205,16 +250,20 @@ export function useEncodingQueue({
         title: `Choose a folder for ${readyItems.length} encoded videos`,
       });
       if (!directory || Array.isArray(directory)) return 0;
-      outputPaths = await batchOutputPaths(readyItems, directory, outputContainer);
+      outputPaths = await batchOutputPaths(
+        readyItems,
+        directory,
+        items.flatMap((item) => item.outputPath ? [item.outputPath] : []),
+      );
     }
 
     try {
       const queued = await enqueueEncodes(readyItems.map((item, index) => ({
         inputPath: item.media.path,
         outputPath: outputPaths[index],
-        quality: quality.id,
-        container: outputContainer,
-        videoCodec,
+        quality: item.settings.quality,
+        container: item.settings.container,
+        videoCodec: item.settings.videoCodec,
       })));
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),
@@ -231,7 +280,8 @@ export function useEncodingQueue({
             }
           : item;
       }));
-      await startEncodeQueue();
+      setSelectedClientId(null);
+      if (shouldStartQueue) await startEncodeQueue();
       return queued.length;
     } catch (encodeError) {
       setError(errorMessage(encodeError));
@@ -242,6 +292,7 @@ export function useEncodingQueue({
   async function removeOrCancel(item: EncodeQueueItem) {
     if (item.status === "ready") {
       setItems((current) => current.filter((candidate) => candidate.clientId !== item.clientId));
+      if (selectedClientId === item.clientId) setSelectedClientId(null);
       return;
     }
     if (!item.jobId || !["queued", "encoding", "paused"].includes(item.status)) return;
@@ -258,12 +309,19 @@ export function useEncodingQueue({
 
   async function togglePause(item: EncodeQueueItem) {
     if (!item.jobId || (item.status !== "encoding" && item.status !== "paused")) return;
+    if (item.status === "paused" && encodingItem) {
+      setError("Pause the current encoding before resuming this video.");
+      return;
+    }
     const paused = item.status !== "paused";
-    setItems((current) => current.map((candidate) => (
-      candidate.jobId === item.jobId
-        ? { ...candidate, status: paused ? "paused" : "encoding" }
-        : candidate
-    )));
+    setItems((current) => {
+      const updated = current.map((candidate) => (
+        candidate.jobId === item.jobId
+          ? { ...candidate, status: paused ? "paused" as const : "encoding" as const }
+          : candidate
+      ));
+      return paused ? updated : promoteWorkingItem(updated, item.clientId);
+    });
     try {
       await setEncodePaused(item.jobId, paused);
     } catch (pauseError) {
@@ -276,9 +334,39 @@ export function useEncodingQueue({
     }
   }
 
+  async function toggleQueue() {
+    if (!queueControlItem) return;
+    if (queueControlItem.status === "encoding") {
+      await togglePause(queueControlItem);
+      return;
+    }
+    if (queueControlItem.status !== "paused" && queueControlItem.status !== "queued") return;
+
+    setError(null);
+    try {
+      await startEncodeQueue();
+    } catch (startError) {
+      setError(errorMessage(startError));
+    }
+  }
+
+  function selectItem(item: EncodeQueueItem) {
+    setSelectedClientId(item.clientId);
+  }
+
+  function updateItemSettings(item: EncodeQueueItem, settings: EncodingSettings) {
+    if (item.status !== "ready") return;
+    setItems((current) => current.map((candidate) => (
+      candidate.clientId === item.clientId
+        ? { ...candidate, settings: { ...settings } }
+        : candidate
+    )));
+  }
+
   async function moveItem(item: EncodeQueueItem, direction: -1 | 1) {
-    if (item.status !== "ready" && item.status !== "queued") return;
-    if (item.status === "queued" && item.jobId) {
+    const isWaiting = item.status === "queued" || item.status === "paused";
+    if (item.status !== "ready" && !isWaiting) return;
+    if (isWaiting && item.jobId) {
       try {
         await moveQueuedEncode(item.jobId, direction);
       } catch (moveError) {
@@ -290,7 +378,14 @@ export function useEncodingQueue({
     setItems((current) => {
       const index = current.findIndex((candidate) => candidate.clientId === item.clientId);
       let destination = index + direction;
-      while (destination >= 0 && destination < current.length && current[destination].status !== item.status) {
+      const isDestination = (candidate: EncodeQueueItem) => item.status === "ready"
+        ? candidate.status === "ready"
+        : candidate.status === "queued" || candidate.status === "paused";
+      while (
+        destination >= 0 &&
+        destination < current.length &&
+        !isDestination(current[destination])
+      ) {
         destination += direction;
       }
       if (destination < 0 || destination >= current.length) return current;
@@ -302,6 +397,7 @@ export function useEncodingQueue({
 
   function reset() {
     setItems([]);
+    setSelectedClientId(null);
     setResult(null);
     setError(null);
   }
@@ -311,7 +407,8 @@ export function useEncodingQueue({
     readyItems,
     activeItems,
     encodingItem,
-    currentProgress: encodingItem?.progress ?? emptyProgress(),
+    queueControlItem,
+    currentProgress: primaryItem?.progress ?? emptyProgress(),
     primaryItem,
     hasActiveJobs,
     queueCount,
@@ -324,7 +421,10 @@ export function useEncodingQueue({
     startEncoding,
     removeOrCancel,
     togglePause,
+    toggleQueue,
     moveItem,
+    selectItem,
+    updateItemSettings,
     reset,
     setError,
   };

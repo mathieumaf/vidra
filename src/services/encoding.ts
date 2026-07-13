@@ -1,17 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  EncodingSettings,
   FfmpegStatus,
   MediaInfo,
   OutputContainer,
   QueuedEncode,
   VideoCodec,
 } from "../types/media";
-import type { QualityLevel } from "../config/quality";
 
 export type EncodeRequest = {
   inputPath: string;
   outputPath: string;
-  quality: QualityLevel["id"];
+  quality: EncodingSettings["quality"];
   container: OutputContainer;
   videoCodec: VideoCodec;
 };

@@ -1,6 +1,18 @@
 export type View = "convert" | "queue" | "history" | "settings";
 export type OutputContainer = "mp4" | "mkv";
 export type VideoCodec = "h264" | "h265";
+export type QualityLevelId =
+  | "maximum-compression"
+  | "smaller-file"
+  | "balanced"
+  | "high-quality"
+  | "near-source";
+
+export type EncodingSettings = {
+  quality: QualityLevelId;
+  container: OutputContainer;
+  videoCodec: VideoCodec;
+};
 
 export type FfmpegStatus = {
   ready: boolean;
@@ -72,6 +84,7 @@ export type EncodeQueueItem = {
   clientId: string;
   jobId: string | null;
   media: MediaInfo;
+  settings: EncodingSettings;
   outputPath: string | null;
   status: EncodeJobStatus;
   progress: EncodeProgress;

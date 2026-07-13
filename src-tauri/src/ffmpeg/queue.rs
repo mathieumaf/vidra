@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     error::{ApiError, ApiResult},
-    jobs::{process, CancelledJob, JobManager, PendingJob},
+    jobs::{process, CancelledJob, JobManager, PendingJob, ReservedJob},
 };
 use std::collections::{HashSet, VecDeque};
 use tauri::{AppHandle, Emitter, Manager};
@@ -64,8 +64,21 @@ pub async fn enqueue(
 pub fn start_next(app: AppHandle) -> ApiResult<()> {
     loop {
         let manager = app.state::<JobManager>();
-        let Some(job) = manager.reserve_next()? else {
+        let Some(reserved) = manager.reserve_next()? else {
             return Ok(());
+        };
+        let job = match reserved {
+            ReservedJob::Pending(job) => job,
+            ReservedJob::Resumed(job_id) => {
+                let _ = app.emit(
+                    "encode-pause-changed",
+                    EncodePauseChanged {
+                        job_id,
+                        paused: false,
+                    },
+                );
+                return Ok(());
+            }
         };
         let job_id = job.id.clone();
         let output_path = job.request.output_path.clone();
@@ -211,5 +224,5 @@ pub fn set_paused(app: &AppHandle, jobs: &JobManager, job_id: &str, paused: bool
 }
 
 pub fn move_pending(jobs: &JobManager, job_id: &str, direction: i8) -> ApiResult<()> {
-    jobs.move_pending(job_id, direction)
+    jobs.move_waiting(job_id, direction)
 }

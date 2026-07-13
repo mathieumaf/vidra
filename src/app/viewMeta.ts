@@ -10,12 +10,17 @@ export function viewMeta(view: View, items: EncodeQueueItem[]): [string, string]
           : "Start a local video conversion",
       ];
     case "queue": {
-      const current = items.find((item) => item.status === "encoding" || item.status === "paused");
+      const current = items.find((item) => item.status === "encoding");
+      const paused = items.filter((item) => item.status === "paused").length;
       const pending = items.filter((item) => item.status === "queued").length;
       const ready = items.filter((item) => item.status === "ready").length;
       if (current) {
-        return ["Queue", `${current.media.name} · ${current.status === "paused" ? "paused" : `${pending} waiting`}`];
+        const details = [pending > 0 ? `${pending} waiting` : null, paused > 0 ? `${paused} paused` : null]
+          .filter(Boolean)
+          .join(" · ");
+        return ["Queue", `${current.media.name}${details ? ` · ${details}` : ""}`];
       }
+      if (paused > 0) return ["Queue", `${paused} paused · choose a waiting video or resume one`];
       if (ready > 0) return ["Queue", `${ready} ready to encode`];
       return ["Queue", "No active encoding jobs"];
     }
