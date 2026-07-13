@@ -19,6 +19,7 @@ import {
   setEncodePaused,
   startEncodeQueue,
 } from "../services/encoding";
+import { revealOutputFile } from "../services/files";
 import type {
   AudioMode,
   EncodingSpeed,
@@ -318,6 +319,21 @@ export function useEncodingQueue({
     }
   }
 
+  async function revealOutput(item: EncodeQueueItem) {
+    if (item.status !== "completed") return;
+    if (!item.outputPath) {
+      setError("The output file location is unavailable.");
+      return;
+    }
+
+    setError(null);
+    try {
+      await revealOutputFile(item.outputPath);
+    } catch (revealError) {
+      setError(errorMessage(revealError));
+    }
+  }
+
   async function togglePause(item: EncodeQueueItem) {
     if (!item.jobId || (item.status !== "encoding" && item.status !== "paused")) return;
     if (item.status === "paused" && encodingItem) {
@@ -429,6 +445,7 @@ export function useEncodingQueue({
     error,
     selectVideos,
     startEncoding,
+    revealOutput,
     removeOrCancel,
     togglePause,
     toggleQueue,

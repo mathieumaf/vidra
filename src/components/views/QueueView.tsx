@@ -13,6 +13,7 @@ type QueueViewProps = {
   controlItem: EncodeQueueItem | null;
   onAddVideos: () => void;
   onStart: () => void;
+  onRevealOutput: (item: EncodeQueueItem) => void | Promise<void>;
   onRemoveOrCancel: (item: EncodeQueueItem) => void | Promise<void>;
   onToggleQueue: () => void | Promise<void>;
   onMove: (item: EncodeQueueItem, direction: -1 | 1) => void | Promise<void>;
@@ -38,6 +39,7 @@ export function QueueView({
   controlItem,
   onAddVideos,
   onStart,
+  onRevealOutput,
   onRemoveOrCancel,
   onToggleQueue,
   onMove,
@@ -167,6 +169,16 @@ export function QueueView({
                 {item.status === "failed" && item.error && <p className="queue-error">{item.error}</p>}
               </div>
               <div className="queue-row-actions">
+                {item.status === "completed" && (
+                  <button
+                    type="button"
+                    aria-label={`Show output for ${item.media.name} in Finder`}
+                    title="Show in Finder"
+                    onClick={() => onRevealOutput(item)}
+                  >
+                    <Icon name="reveal" />
+                  </button>
+                )}
                 {item.status === "ready" && (
                   <button
                     type="button"

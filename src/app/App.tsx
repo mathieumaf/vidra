@@ -215,6 +215,7 @@ export default function App() {
               controlItem={queue.queueControlItem}
               onAddVideos={() => void addVideos("queue")}
               onStart={() => void startEncoding()}
+              onRevealOutput={queue.revealOutput}
               onRemoveOrCancel={queue.removeOrCancel}
               onToggleQueue={queue.toggleQueue}
               onMove={queue.moveItem}
