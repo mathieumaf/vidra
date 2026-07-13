@@ -1,4 +1,4 @@
-import { formatBitrate, formatDuration } from "../../lib/format";
+import { formatBitrate, formatDuration, formatEta } from "../../lib/format";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type { OutputContainer, VideoCodec } from "../../types/media";
 import { Icon } from "../ui/Icon";
@@ -158,7 +158,7 @@ function EncodingProgress({ progress }: { progress: EncodeProgress }) {
       </div>
       <div className="progress-meta">
         <span>{formatDuration(progress.outTimeSeconds)} processed</span>
-        {progress.speed && <span>{progress.speed}</span>}
+        <span>{progress.speed ? `${progress.speed} · ` : ""}{formatEta(progress.etaSeconds)}</span>
       </div>
     </section>
   );

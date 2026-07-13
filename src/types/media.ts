@@ -40,6 +40,7 @@ export type EncodeProgress = {
   percent: number;
   outTimeSeconds: number;
   speed: string | null;
+  etaSeconds: number | null;
   frame: number | null;
 };
 

@@ -2,6 +2,11 @@
 
 Vidra is an open-source desktop application for local video conversion and encoding. It combines a Tauri and Rust backend with a React interface and bundled FFmpeg tools.
 
+## Project status
+
+> [!WARNING]
+> Vidra is in active early development. There are no stable releases yet, and the application is not ready for production use. Features, encoding profiles, and file compatibility may change without notice. Build from source for testing only, and always keep the original copy of important media.
+
 The project currently targets macOS on Apple Silicon. Windows, Linux, and additional architectures will follow once the core workflow is stable.
 
 Current capabilities:
@@ -12,7 +17,7 @@ Current capabilities:
 - lossless audio stream copy when the selected container supports it;
 - source-aware audio bitrate caps for required transcoding;
 - MKV subtitle, chapter, and metadata preservation;
-- live progress, cancellation, queue state, and session history;
+- live progress with ETA, cancellation, queue state, and session history;
 - a fixed desktop interface with no browser-style page scrolling.
 
 ## Development

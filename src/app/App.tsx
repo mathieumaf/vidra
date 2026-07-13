@@ -32,6 +32,7 @@ const initialProgress: EncodeProgress = {
   percent: 0,
   outTimeSeconds: 0,
   speed: null,
+  etaSeconds: null,
   frame: null,
 };
 

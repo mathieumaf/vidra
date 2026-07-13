@@ -1,5 +1,6 @@
 import type { EncodeProgress, MediaInfo, OutputContainer, VideoCodec } from "../../types/media";
 import type { QualityLevel } from "../../config/quality";
+import { formatEta } from "../../lib/format";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
 
@@ -51,7 +52,7 @@ export function QueueView({
             <div className="progress-value" style={{ width: `${progress.percent}%` }} />
           </div>
           <div className="queue-footer">
-            <span>{Math.round(progress.percent)}% complete</span>
+            <span>{Math.round(progress.percent)}% complete · {formatEta(progress.etaSeconds)}</span>
             <button className="text-button danger" type="button" onClick={onCancel}>Cancel</button>
           </div>
         </div>

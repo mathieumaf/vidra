@@ -22,6 +22,20 @@ export function formatDuration(seconds: number): string {
     : `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
+export function formatEta(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds)) return "Estimating…";
+  if (seconds <= 5) return "Finishing…";
+
+  const roundedMinutes = Math.ceil(seconds / 60);
+  if (roundedMinutes < 60) {
+    return `${roundedMinutes} min left`;
+  }
+
+  const hours = Math.floor(roundedMinutes / 60);
+  const minutes = roundedMinutes % 60;
+  return minutes === 0 ? `${hours} hr left` : `${hours} hr ${minutes} min left`;
+}
+
 export function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object" && "message" in error) {

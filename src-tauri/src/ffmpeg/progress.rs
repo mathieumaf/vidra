@@ -30,12 +30,18 @@ impl ProgressParser {
                 } else {
                     0.0
                 };
+                let eta_seconds = if value == "end" {
+                    Some(0.0)
+                } else {
+                    self.estimated_seconds_remaining(duration_seconds)
+                };
 
                 return Some(EncodeProgress {
                     job_id: job_id.to_owned(),
                     percent,
                     out_time_seconds: self.out_time_seconds,
                     speed: self.speed.clone(),
+                    eta_seconds,
                     frame: self.frame,
                 });
             }
@@ -43,6 +49,24 @@ impl ProgressParser {
         }
 
         None
+    }
+
+    fn estimated_seconds_remaining(&self, duration_seconds: f64) -> Option<f64> {
+        if duration_seconds <= 0.0 {
+            return None;
+        }
+
+        let speed = self
+            .speed
+            .as_deref()?
+            .trim_end_matches('x')
+            .parse::<f64>()
+            .ok()?;
+        if !speed.is_finite() || speed <= 0.0 {
+            return None;
+        }
+
+        Some(((duration_seconds - self.out_time_seconds).max(0.0) / speed).max(0.0))
     }
 }
 
@@ -63,6 +87,7 @@ mod tests {
             .expect("a progress payload");
         assert_eq!(progress.percent, 25.0);
         assert_eq!(progress.speed.as_deref(), Some("2.0x"));
+        assert_eq!(progress.eta_seconds, Some(7.5));
     }
 
     #[test]
@@ -72,5 +97,19 @@ mod tests {
             .update("job-1", 20.0, "progress=end")
             .expect("a final progress payload");
         assert_eq!(progress.percent, 100.0);
+        assert_eq!(progress.eta_seconds, Some(0.0));
+    }
+
+    #[test]
+    fn omits_eta_until_speed_is_available() {
+        let mut parser = ProgressParser::default();
+        assert!(parser
+            .update("job-1", 20.0, "out_time_us=5000000")
+            .is_none());
+
+        let progress = parser
+            .update("job-1", 20.0, "progress=continue")
+            .expect("a progress payload");
+        assert_eq!(progress.eta_seconds, None);
     }
 }

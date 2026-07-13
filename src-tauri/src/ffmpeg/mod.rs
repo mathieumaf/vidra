@@ -115,6 +115,7 @@ pub struct EncodeProgress {
     pub percent: f64,
     pub out_time_seconds: f64,
     pub speed: Option<String>,
+    pub eta_seconds: Option<f64>,
     pub frame: Option<u64>,
 }
 
