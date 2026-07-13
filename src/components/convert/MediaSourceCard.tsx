@@ -3,7 +3,7 @@ import { formatBytes, formatDuration } from "../../lib/format";
 import type { MediaInfo } from "../../types/media";
 import { Icon } from "../ui/Icon";
 
-export function MediaSourceCard({ media }: { media: MediaInfo }) {
+export function MediaSourceCard({ media, count = 1 }: { media: MediaInfo; count?: number }) {
   const summary = useMemo(() => {
     const values = [formatDuration(media.durationSeconds), formatBytes(media.sizeBytes)];
     if (media.video) {
@@ -20,9 +20,11 @@ export function MediaSourceCard({ media }: { media: MediaInfo }) {
       </div>
       <div className="source-details">
         <span className="section-label">SOURCE</span>
-        <strong>{media.name}</strong>
+        <strong>{count > 1 ? `${count} videos selected` : media.name}</strong>
         <div className="media-summary">
-          {summary.map((item) => <span key={item}>{item}</span>)}
+          {count > 1
+            ? <><span>{media.name}</span><span>{count - 1} more</span></>
+            : summary.map((item) => <span key={item}>{item}</span>)}
         </div>
       </div>
     </section>

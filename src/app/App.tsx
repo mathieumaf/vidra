@@ -1,184 +1,107 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { useState } from "react";
 import { ConvertView } from "../components/convert/ConvertView";
+import { DragRegion } from "../components/layout/DragRegion";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Toolbar } from "../components/layout/Toolbar";
-import { DragRegion } from "../components/layout/DragRegion";
+import { Icon } from "../components/ui/Icon";
 import { HistoryView } from "../components/views/HistoryView";
 import { QueueView } from "../components/views/QueueView";
 import { SettingsView } from "../components/views/SettingsView";
-import { outputContainer as getOutputContainer } from "../config/encoding";
 import { QUALITY_LEVELS } from "../config/quality";
-import { defaultOutputPath, errorMessage } from "../lib/format";
-import type {
-  EncodeFinished,
-  EncodeProgress,
-  FfmpegStatus,
-  MediaInfo,
-  OutputContainer,
-  VideoCodec,
-  View,
-} from "../types/media";
+import { useEncodingQueue } from "../hooks/useEncodingQueue";
+import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
+import type { EncodeQueueItem, OutputContainer, VideoCodec, View } from "../types/media";
+import { viewMeta } from "./viewMeta";
 import "../styles/tokens.css";
 import "../styles/base.css";
 import "../styles/shell.css";
 import "../styles/conversion.css";
 import "../styles/views.css";
 
-const initialProgress: EncodeProgress = {
-  jobId: "",
-  percent: 0,
-  outTimeSeconds: 0,
-  speed: null,
-  etaSeconds: null,
-  frame: null,
-};
-
-const titles: Record<View, (media: MediaInfo | null, isEncoding: boolean) => [string, string]> = {
-  convert: (media) => ["Convert", media ? media.name : "Start a local video conversion"],
-  queue: (_, isEncoding) => ["Queue", isEncoding ? "One encoding job is running" : "No active encoding jobs"],
-  history: () => ["History", "Recent conversions from this session"],
-  settings: () => ["Settings", "Application and encoding engine"],
-};
-
 export default function App() {
   const [view, setView] = useState<View>("convert");
-  const [status, setStatus] = useState<FfmpegStatus | null>(null);
-  const [media, setMedia] = useState<MediaInfo | null>(null);
   const [qualityIndex, setQualityIndex] = useState(2);
   const [outputContainer, setOutputContainer] = useState<OutputContainer>("mp4");
   const [videoCodec, setVideoCodec] = useState<VideoCodec>("h264");
-  const [isProbing, setIsProbing] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [progress, setProgress] = useState(initialProgress);
-  const [result, setResult] = useState<EncodeFinished | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void invoke<FfmpegStatus>("get_ffmpeg_status")
-      .then(setStatus)
-      .catch((engineError) => {
-        setStatus({ ready: false, ffmpegVersion: null, ffprobeVersion: null, error: errorMessage(engineError) });
-      });
-
-    const subscriptions = Promise.all([
-      listen<EncodeProgress>("encode-progress", ({ payload }) => setProgress(payload)),
-      listen<EncodeFinished>("encode-finished", ({ payload }) => {
-        setResult(payload);
-        setJobId(null);
-        if (payload.status === "failed") {
-          setError(payload.error ?? "FFmpeg could not complete the encode.");
-        }
-      }),
-    ]);
-
-    return () => void subscriptions.then((unlisten) => unlisten.forEach((dispose) => dispose()));
-  }, []);
-
+  const { status, isReady } = useFfmpegStatus();
   const quality = QUALITY_LEVELS[qualityIndex];
-  const isEncoding = jobId !== null;
-  const isReady = status?.ready === true;
-  const [title, subtitle] = titles[view](media, isEncoding);
+  const queue = useEncodingQueue({ isReady, quality, outputContainer, videoCodec });
+  const [title, subtitle] = viewMeta(view, queue.items);
 
-  async function selectVideo() {
-    setError(null);
-    setResult(null);
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      title: "Choose a video",
-      filters: [
-        {
-          name: "Video files",
-          extensions: ["mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts"],
-        },
-      ],
-    });
-    if (!selected) return;
-
-    setIsProbing(true);
-    setView("convert");
-    try {
-      setMedia(await invoke<MediaInfo>("probe_media", { path: selected }));
-      setProgress(initialProgress);
-    } catch (probeError) {
-      setError(errorMessage(probeError));
-    } finally {
-      setIsProbing(false);
-    }
+  async function addVideos(preferredView: View) {
+    const added = await queue.selectVideos();
+    if (added > 0) setView(preferredView);
   }
 
   async function startEncoding() {
-    if (!media || !isReady) return;
-    setError(null);
-    setResult(null);
-    const container = getOutputContainer(outputContainer);
-    const outputPath = await save({
-      title: "Save encoded video",
-      defaultPath: defaultOutputPath(media.path, outputContainer),
-      filters: [{ name: container.filterName, extensions: [container.extension] }],
-    });
-    if (!outputPath) return;
-
-    try {
-      const id = await invoke<string>("start_encode", {
-        request: {
-          inputPath: media.path,
-          outputPath,
-          quality: quality.id,
-          container: outputContainer,
-          videoCodec,
-        },
-      });
-      setProgress({ ...initialProgress, jobId: id });
-      setJobId(id);
-    } catch (encodeError) {
-      setError(errorMessage(encodeError));
-    }
+    const queued = await queue.startEncoding();
+    if (queued > 1 || queue.hasActiveJobs) setView("queue");
   }
 
-  async function cancelEncoding() {
-    if (!jobId) return;
-    try {
-      await invoke("cancel_encode", { jobId });
-    } catch (cancelError) {
-      setError(errorMessage(cancelError));
-    }
-  }
-
-  function newConversion() {
-    if (isEncoding) return;
-    setMedia(null);
-    setResult(null);
-    setError(null);
-    setProgress(initialProgress);
-    setView("convert");
+  async function newConversion() {
+    const hasOpenItems = queue.items.some((item) => (
+      item.status === "ready" || item.status === "queued" || item.status === "encoding" || item.status === "paused"
+    ));
+    if (!hasOpenItems) queue.reset();
+    await addVideos("convert");
   }
 
   function changeOutputContainer(container: OutputContainer) {
     setOutputContainer(container);
-    setResult(null);
-    setError(null);
+    if (queue.primaryItem?.status === "ready") {
+      queue.updateItemSettings(queue.primaryItem, {
+        ...queue.primaryItem.settings,
+        container,
+      });
+    }
+    queue.setError(null);
   }
 
   function changeVideoCodec(codec: VideoCodec) {
     setVideoCodec(codec);
-    setResult(null);
-    setError(null);
+    if (queue.primaryItem?.status === "ready") {
+      queue.updateItemSettings(queue.primaryItem, {
+        ...queue.primaryItem.settings,
+        videoCodec: codec,
+      });
+    }
+    queue.setError(null);
   }
 
+  function changeQuality(qualityIndex: number) {
+    setQualityIndex(qualityIndex);
+    if (queue.primaryItem?.status === "ready") {
+      queue.updateItemSettings(queue.primaryItem, {
+        ...queue.primaryItem.settings,
+        quality: QUALITY_LEVELS[qualityIndex].id,
+      });
+    }
+    queue.setError(null);
+  }
+
+  function editItem(item: EncodeQueueItem) {
+    queue.selectItem(item);
+    const index = QUALITY_LEVELS.findIndex((quality) => quality.id === item.settings.quality);
+    setQualityIndex(index >= 0 ? index : 2);
+    setOutputContainer(item.settings.container);
+    setVideoCodec(item.settings.videoCodec);
+    setView("convert");
+  }
+
+  const primaryItem = queue.primaryItem;
+  const isPrimaryActive = primaryItem?.status === "encoding" || primaryItem?.status === "paused";
+  const canEditPrimary = primaryItem?.status === "ready";
+
   return (
-    <div className="desktop-shell">
+    <div className={`desktop-shell${queue.isDraggingFiles ? " dragging-files" : ""}`}>
       <Sidebar
         view={view}
         status={status}
         isReady={isReady}
-        isEncoding={isEncoding}
-        result={result}
+        queueCount={queue.queueCount}
+        historyCount={queue.finishedCount}
         onViewChange={setView}
-        onNewConversion={newConversion}
+        onNewConversion={() => void newConversion()}
       />
 
       <section className="main-panel">
@@ -187,51 +110,66 @@ export default function App() {
           view={view}
           title={title}
           subtitle={subtitle}
-          hasMedia={media !== null}
-          isEncoding={isEncoding}
-          onReplaceSource={selectVideo}
+          hasMedia={queue.items.length > 0}
+          isEncoding={queue.hasActiveJobs}
+          onAddSources={() => void addVideos("convert")}
         />
 
         <div className="content-area">
           {view === "convert" && (
             <ConvertView
-              media={media}
+              media={primaryItem?.media ?? null}
+              mediaCount={canEditPrimary ? queue.readyItems.length : 1}
               status={status}
               qualityIndex={qualityIndex}
               outputContainer={outputContainer}
               videoCodec={videoCodec}
               isReady={isReady}
-              isProbing={isProbing}
-              isEncoding={isEncoding}
-              progress={progress}
-              result={result}
-              error={error}
-              onSelectVideo={selectVideo}
-              onQualityChange={setQualityIndex}
+              isProbing={queue.isProbing}
+              isActive={isPrimaryActive}
+              canEdit={canEditPrimary}
+              canResume={!queue.encodingItem && queue.queueControlItem?.clientId === primaryItem?.clientId}
+              isPaused={primaryItem?.status === "paused"}
+              progress={queue.currentProgress}
+              result={primaryItem?.jobId === queue.result?.jobId ? queue.result : null}
+              error={queue.error}
+              onSelectVideo={() => void addVideos("convert")}
+              onQualityChange={changeQuality}
               onOutputContainerChange={changeOutputContainer}
               onVideoCodecChange={changeVideoCodec}
-              onStartEncoding={startEncoding}
-              onCancelEncoding={cancelEncoding}
+              onStartEncoding={() => void startEncoding()}
+              onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
+              onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}
             />
           )}
           {view === "queue" && (
             <QueueView
-              isEncoding={isEncoding}
-              media={media}
-              quality={quality}
-              outputContainer={outputContainer}
-              videoCodec={videoCodec}
-              progress={progress}
-              onCancel={cancelEncoding}
+              items={queue.items}
+              isReady={isReady}
+              isProbing={queue.isProbing}
+              error={queue.error}
+              controlItem={queue.queueControlItem}
+              onAddVideos={() => void addVideos("queue")}
+              onStart={() => void startEncoding()}
+              onRemoveOrCancel={queue.removeOrCancel}
+              onToggleQueue={queue.toggleQueue}
+              onMove={queue.moveItem}
+              onEdit={editItem}
               onGoToConvert={() => setView("convert")}
             />
           )}
           {view === "history" && (
-            <HistoryView result={result} media={media} onGoToConvert={() => setView("convert")} />
+            <HistoryView items={queue.items} onGoToConvert={() => setView("convert")} />
           )}
           {view === "settings" && <SettingsView status={status} isReady={isReady} />}
         </div>
       </section>
+
+      {queue.isDraggingFiles && (
+        <div className="file-drop-overlay" aria-hidden="true">
+          <div><Icon name="plus" /><strong>Add videos to the batch</strong></div>
+        </div>
+      )}
     </div>
   );
 }

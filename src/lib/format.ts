@@ -44,9 +44,21 @@ export function errorMessage(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-export function defaultOutputPath(inputPath: string, container: OutputContainer): string {
+export function defaultOutputPath(
+  inputPath: string,
+  container: OutputContainer,
+  suffix = 1,
+): string {
   const extensionIndex = inputPath.lastIndexOf(".");
   const separatorIndex = Math.max(inputPath.lastIndexOf("/"), inputPath.lastIndexOf("\\"));
   const base = extensionIndex > separatorIndex ? inputPath.slice(0, extensionIndex) : inputPath;
-  return `${base}-vidra.${container}`;
+  const duplicateSuffix = suffix > 1 ? `-${suffix}` : "";
+  return `${base}-vidra${duplicateSuffix}.${container}`;
+}
+
+export function defaultOutputName(inputName: string, container: OutputContainer, suffix = 1): string {
+  const extensionIndex = inputName.lastIndexOf(".");
+  const base = extensionIndex > 0 ? inputName.slice(0, extensionIndex) : inputName;
+  const duplicateSuffix = suffix > 1 ? `-${suffix}` : "";
+  return `${base}-vidra${duplicateSuffix}.${container}`;
 }

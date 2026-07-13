@@ -32,3 +32,7 @@ export const QUALITY_LEVELS = [
 ] as const;
 
 export type QualityLevel = (typeof QUALITY_LEVELS)[number];
+
+export function qualityLevel(id: QualityLevel["id"]): QualityLevel {
+  return QUALITY_LEVELS.find((quality) => quality.id === id) ?? QUALITY_LEVELS[2];
+}

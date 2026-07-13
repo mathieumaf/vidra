@@ -1,6 +1,18 @@
 export type View = "convert" | "queue" | "history" | "settings";
 export type OutputContainer = "mp4" | "mkv";
 export type VideoCodec = "h264" | "h265";
+export type QualityLevelId =
+  | "maximum-compression"
+  | "smaller-file"
+  | "balanced"
+  | "high-quality"
+  | "near-source";
+
+export type EncodingSettings = {
+  quality: QualityLevelId;
+  container: OutputContainer;
+  videoCodec: VideoCodec;
+};
 
 export type FfmpegStatus = {
   ready: boolean;
@@ -48,6 +60,34 @@ export type EncodeFinished = {
   jobId: string;
   status: "completed" | "failed" | "cancelled";
   outputPath: string;
+  error: string | null;
+};
+
+export type EncodeStarted = {
+  jobId: string;
+};
+
+export type EncodePauseChanged = {
+  jobId: string;
+  paused: boolean;
+};
+
+export type QueuedEncode = {
+  jobId: string;
+  inputPath: string;
+  outputPath: string;
+};
+
+export type EncodeJobStatus = "ready" | "queued" | "encoding" | "paused" | "completed" | "failed" | "cancelled";
+
+export type EncodeQueueItem = {
+  clientId: string;
+  jobId: string | null;
+  media: MediaInfo;
+  settings: EncodingSettings;
+  outputPath: string | null;
+  status: EncodeJobStatus;
+  progress: EncodeProgress;
   error: string | null;
 };
 

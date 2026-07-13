@@ -14,8 +14,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_ffmpeg_status,
             commands::probe_media,
-            commands::start_encode,
-            commands::cancel_encode
+            commands::enqueue_encodes,
+            commands::start_encode_queue,
+            commands::cancel_encode,
+            commands::set_encode_paused,
+            commands::move_queued_encode
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vidra");

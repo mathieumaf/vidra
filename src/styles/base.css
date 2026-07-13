@@ -29,7 +29,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(31, 113, 77,
 .primary-button:hover:not(:disabled) { background: var(--green-dark); }
 .primary-button:disabled { opacity: 0.48; cursor: not-allowed; }
 .secondary-button { border: 1px solid #d9dfda; background: #fff; }
-.secondary-button:hover { border-color: #b9c2bc; background: #f8faf8; }
+.secondary-button:hover:not(:disabled) { border-color: #b9c2bc; background: #f8faf8; }
+.secondary-button:disabled { opacity: 0.48; cursor: not-allowed; }
 .text-button { padding: 4px 6px; border: 0; background: transparent; font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; }
 .text-button.danger { color: #a6463d; }
 

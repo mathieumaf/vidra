@@ -12,12 +12,15 @@ The project currently targets macOS on Apple Silicon. Windows, Linux, and additi
 Current capabilities:
 
 - local media inspection with FFprobe;
+- multi-file selection and native drag and drop;
 - MP4 and MKV output with H.264 or H.265 video;
 - five codec-aware quality levels;
 - lossless audio stream copy when the selected container supports it;
 - source-aware audio bitrate caps for required transcoding;
 - MKV subtitle, chapter, and metadata preservation;
-- live progress with ETA, cancellation, queue state, and session history;
+- a sequential batch queue with reordering, pending-job removal, pause and resume, and current-job cancellation;
+- new videos can be prepared and appended while another job is running;
+- per-job progress with ETA and session history;
 - a fixed desktop interface with no browser-style page scrolling.
 
 ## Development
