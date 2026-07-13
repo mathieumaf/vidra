@@ -8,7 +8,6 @@ type SidebarProps = {
   status: FfmpegStatus | null;
   isReady: boolean;
   queueCount: number;
-  historyCount: number;
   onViewChange: (view: View) => void;
   onNewConversion: () => void;
 };
@@ -20,7 +19,6 @@ export function Sidebar({
   status,
   isReady,
   queueCount,
-  historyCount,
   onViewChange,
   onNewConversion,
 }: SidebarProps) {
@@ -52,7 +50,6 @@ export function Sidebar({
             <Icon name={item} />
             <span>{item[0].toUpperCase() + item.slice(1)}</span>
             {item === "queue" && queueCount > 0 && <span className="nav-badge">{queueCount}</span>}
-            {item === "history" && historyCount > 0 && <span className="nav-badge muted">{historyCount}</span>}
           </button>
         ))}
       </nav>

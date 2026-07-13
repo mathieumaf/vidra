@@ -1,6 +1,10 @@
 import type { EncodeQueueItem, View } from "../types/media";
 
-export function viewMeta(view: View, items: EncodeQueueItem[]): [string, string] {
+export function viewMeta(
+  view: View,
+  items: EncodeQueueItem[],
+  historyCount = 0,
+): [string, string] {
   switch (view) {
     case "convert":
       return [
@@ -25,7 +29,12 @@ export function viewMeta(view: View, items: EncodeQueueItem[]): [string, string]
       return ["Queue", "No active encoding jobs"];
     }
     case "history":
-      return ["History", "Recent conversions from this session"];
+      return [
+        "History",
+        historyCount > 0
+          ? `${historyCount} ${historyCount === 1 ? "conversion" : "conversions"} saved locally`
+          : "Finished conversions saved locally",
+      ];
     case "settings":
       return ["Settings", "Application and encoding engine"];
   }

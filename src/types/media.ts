@@ -95,6 +95,23 @@ export type EncodeQueueItem = {
   error: string | null;
 };
 
+export type HistoryStatus = "completed" | "failed" | "cancelled";
+
+export type HistoryEntry = {
+  id: string;
+  sourcePath: string;
+  sourceName: string;
+  outputPath: string;
+  status: HistoryStatus;
+  startedAtMs: number;
+  finishedAtMs: number;
+  mediaDurationSeconds: number;
+  sourceSizeBytes: number;
+  outputSizeBytes: number | null;
+  settings: EncodingSettings;
+  error: string | null;
+};
+
 export type ApiError = {
   code?: string;
   message?: string;

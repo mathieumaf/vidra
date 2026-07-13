@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileVideo,
+  FolderSearch,
   History,
   ListTodo,
   Music2,
@@ -11,12 +12,13 @@ import {
   Plus,
   Settings,
   ShieldCheck,
+  Trash2,
   X,
   type LucideIcon,
 } from "lucide-react";
 import type { View } from "../../types/media";
 
-export type IconName = View | "plus" | "file" | "shield" | "audio" | "up" | "down" | "remove" | "pause" | "resume";
+export type IconName = View | "plus" | "file" | "shield" | "audio" | "up" | "down" | "remove" | "pause" | "resume" | "reveal" | "delete";
 
 const icons: Record<IconName, LucideIcon> = {
   convert: ArrowRightLeft,
@@ -32,6 +34,8 @@ const icons: Record<IconName, LucideIcon> = {
   remove: X,
   pause: Pause,
   resume: Play,
+  reveal: FolderSearch,
+  delete: Trash2,
 };
 
 export function Icon({ name }: { name: IconName }) {

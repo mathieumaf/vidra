@@ -52,7 +52,6 @@ nav button { height: 38px; display: flex; align-items: center; gap: 10px; paddin
 nav button:hover { color: var(--ink); background: rgba(219, 225, 220, 0.62); }
 nav button.active { color: #1e5f43; background: #ddeae2; font-weight: var(--weight-semibold); }
 .nav-badge { min-width: 19px; height: 19px; display: grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 10px; color: #fff; background: var(--green); font-size: var(--text-caption); font-weight: var(--weight-bold); }
-.nav-badge.muted { color: #5d6861; background: #dce1dd; }
 .sidebar-spacer { flex: 1; min-height: 12px; }
 
 .privacy-note { display: flex; gap: 9px; margin: 0 7px 12px; color: #78817b; font-size: var(--text-caption); line-height: var(--leading-normal); }

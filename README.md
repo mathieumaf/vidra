@@ -20,7 +20,7 @@ Current capabilities:
 - MKV subtitle, chapter, and metadata preservation;
 - a sequential batch queue with reordering, pending-job removal, pause and resume, and current-job cancellation;
 - new videos can be prepared and appended while another job is running;
-- per-job progress with ETA and session history;
+- per-job progress with ETA and persistent local conversion history;
 - a fixed desktop interface with no browser-style page scrolling.
 
 ## Development
