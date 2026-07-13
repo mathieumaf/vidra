@@ -1,14 +1,17 @@
-import type { EncodeFinished, MediaInfo } from "../../types/media";
+import type { EncodeQueueItem } from "../../types/media";
 import { EmptyState } from "./shared";
 
 type HistoryViewProps = {
-  result: EncodeFinished | null;
-  media: MediaInfo | null;
+  items: EncodeQueueItem[];
   onGoToConvert: () => void;
 };
 
-export function HistoryView({ result, media, onGoToConvert }: HistoryViewProps) {
-  if (!result) {
+export function HistoryView({ items, onGoToConvert }: HistoryViewProps) {
+  const history = items.filter((item) => (
+    item.status === "completed" || item.status === "failed" || item.status === "cancelled"
+  ));
+
+  if (history.length === 0) {
     return (
       <div className="utility-view">
         <EmptyState
@@ -22,17 +25,19 @@ export function HistoryView({ result, media, onGoToConvert }: HistoryViewProps) 
   }
 
   return (
-    <div className="utility-view">
-      <section className="history-row">
-        <div className={`history-status ${result.status}`}>
-          {result.status === "completed" ? "✓" : "×"}
-        </div>
-        <div>
-          <strong>{media?.name ?? "Video conversion"}</strong>
-          <p>{result.status === "completed" ? result.outputPath : `Encoding ${result.status}`}</p>
-        </div>
-        <span>{result.status}</span>
-      </section>
+    <div className="history-view">
+      {[...history].reverse().map((item) => (
+        <section className="history-row" key={item.clientId}>
+          <div className={`history-status ${item.status}`}>
+            {item.status === "completed" ? "✓" : item.status === "failed" ? "!" : "×"}
+          </div>
+          <div>
+            <strong>{item.media.name}</strong>
+            <p>{item.status === "completed" ? item.outputPath : item.error ?? `Encoding ${item.status}`}</p>
+          </div>
+          <span>{item.status}</span>
+        </section>
+      ))}
     </div>
   );
 }

@@ -2,6 +2,7 @@ pub mod binary;
 pub mod encode;
 pub mod probe;
 mod progress;
+pub mod queue;
 
 use crate::error::{ApiError, ApiResult};
 use serde::{Deserialize, Serialize};
@@ -126,6 +127,27 @@ pub struct EncodeFinished {
     pub status: String,
     pub output_path: String,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedEncode {
+    pub job_id: String,
+    pub input_path: String,
+    pub output_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncodeStarted {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncodePauseChanged {
+    pub job_id: String,
+    pub paused: bool,
 }
 
 fn validate_input(path: &str) -> ApiResult<PathBuf> {

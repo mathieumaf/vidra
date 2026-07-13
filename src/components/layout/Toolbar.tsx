@@ -6,7 +6,7 @@ type ToolbarProps = {
   subtitle: string;
   hasMedia: boolean;
   isEncoding: boolean;
-  onReplaceSource: () => void;
+  onAddSources: () => void;
 };
 
 export function Toolbar({
@@ -15,7 +15,7 @@ export function Toolbar({
   subtitle,
   hasMedia,
   isEncoding,
-  onReplaceSource,
+  onAddSources,
 }: ToolbarProps) {
   return (
     <header className="toolbar">
@@ -24,8 +24,8 @@ export function Toolbar({
         <p>{subtitle}</p>
       </div>
       {view === "convert" && hasMedia && !isEncoding && (
-        <button className="toolbar-button" type="button" onClick={onReplaceSource}>
-          Replace source
+        <button className="toolbar-button" type="button" onClick={onAddSources}>
+          Add videos
         </button>
       )}
     </header>

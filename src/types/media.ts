@@ -51,6 +51,33 @@ export type EncodeFinished = {
   error: string | null;
 };
 
+export type EncodeStarted = {
+  jobId: string;
+};
+
+export type EncodePauseChanged = {
+  jobId: string;
+  paused: boolean;
+};
+
+export type QueuedEncode = {
+  jobId: string;
+  inputPath: string;
+  outputPath: string;
+};
+
+export type EncodeJobStatus = "ready" | "queued" | "encoding" | "paused" | "completed" | "failed" | "cancelled";
+
+export type EncodeQueueItem = {
+  clientId: string;
+  jobId: string | null;
+  media: MediaInfo;
+  outputPath: string | null;
+  status: EncodeJobStatus;
+  progress: EncodeProgress;
+  error: string | null;
+};
+
 export type ApiError = {
   code?: string;
   message?: string;

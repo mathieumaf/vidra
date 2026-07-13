@@ -1,16 +1,21 @@
 import {
   ArrowRightLeft,
+  ChevronDown,
+  ChevronUp,
   FileVideo,
   History,
   ListTodo,
+  Pause,
+  Play,
   Plus,
   Settings,
   ShieldCheck,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import type { View } from "../../types/media";
 
-export type IconName = View | "plus" | "file" | "shield";
+export type IconName = View | "plus" | "file" | "shield" | "up" | "down" | "remove" | "pause" | "resume";
 
 const icons: Record<IconName, LucideIcon> = {
   convert: ArrowRightLeft,
@@ -20,6 +25,11 @@ const icons: Record<IconName, LucideIcon> = {
   plus: Plus,
   file: FileVideo,
   shield: ShieldCheck,
+  up: ChevronUp,
+  down: ChevronDown,
+  remove: X,
+  pause: Pause,
+  resume: Play,
 };
 
 export function Icon({ name }: { name: IconName }) {

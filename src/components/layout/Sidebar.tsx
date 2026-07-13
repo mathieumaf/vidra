@@ -1,14 +1,14 @@
 import { Icon } from "../ui/Icon";
 import vidraMark from "../../assets/vidra-mark.svg";
-import type { EncodeFinished, FfmpegStatus, View } from "../../types/media";
+import type { FfmpegStatus, View } from "../../types/media";
 import { DragRegion } from "./DragRegion";
 
 type SidebarProps = {
   view: View;
   status: FfmpegStatus | null;
   isReady: boolean;
-  isEncoding: boolean;
-  result: EncodeFinished | null;
+  queueCount: number;
+  historyCount: number;
   onViewChange: (view: View) => void;
   onNewConversion: () => void;
 };
@@ -19,8 +19,8 @@ export function Sidebar({
   view,
   status,
   isReady,
-  isEncoding,
-  result,
+  queueCount,
+  historyCount,
   onViewChange,
   onNewConversion,
 }: SidebarProps) {
@@ -36,7 +36,6 @@ export function Sidebar({
         className="new-conversion"
         type="button"
         onClick={onNewConversion}
-        disabled={isEncoding}
       >
         <Icon name="plus" />
         <span>New conversion</span>
@@ -52,8 +51,8 @@ export function Sidebar({
           >
             <Icon name={item} />
             <span>{item[0].toUpperCase() + item.slice(1)}</span>
-            {item === "queue" && isEncoding && <span className="nav-badge">1</span>}
-            {item === "history" && result && <span className="nav-badge muted">1</span>}
+            {item === "queue" && queueCount > 0 && <span className="nav-badge">{queueCount}</span>}
+            {item === "history" && historyCount > 0 && <span className="nav-badge muted">{historyCount}</span>}
           </button>
         ))}
       </nav>

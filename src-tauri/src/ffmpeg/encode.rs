@@ -1,16 +1,14 @@
 use super::{
-    probe, progress::ProgressParser, validate_input, validate_output, AudioStream, EncodeFinished,
-    EncodeRequest, OutputContainer, QualityLevel, VideoCodec,
+    validate_input, validate_output, AudioStream, OutputContainer, QualityLevel, VideoCodec,
 };
 use crate::{
     error::{ApiError, ApiResult},
-    jobs::{ActiveJob, JobManager},
+    jobs::PendingJob,
 };
-use std::collections::VecDeque;
-use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use tauri::AppHandle;
+use tauri_plugin_shell::ShellExt;
 
-const MAX_ERROR_LINES: usize = 8;
+const GLOBAL_ARGUMENTS: [&str; 4] = ["-hide_banner", "-nostdin", "-y", "-i"];
 
 fn audio_bitrate_cap(stream: &AudioStream) -> u64 {
     let default_cap = match stream.channels.unwrap_or(2) {
@@ -84,29 +82,17 @@ fn video_arguments(
     arguments
 }
 
-pub async fn start(app: AppHandle, jobs: &JobManager, request: EncodeRequest) -> ApiResult<String> {
-    let input = validate_input(&request.input_path)?;
-    let output = validate_output(&request.output_path, &input, request.container)?;
-    let media = probe::media(&app, &request.input_path).await?;
-
-    let mut active = jobs
-        .active
-        .lock()
-        .map_err(|_| ApiError::new("job_state_error", "Unable to access the job state."))?;
-
-    if active.is_some() {
-        return Err(ApiError::new(
-            "encode_in_progress",
-            "Another encoding job is already running.",
-        ));
-    }
-
-    let job_id = jobs.next_id();
+pub(super) fn build_command(
+    app: &AppHandle,
+    job: &PendingJob,
+) -> ApiResult<tauri_plugin_shell::process::Command> {
+    let input = validate_input(&job.request.input_path)?;
+    let output = validate_output(&job.request.output_path, &input, job.request.container)?;
     let mut command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|error| ApiError::ffmpeg(error.to_string()))?
-        .args(["-hide_banner", "-y", "-i"])
+        .args(GLOBAL_ARGUMENTS)
         .arg(input.as_os_str())
         .args([
             "-map",
@@ -119,135 +105,26 @@ pub async fn start(app: AppHandle, jobs: &JobManager, request: EncodeRequest) ->
             "0",
         ])
         .args(video_arguments(
-            request.container,
-            request.video_codec,
-            request.quality,
+            job.request.container,
+            job.request.video_codec,
+            job.request.quality,
         ));
 
-    if request.container == OutputContainer::Mkv {
+    if job.request.container == OutputContainer::Mkv {
         command = command.args(["-map", "0:s?", "-c:s", "copy"]);
     }
 
-    command = add_audio_arguments(command, &media.audio, request.container);
-    command = command
-        .args(["-progress", "pipe:1", "-nostats"])
-        .arg(output.as_os_str())
-        .env("AV_LOG_FORCE_NOCOLOR", "1");
-    let (mut receiver, child) = command
-        .spawn()
-        .map_err(|error| ApiError::ffmpeg(error.to_string()))?;
-
-    *active = Some(ActiveJob {
-        id: job_id.clone(),
-        child,
-    });
-    drop(active);
-
-    let task_app = app.clone();
-    let task_job_id = job_id.clone();
-    let output_path = output.to_string_lossy().into_owned();
-    let duration_seconds = media.duration_seconds;
-
-    tauri::async_runtime::spawn(async move {
-        let mut progress = ProgressParser::default();
-        let mut errors = VecDeque::with_capacity(MAX_ERROR_LINES);
-        let mut exit_code = None;
-
-        while let Some(event) = receiver.recv().await {
-            match event {
-                CommandEvent::Stdout(bytes) => {
-                    let line = String::from_utf8_lossy(&bytes);
-                    if let Some(payload) = progress.update(&task_job_id, duration_seconds, &line) {
-                        let _ = task_app.emit("encode-progress", payload);
-                    }
-                }
-                CommandEvent::Stderr(bytes) => {
-                    if errors.len() == MAX_ERROR_LINES {
-                        errors.pop_front();
-                    }
-                    errors.push_back(String::from_utf8_lossy(&bytes).into_owned());
-                }
-                CommandEvent::Error(error) => {
-                    if errors.len() == MAX_ERROR_LINES {
-                        errors.pop_front();
-                    }
-                    errors.push_back(error);
-                }
-                CommandEvent::Terminated(payload) => exit_code = payload.code,
-                _ => {}
-            }
-        }
-
-        let manager = task_app.state::<JobManager>();
-        if let Ok(mut active) = manager.active.lock() {
-            if active.as_ref().map(|job| job.id.as_str()) == Some(task_job_id.as_str()) {
-                active.take();
-            }
-        }
-
-        let cancelled = manager.take_cancelled(&task_job_id);
-        let error = (!cancelled && exit_code != Some(0)).then(|| {
-            let message = errors.into_iter().collect::<Vec<_>>().join("\n");
-            if message.trim().is_empty() {
-                format!("FFmpeg exited with code {:?}.", exit_code)
-            } else {
-                message
-            }
-        });
-        let status = if cancelled {
-            "cancelled"
-        } else if exit_code == Some(0) {
-            "completed"
-        } else {
-            "failed"
-        };
-
-        if status != "completed" {
-            let _ = std::fs::remove_file(&output_path);
-        }
-
-        let _ = task_app.emit(
-            "encode-finished",
-            EncodeFinished {
-                job_id: task_job_id,
-                status: status.to_owned(),
-                output_path,
-                error,
-            },
-        );
-    });
-
-    Ok(job_id)
-}
-
-pub fn cancel(jobs: &JobManager, job_id: &str) -> ApiResult<()> {
-    let child = {
-        let mut active = jobs
-            .active
-            .lock()
-            .map_err(|_| ApiError::new("job_state_error", "Unable to access the job state."))?;
-
-        match active.as_ref() {
-            Some(job) if job.id == job_id => active.take().map(|job| job.child),
-            Some(_) => {
-                return Err(ApiError::invalid_input(
-                    "The requested encoding job is not active.",
-                ))
-            }
-            None => return Err(ApiError::invalid_input("There is no active encoding job.")),
-        }
-    };
-
-    jobs.mark_cancelled(job_id)?;
-    child
-        .expect("an active job must own a child process")
-        .kill()
-        .map_err(|error| ApiError::ffmpeg(format!("Unable to cancel FFmpeg: {error}")))
+    Ok(
+        add_audio_arguments(command, &job.media.audio, job.request.container)
+            .args(["-progress", "pipe:1", "-nostats"])
+            .arg(output.as_os_str())
+            .env("AV_LOG_FORCE_NOCOLOR", "1"),
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{audio_bitrate_cap, video_arguments};
+    use super::{audio_bitrate_cap, video_arguments, GLOBAL_ARGUMENTS};
     use crate::ffmpeg::{AudioStream, OutputContainer, QualityLevel, VideoCodec};
 
     fn audio(codec: &str, channels: u32, bit_rate: Option<u64>) -> AudioStream {
@@ -305,5 +182,10 @@ mod tests {
 
         assert!(!arguments.contains(&"-movflags"));
         assert!(!arguments.contains(&"-tag:v"));
+    }
+
+    #[test]
+    fn ffmpeg_does_not_read_from_the_controlling_terminal() {
+        assert!(GLOBAL_ARGUMENTS.contains(&"-nostdin"));
     }
 }

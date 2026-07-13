@@ -8,6 +8,7 @@ import { QualitySlider } from "./QualitySlider";
 
 type ConvertViewProps = {
   media: MediaInfo | null;
+  mediaCount: number;
   status: FfmpegStatus | null;
   qualityIndex: number;
   outputContainer: OutputContainer;
@@ -15,6 +16,7 @@ type ConvertViewProps = {
   isReady: boolean;
   isProbing: boolean;
   isEncoding: boolean;
+  isPaused: boolean;
   progress: EncodeProgress;
   result: EncodeFinished | null;
   error: string | null;
@@ -23,11 +25,13 @@ type ConvertViewProps = {
   onOutputContainerChange: (container: OutputContainer) => void;
   onVideoCodecChange: (codec: VideoCodec) => void;
   onStartEncoding: () => void;
+  onTogglePause: () => void;
   onCancelEncoding: () => void;
 };
 
 export function ConvertView({
   media,
+  mediaCount,
   status,
   qualityIndex,
   outputContainer,
@@ -35,6 +39,7 @@ export function ConvertView({
   isReady,
   isProbing,
   isEncoding,
+  isPaused,
   progress,
   result,
   error,
@@ -43,6 +48,7 @@ export function ConvertView({
   onOutputContainerChange,
   onVideoCodecChange,
   onStartEncoding,
+  onTogglePause,
   onCancelEncoding,
 }: ConvertViewProps) {
   if (!media) {
@@ -61,8 +67,8 @@ export function ConvertView({
             disabled={!isReady || isProbing}
           >
             <span className="file-icon"><Icon name="file" /></span>
-            <span className="picker-title">{isProbing ? "Reading video…" : "Choose a video"}</span>
-            <span className="picker-copy">MP4, MOV, MKV, WebM, AVI and more</span>
+            <span className="picker-title">{isProbing ? "Reading videos…" : "Choose videos"}</span>
+            <span className="picker-copy">Select or drop one or more videos</span>
             <span className="picker-action">Browse files</span>
           </button>
         </div>
@@ -80,7 +86,7 @@ export function ConvertView({
   return (
     <div className="convert-view">
       <div className="conversion-workspace">
-        <MediaSourceCard media={media} />
+        <MediaSourceCard media={media} count={mediaCount} />
         <EncodingOptions
           container={outputContainer}
           videoCodec={videoCodec}
@@ -100,14 +106,18 @@ export function ConvertView({
           <div>
             <span className="section-label">AUDIO PROTECTION</span>
             <strong>
-              {outputContainer === "mkv" && audioWillCopy
+              {mediaCount > 1
+                ? "Audio protected for every video"
+                : outputContainer === "mkv" && audioWillCopy
                 ? "All audio tracks preserved"
                 : audioWillCopy
                   ? "Original audio preserved"
                   : "Source bitrate protected"}
             </strong>
             <p>
-              {outputContainer === "mkv" && audioWillCopy
+              {mediaCount > 1
+                ? "Compatible tracks are copied without quality loss; required conversions never exceed the known source bitrate."
+                : outputContainer === "mkv" && audioWillCopy
                 ? "MKV keeps the original audio without quality loss. Compatible subtitles, metadata and chapters are preserved."
                 : audioWillCopy
                 ? `Compatible AAC audio will be copied without quality loss${primaryAudio ? ` · ${formatBitrate(primaryAudio.bitRate)}` : ""}.`
@@ -116,14 +126,14 @@ export function ConvertView({
           </div>
         </section>
 
-        {isEncoding && <EncodingProgress progress={progress} />}
-        {result?.status === "completed" && (
+        {isEncoding && <EncodingProgress progress={progress} isPaused={isPaused} />}
+        {!isEncoding && result?.status === "completed" && (
           <div className="success-message">
             <span>✓</span>
             <div><strong>Encoding complete</strong><p>{result.outputPath}</p></div>
           </div>
         )}
-        {result?.status === "cancelled" && (
+        {!isEncoding && result?.status === "cancelled" && (
           <div className="notice-message">Encoding cancelled. The partial output was removed.</div>
         )}
         {error && <div className="error-message" role="alert">{error}</div>}
@@ -131,12 +141,17 @@ export function ConvertView({
         <div className="conversion-actions">
           <span>Output <strong>{outputContainer.toUpperCase()} · {videoCodec === "h264" ? "H.264" : "H.265"}</strong></span>
           {isEncoding ? (
-            <button className="secondary-button" type="button" onClick={onCancelEncoding}>
-              Cancel encoding
-            </button>
+            <div className="conversion-action-buttons">
+              <button className="secondary-button" type="button" onClick={onTogglePause}>
+                {isPaused ? "Resume encoding" : "Pause encoding"}
+              </button>
+              <button className="secondary-button danger-button" type="button" onClick={onCancelEncoding}>
+                Cancel current
+              </button>
+            </div>
           ) : (
             <button className="primary-button" type="button" onClick={onStartEncoding} disabled={!isReady}>
-              Choose output and encode <span>→</span>
+              {mediaCount > 1 ? `Choose folder and encode ${mediaCount} videos` : "Choose output and encode"} <span>→</span>
             </button>
           )}
         </div>
@@ -146,11 +161,11 @@ export function ConvertView({
   );
 }
 
-function EncodingProgress({ progress }: { progress: EncodeProgress }) {
+function EncodingProgress({ progress, isPaused }: { progress: EncodeProgress; isPaused: boolean }) {
   return (
     <section className="progress-panel">
       <div className="progress-heading">
-        <span>Encoding video</span>
+        <span>{isPaused ? "Encoding paused" : "Encoding video"}</span>
         <strong>{Math.round(progress.percent)}%</strong>
       </div>
       <div className="progress-track">
@@ -158,7 +173,7 @@ function EncodingProgress({ progress }: { progress: EncodeProgress }) {
       </div>
       <div className="progress-meta">
         <span>{formatDuration(progress.outTimeSeconds)} processed</span>
-        <span>{progress.speed ? `${progress.speed} · ` : ""}{formatEta(progress.etaSeconds)}</span>
+        <span>{isPaused ? "Paused" : <>{progress.speed ? `${progress.speed} · ` : ""}{formatEta(progress.etaSeconds)}</>}</span>
       </div>
     </section>
   );

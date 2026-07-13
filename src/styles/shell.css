@@ -6,6 +6,9 @@
   overflow: hidden;
   background: var(--canvas);
 }
+.file-drop-overlay { position: fixed; inset: 12px; z-index: 100; display: grid; place-items: center; border: 2px dashed rgba(31, 113, 77, 0.58); border-radius: 18px; background: rgba(239, 248, 242, 0.9); backdrop-filter: blur(8px); pointer-events: none; }
+.file-drop-overlay > div { display: flex; align-items: center; gap: 10px; padding: 14px 17px; border: 1px solid #cfe0d5; border-radius: 12px; color: var(--green); background: #fff; box-shadow: 0 12px 35px rgba(33, 73, 51, 0.12); font-size: var(--text-ui); }
+.file-drop-overlay svg { width: var(--icon-medium); height: var(--icon-medium); }
 
 .sidebar {
   min-height: 0;
