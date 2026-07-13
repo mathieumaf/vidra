@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AudioMode,
+  EncodingSpeed,
   EncodingSettings,
   FfmpegStatus,
   MediaInfo,
@@ -14,6 +16,8 @@ export type EncodeRequest = {
   quality: EncodingSettings["quality"];
   container: OutputContainer;
   videoCodec: VideoCodec;
+  encodingSpeed: EncodingSpeed;
+  audioMode: AudioMode;
 };
 
 export function getFfmpegStatus(): Promise<FfmpegStatus> {

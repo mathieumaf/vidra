@@ -20,6 +20,8 @@ import {
   startEncodeQueue,
 } from "../services/encoding";
 import type {
+  AudioMode,
+  EncodingSpeed,
   EncodingSettings,
   EncodeFinished,
   EncodePauseChanged,
@@ -49,6 +51,8 @@ type EncodingQueueOptions = {
   quality: QualityLevel;
   outputContainer: OutputContainer;
   videoCodec: VideoCodec;
+  encodingSpeed: EncodingSpeed;
+  audioMode: AudioMode;
 };
 
 export function useEncodingQueue({
@@ -56,6 +60,8 @@ export function useEncodingQueue({
   quality,
   outputContainer,
   videoCodec,
+  encodingSpeed,
+  audioMode,
 }: EncodingQueueOptions) {
   const [items, setItems] = useState<EncodeQueueItem[]>([]);
   const [isProbing, setIsProbing] = useState(false);
@@ -67,6 +73,8 @@ export function useEncodingQueue({
     quality: quality.id,
     container: outputContainer,
     videoCodec,
+    encodingSpeed,
+    audioMode,
   });
 
   useEffect(() => {
@@ -74,8 +82,10 @@ export function useEncodingQueue({
       quality: quality.id,
       container: outputContainer,
       videoCodec,
+      encodingSpeed,
+      audioMode,
     };
-  }, [quality.id, outputContainer, videoCodec]);
+  }, [quality.id, outputContainer, videoCodec, encodingSpeed, audioMode]);
 
   useEffect(() => {
     const subscriptions = Promise.all([
@@ -264,6 +274,8 @@ export function useEncodingQueue({
         quality: item.settings.quality,
         container: item.settings.container,
         videoCodec: item.settings.videoCodec,
+        encodingSpeed: item.settings.encodingSpeed,
+        audioMode: item.settings.audioMode,
       })));
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),

@@ -36,6 +36,7 @@ pub async fn enqueue(
         }
 
         let media = probe::media(&app, &request.input_path).await?;
+        encode::validate_settings(&request, &media)?;
         request.input_path = input.to_string_lossy().into_owned();
         request.output_path = output.to_string_lossy().into_owned();
         prepared.push((request, media));

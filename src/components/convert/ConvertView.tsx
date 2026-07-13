@@ -1,7 +1,14 @@
-import { formatBitrate, formatDuration, formatEta } from "../../lib/format";
+import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
+import { formatDuration, formatEta } from "../../lib/format";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
-import type { OutputContainer, VideoCodec } from "../../types/media";
+import type {
+  AudioMode,
+  EncodingSpeed,
+  OutputContainer,
+  VideoCodec,
+} from "../../types/media";
 import { Icon } from "../ui/Icon";
+import { AudioOptions } from "./AudioOptions";
 import { EncodingOptions } from "./EncodingOptions";
 import { MediaSourceCard } from "./MediaSourceCard";
 import { QualitySlider } from "./QualitySlider";
@@ -13,6 +20,8 @@ type ConvertViewProps = {
   qualityIndex: number;
   outputContainer: OutputContainer;
   videoCodec: VideoCodec;
+  encodingSpeed: EncodingSpeed;
+  audioMode: AudioMode;
   isReady: boolean;
   isProbing: boolean;
   isActive: boolean;
@@ -26,6 +35,8 @@ type ConvertViewProps = {
   onQualityChange: (qualityIndex: number) => void;
   onOutputContainerChange: (container: OutputContainer) => void;
   onVideoCodecChange: (codec: VideoCodec) => void;
+  onEncodingSpeedChange: (speed: EncodingSpeed) => void;
+  onAudioModeChange: (mode: AudioMode) => void;
   onStartEncoding: () => void;
   onTogglePause: () => void;
   onCancelEncoding: () => void;
@@ -38,6 +49,8 @@ export function ConvertView({
   qualityIndex,
   outputContainer,
   videoCodec,
+  encodingSpeed,
+  audioMode,
   isReady,
   isProbing,
   isActive,
@@ -51,6 +64,8 @@ export function ConvertView({
   onQualityChange,
   onOutputContainerChange,
   onVideoCodecChange,
+  onEncodingSpeedChange,
+  onAudioModeChange,
   onStartEncoding,
   onTogglePause,
   onCancelEncoding,
@@ -82,68 +97,56 @@ export function ConvertView({
     );
   }
 
-  const primaryAudio = media.audio[0] ?? null;
-  const audioWillCopy =
-    media.audio.length > 0 &&
-    (outputContainer === "mkv" || media.audio.every((stream) => stream.codec.toLowerCase() === "aac"));
-
   return (
     <div className="convert-view">
       <div className="conversion-workspace">
-        <MediaSourceCard media={media} count={mediaCount} />
-        <EncodingOptions
-          container={outputContainer}
-          videoCodec={videoCodec}
-          disabled={!canEdit}
-          onContainerChange={onOutputContainerChange}
-          onVideoCodecChange={onVideoCodecChange}
-        />
-        <QualitySlider
-          qualityIndex={qualityIndex}
-          videoCodec={videoCodec}
-          disabled={!canEdit}
-          onChange={onQualityChange}
-        />
+        <div className="conversion-content">
+          <MediaSourceCard media={media} count={mediaCount} />
+          <EncodingOptions
+            container={outputContainer}
+            videoCodec={videoCodec}
+            encodingSpeed={encodingSpeed}
+            disabled={!canEdit}
+            onContainerChange={onOutputContainerChange}
+            onVideoCodecChange={onVideoCodecChange}
+            onEncodingSpeedChange={onEncodingSpeedChange}
+          />
+          <QualitySlider
+            qualityIndex={qualityIndex}
+            videoCodec={videoCodec}
+            encodingSpeed={encodingSpeed}
+            disabled={!canEdit}
+            onChange={onQualityChange}
+          />
 
-        <section className="audio-card">
-          <div className="audio-icon">♪</div>
-          <div>
-            <span className="section-label">AUDIO PROTECTION</span>
-            <strong>
-              {mediaCount > 1
-                ? "Audio protected for every video"
-                : outputContainer === "mkv" && audioWillCopy
-                ? "All audio tracks preserved"
-                : audioWillCopy
-                  ? "Original audio preserved"
-                  : "Source bitrate protected"}
-            </strong>
-            <p>
-              {mediaCount > 1
-                ? "Compatible tracks are copied without quality loss; required conversions never exceed the known source bitrate."
-                : outputContainer === "mkv" && audioWillCopy
-                ? "MKV keeps the original audio without quality loss. Compatible subtitles, metadata and chapters are preserved."
-                : audioWillCopy
-                ? `Compatible AAC audio will be copied without quality loss${primaryAudio ? ` · ${formatBitrate(primaryAudio.bitRate)}` : ""}.`
-                : "Audio conversion will never exceed the known source bitrate."}
-            </p>
-          </div>
-        </section>
+          <AudioOptions
+            audio={media.audio}
+            container={outputContainer}
+            mode={audioMode}
+            disabled={!canEdit}
+            onChange={onAudioModeChange}
+          />
+
+          {!isActive && result?.status === "completed" && (
+            <div className="success-message">
+              <span>✓</span>
+              <div><strong>Encoding complete</strong><p>{result.outputPath}</p></div>
+            </div>
+          )}
+          {!isActive && result?.status === "cancelled" && (
+            <div className="notice-message">Encoding cancelled. The partial output was removed.</div>
+          )}
+          {error && <div className="error-message" role="alert">{error}</div>}
+        </div>
 
         {isActive && <EncodingProgress progress={progress} isPaused={isPaused} />}
-        {!isActive && result?.status === "completed" && (
-          <div className="success-message">
-            <span>✓</span>
-            <div><strong>Encoding complete</strong><p>{result.outputPath}</p></div>
-          </div>
-        )}
-        {!isActive && result?.status === "cancelled" && (
-          <div className="notice-message">Encoding cancelled. The partial output was removed.</div>
-        )}
-        {error && <div className="error-message" role="alert">{error}</div>}
 
         <div className="conversion-actions">
-          <span>Output <strong>{outputContainer.toUpperCase()} · {videoCodec === "h264" ? "H.264" : "H.265"}</strong></span>
+          <span>
+            Output <strong>
+              {outputContainer.toUpperCase()} · {videoCodecLabel(videoCodec)} · {audioMode === "none" ? "No audio" : `${audioModeLabel(audioMode)} audio`}
+            </strong>
+          </span>
           {isActive ? (
             <div className="conversion-action-buttons">
               <button

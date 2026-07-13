@@ -8,9 +8,18 @@ import { HistoryView } from "../components/views/HistoryView";
 import { QueueView } from "../components/views/QueueView";
 import { SettingsView } from "../components/views/SettingsView";
 import { QUALITY_LEVELS } from "../config/quality";
+import { canCopyAudioToMp4, canCopyVideoToMp4 } from "../config/encoding";
 import { useEncodingQueue } from "../hooks/useEncodingQueue";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
-import type { EncodeQueueItem, OutputContainer, VideoCodec, View } from "../types/media";
+import type {
+  AudioMode,
+  EncodeQueueItem,
+  EncodingSettings,
+  EncodingSpeed,
+  OutputContainer,
+  VideoCodec,
+  View,
+} from "../types/media";
 import { viewMeta } from "./viewMeta";
 import "../styles/tokens.css";
 import "../styles/base.css";
@@ -23,9 +32,18 @@ export default function App() {
   const [qualityIndex, setQualityIndex] = useState(2);
   const [outputContainer, setOutputContainer] = useState<OutputContainer>("mp4");
   const [videoCodec, setVideoCodec] = useState<VideoCodec>("h264");
+  const [encodingSpeed, setEncodingSpeed] = useState<EncodingSpeed>("efficient");
+  const [audioMode, setAudioMode] = useState<AudioMode>("auto");
   const { status, isReady } = useFfmpegStatus();
   const quality = QUALITY_LEVELS[qualityIndex];
-  const queue = useEncodingQueue({ isReady, quality, outputContainer, videoCodec });
+  const queue = useEncodingQueue({
+    isReady,
+    quality,
+    outputContainer,
+    videoCodec,
+    encodingSpeed,
+    audioMode,
+  });
   const [title, subtitle] = viewMeta(view, queue.items);
 
   async function addVideos(preferredView: View) {
@@ -46,37 +64,76 @@ export default function App() {
     await addVideos("convert");
   }
 
-  function changeOutputContainer(container: OutputContainer) {
-    setOutputContainer(container);
+  function commitSettings(settings: EncodingSettings) {
+    const index = QUALITY_LEVELS.findIndex((level) => level.id === settings.quality);
+    setQualityIndex(index >= 0 ? index : 2);
+    setOutputContainer(settings.container);
+    setVideoCodec(settings.videoCodec);
+    setEncodingSpeed(settings.encodingSpeed);
+    setAudioMode(settings.audioMode);
     if (queue.primaryItem?.status === "ready") {
-      queue.updateItemSettings(queue.primaryItem, {
-        ...queue.primaryItem.settings,
-        container,
-      });
+      queue.updateItemSettings(queue.primaryItem, settings);
     }
     queue.setError(null);
+  }
+
+  function currentSettings(): EncodingSettings {
+    return {
+      quality: quality.id,
+      container: outputContainer,
+      videoCodec,
+      encodingSpeed,
+      audioMode,
+    };
+  }
+
+  function changeOutputContainer(container: OutputContainer) {
+    const media = queue.primaryItem?.media;
+    const incompatibleVideoCopy = videoCodec === "copy"
+      && container === "mp4"
+      && !canCopyVideoToMp4(media?.video ?? null);
+    const incompatibleAudioCopy = audioMode === "copy"
+      && container === "mp4"
+      && !canCopyAudioToMp4(media?.audio ?? []);
+    commitSettings({
+      ...currentSettings(),
+      container,
+      videoCodec: videoCodec === "av1" || incompatibleVideoCopy ? "h264" : videoCodec,
+      encodingSpeed: videoCodec === "av1" || incompatibleVideoCopy ? "efficient" : encodingSpeed,
+      audioMode: audioMode === "opus" || incompatibleAudioCopy ? "auto" : audioMode,
+    });
   }
 
   function changeVideoCodec(codec: VideoCodec) {
-    setVideoCodec(codec);
-    if (queue.primaryItem?.status === "ready") {
-      queue.updateItemSettings(queue.primaryItem, {
-        ...queue.primaryItem.settings,
-        videoCodec: codec,
-      });
-    }
-    queue.setError(null);
+    const needsMkv = codec === "av1"
+      || (codec === "copy" && !canCopyVideoToMp4(queue.primaryItem?.media.video ?? null));
+    commitSettings({
+      ...currentSettings(),
+      container: needsMkv ? "mkv" : outputContainer,
+      videoCodec: codec,
+      encodingSpeed: codec === "copy" || codec === "av1" ? "efficient" : encodingSpeed,
+    });
+  }
+
+  function changeEncodingSpeed(speed: EncodingSpeed) {
+    commitSettings({ ...currentSettings(), encodingSpeed: speed });
+  }
+
+  function changeAudioMode(mode: AudioMode) {
+    const needsMkv = mode === "opus"
+      || (mode === "copy" && !canCopyAudioToMp4(queue.primaryItem?.media.audio ?? []));
+    commitSettings({
+      ...currentSettings(),
+      container: needsMkv ? "mkv" : outputContainer,
+      audioMode: mode,
+    });
   }
 
   function changeQuality(qualityIndex: number) {
-    setQualityIndex(qualityIndex);
-    if (queue.primaryItem?.status === "ready") {
-      queue.updateItemSettings(queue.primaryItem, {
-        ...queue.primaryItem.settings,
-        quality: QUALITY_LEVELS[qualityIndex].id,
-      });
-    }
-    queue.setError(null);
+    commitSettings({
+      ...currentSettings(),
+      quality: QUALITY_LEVELS[qualityIndex].id,
+    });
   }
 
   function editItem(item: EncodeQueueItem) {
@@ -85,6 +142,8 @@ export default function App() {
     setQualityIndex(index >= 0 ? index : 2);
     setOutputContainer(item.settings.container);
     setVideoCodec(item.settings.videoCodec);
+    setEncodingSpeed(item.settings.encodingSpeed);
+    setAudioMode(item.settings.audioMode);
     setView("convert");
   }
 
@@ -124,6 +183,8 @@ export default function App() {
               qualityIndex={qualityIndex}
               outputContainer={outputContainer}
               videoCodec={videoCodec}
+              encodingSpeed={encodingSpeed}
+              audioMode={audioMode}
               isReady={isReady}
               isProbing={queue.isProbing}
               isActive={isPrimaryActive}
@@ -137,6 +198,8 @@ export default function App() {
               onQualityChange={changeQuality}
               onOutputContainerChange={changeOutputContainer}
               onVideoCodecChange={changeVideoCodec}
+              onEncodingSpeedChange={changeEncodingSpeed}
+              onAudioModeChange={changeAudioMode}
               onStartEncoding={() => void startEncoding()}
               onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
               onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}

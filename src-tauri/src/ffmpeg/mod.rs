@@ -60,18 +60,34 @@ pub enum QualityLevel {
 }
 
 impl QualityLevel {
-    pub fn crf(self, codec: VideoCodec) -> &'static str {
+    pub fn crf(self, codec: VideoCodec) -> Option<&'static str> {
         match (codec, self) {
-            (VideoCodec::H264, Self::MaximumCompression) => "30",
-            (VideoCodec::H264, Self::SmallerFile) => "26",
-            (VideoCodec::H264, Self::Balanced) => "22",
-            (VideoCodec::H264, Self::HighQuality) => "19",
-            (VideoCodec::H264, Self::NearSource) => "17",
-            (VideoCodec::H265, Self::MaximumCompression) => "34",
-            (VideoCodec::H265, Self::SmallerFile) => "30",
-            (VideoCodec::H265, Self::Balanced) => "26",
-            (VideoCodec::H265, Self::HighQuality) => "23",
-            (VideoCodec::H265, Self::NearSource) => "21",
+            (VideoCodec::H264, Self::MaximumCompression) => Some("30"),
+            (VideoCodec::H264, Self::SmallerFile) => Some("26"),
+            (VideoCodec::H264, Self::Balanced) => Some("22"),
+            (VideoCodec::H264, Self::HighQuality) => Some("19"),
+            (VideoCodec::H264, Self::NearSource) => Some("17"),
+            (VideoCodec::H265, Self::MaximumCompression) => Some("34"),
+            (VideoCodec::H265, Self::SmallerFile) => Some("30"),
+            (VideoCodec::H265, Self::Balanced) => Some("26"),
+            (VideoCodec::H265, Self::HighQuality) => Some("23"),
+            (VideoCodec::H265, Self::NearSource) => Some("21"),
+            (VideoCodec::Av1, Self::MaximumCompression) => Some("45"),
+            (VideoCodec::Av1, Self::SmallerFile) => Some("39"),
+            (VideoCodec::Av1, Self::Balanced) => Some("33"),
+            (VideoCodec::Av1, Self::HighQuality) => Some("27"),
+            (VideoCodec::Av1, Self::NearSource) => Some("23"),
+            (VideoCodec::Copy, _) => None,
+        }
+    }
+
+    pub fn videotoolbox_quality(self) -> &'static str {
+        match self {
+            Self::MaximumCompression => "35",
+            Self::SmallerFile => "50",
+            Self::Balanced => "65",
+            Self::HighQuality => "80",
+            Self::NearSource => "90",
         }
     }
 }
@@ -95,8 +111,27 @@ impl OutputContainer {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum VideoCodec {
+    Copy,
     H264,
     H265,
+    Av1,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum EncodingSpeed {
+    Efficient,
+    Fast,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioMode {
+    Auto,
+    Copy,
+    Aac,
+    Opus,
+    None,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,6 +142,8 @@ pub struct EncodeRequest {
     pub quality: QualityLevel,
     pub container: OutputContainer,
     pub video_codec: VideoCodec,
+    pub encoding_speed: EncodingSpeed,
+    pub audio_mode: AudioMode,
 }
 
 #[derive(Debug, Clone, Serialize)]

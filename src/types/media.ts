@@ -1,6 +1,8 @@
 export type View = "convert" | "queue" | "history" | "settings";
 export type OutputContainer = "mp4" | "mkv";
-export type VideoCodec = "h264" | "h265";
+export type VideoCodec = "copy" | "h264" | "h265" | "av1";
+export type EncodingSpeed = "efficient" | "fast";
+export type AudioMode = "auto" | "copy" | "aac" | "opus" | "none";
 export type QualityLevelId =
   | "maximum-compression"
   | "smaller-file"
@@ -12,6 +14,8 @@ export type EncodingSettings = {
   quality: QualityLevelId;
   container: OutputContainer;
   videoCodec: VideoCodec;
+  encodingSpeed: EncodingSpeed;
+  audioMode: AudioMode;
 };
 
 export type FfmpegStatus = {
