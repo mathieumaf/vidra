@@ -5,6 +5,7 @@ import {
   FileVideo,
   History,
   ListTodo,
+  Music2,
   Pause,
   Play,
   Plus,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import type { View } from "../../types/media";
 
-export type IconName = View | "plus" | "file" | "shield" | "up" | "down" | "remove" | "pause" | "resume";
+export type IconName = View | "plus" | "file" | "shield" | "audio" | "up" | "down" | "remove" | "pause" | "resume";
 
 const icons: Record<IconName, LucideIcon> = {
   convert: ArrowRightLeft,
@@ -25,6 +26,7 @@ const icons: Record<IconName, LucideIcon> = {
   plus: Plus,
   file: FileVideo,
   shield: ShieldCheck,
+  audio: Music2,
   up: ChevronUp,
   down: ChevronDown,
   remove: X,

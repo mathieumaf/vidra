@@ -1,5 +1,6 @@
 import type { EncodeQueueItem } from "../../types/media";
 import { qualityLevel } from "../../config/quality";
+import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { formatEta } from "../../lib/format";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
@@ -129,7 +130,13 @@ export function QueueView({
           const isCurrent = item.status === "encoding" || item.status === "paused";
           const canRemove = canMove || isCurrent;
           const quality = qualityLevel(item.settings.quality);
-          const settingsSummary = `${quality.label} · ${item.settings.container.toUpperCase()} · ${item.settings.videoCodec === "h264" ? "H.264" : "H.265"}`;
+          const videoSummary = item.settings.videoCodec === "copy"
+            ? "Original video"
+            : `${videoCodecLabel(item.settings.videoCodec)} · ${quality.label}`;
+          const audioSummary = item.settings.audioMode === "none"
+            ? "No audio"
+            : `${audioModeLabel(item.settings.audioMode)} audio`;
+          const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${audioSummary}`;
 
           return (
             <section className={`queue-row ${item.status}`} key={item.clientId}>

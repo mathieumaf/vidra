@@ -312,7 +312,10 @@ impl JobManager {
 #[cfg(test)]
 mod tests {
     use super::{ActiveJob, JobManager, PendingJob, ReservedJob};
-    use crate::ffmpeg::{EncodeRequest, MediaInfo, OutputContainer, QualityLevel, VideoCodec};
+    use crate::ffmpeg::{
+        AudioMode, EncodeRequest, EncodingSpeed, MediaInfo, OutputContainer, QualityLevel,
+        VideoCodec,
+    };
 
     fn pending(id: &str) -> PendingJob {
         PendingJob {
@@ -323,6 +326,8 @@ mod tests {
                 quality: QualityLevel::Balanced,
                 container: OutputContainer::Mp4,
                 video_codec: VideoCodec::H264,
+                encoding_speed: EncodingSpeed::Efficient,
+                audio_mode: AudioMode::Auto,
             },
             media: MediaInfo {
                 path: format!("/{id}.mov"),

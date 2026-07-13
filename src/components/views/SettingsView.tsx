@@ -14,7 +14,7 @@ export function SettingsView({ status, isReady }: { status: FfmpegStatus | null;
           <div><strong>FFmpeg</strong><p className="version-text">{status?.ffmpegVersion ?? "Version unavailable"}</p></div>
         </div>
         <div className="settings-row">
-          <div><strong>Default output</strong><p>MP4 · H.264 video · protected audio</p></div>
+          <div><strong>Default output</strong><p>MP4 · H.264 video · automatic audio</p></div>
           <span className="settings-value">Content adaptive</span>
         </div>
       </section>

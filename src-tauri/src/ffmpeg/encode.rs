@@ -1,5 +1,6 @@
 use super::{
-    validate_input, validate_output, AudioStream, OutputContainer, QualityLevel, VideoCodec,
+    validate_input, validate_output, AudioMode, AudioStream, EncodeRequest, EncodingSpeed,
+    MediaInfo, OutputContainer, QualityLevel, VideoCodec,
 };
 use crate::{
     error::{ApiError, ApiResult},
@@ -24,68 +25,179 @@ fn audio_bitrate_cap(stream: &AudioStream) -> u64 {
         .min(default_cap)
 }
 
-fn add_audio_arguments(
-    mut command: tauri_plugin_shell::process::Command,
+fn converted_audio_arguments(
     streams: &[AudioStream],
-    container: OutputContainer,
-) -> tauri_plugin_shell::process::Command {
-    if container == OutputContainer::Mkv {
-        return command.args(["-c:a", "copy"]);
-    }
-
+    target_codec: &str,
+    encoder: &str,
+) -> Vec<String> {
+    let mut arguments = Vec::new();
     for (index, stream) in streams.iter().enumerate() {
         let codec_option = format!("-c:a:{index}");
-        if stream.codec.eq_ignore_ascii_case("aac") {
-            command = command.args([codec_option, "copy".to_owned()]);
+        if stream.codec.eq_ignore_ascii_case(target_codec) {
+            arguments.extend([codec_option, "copy".to_owned()]);
         } else {
-            command = command.args([codec_option, "aac".to_owned()]).args([
+            arguments.extend([codec_option, encoder.to_owned()]);
+            arguments.extend([
                 format!("-b:a:{index}"),
                 audio_bitrate_cap(stream).to_string(),
             ]);
         }
     }
+    arguments
+}
 
-    command
+fn audio_arguments(
+    streams: &[AudioStream],
+    container: OutputContainer,
+    mode: AudioMode,
+) -> ApiResult<Vec<String>> {
+    match mode {
+        AudioMode::None => Ok(vec!["-an".to_owned()]),
+        AudioMode::Auto if container == OutputContainer::Mkv => {
+            Ok(vec!["-c:a".to_owned(), "copy".to_owned()])
+        }
+        AudioMode::Auto | AudioMode::Aac => Ok(converted_audio_arguments(streams, "aac", "aac")),
+        AudioMode::Copy => {
+            if container == OutputContainer::Mp4
+                && streams
+                    .iter()
+                    .any(|stream| !stream.codec.eq_ignore_ascii_case("aac"))
+            {
+                return Err(ApiError::invalid_input(
+                    "Original audio cannot be copied to MP4. Choose Auto, AAC, or MKV.",
+                ));
+            }
+            Ok(vec!["-c:a".to_owned(), "copy".to_owned()])
+        }
+        AudioMode::Opus => {
+            if container != OutputContainer::Mkv {
+                return Err(ApiError::invalid_input(
+                    "Opus audio is available with MKV output only.",
+                ));
+            }
+            Ok(converted_audio_arguments(streams, "opus", "libopus"))
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn hardware_encoder(codec: VideoCodec) -> ApiResult<&'static str> {
+    match codec {
+        VideoCodec::H264 => Ok("h264_videotoolbox"),
+        VideoCodec::H265 => Ok("hevc_videotoolbox"),
+        _ => Err(ApiError::invalid_input(
+            "Fast encoding is available for H.264 and H.265 only.",
+        )),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hardware_encoder(_codec: VideoCodec) -> ApiResult<&'static str> {
+    Err(ApiError::new(
+        "unsupported_platform",
+        "Fast hardware encoding is not supported on this platform.",
+    ))
 }
 
 fn video_arguments(
     container: OutputContainer,
     codec: VideoCodec,
+    speed: EncodingSpeed,
     quality: QualityLevel,
-) -> Vec<&'static str> {
-    let mut arguments = match codec {
-        VideoCodec::H264 => vec![
+    source_codec: Option<&str>,
+) -> ApiResult<Vec<&'static str>> {
+    if codec == VideoCodec::Av1 && container != OutputContainer::Mkv {
+        return Err(ApiError::invalid_input(
+            "AV1 encoding is available with MKV output only.",
+        ));
+    }
+
+    let mut arguments = match (codec, speed) {
+        (VideoCodec::Copy, _) => {
+            let source_codec = source_codec.ok_or_else(|| {
+                ApiError::invalid_input("The selected input has no video stream to copy.")
+            })?;
+            if container == OutputContainer::Mp4
+                && !matches!(
+                    source_codec.to_ascii_lowercase().as_str(),
+                    "h264" | "hevc" | "av1" | "mpeg4"
+                )
+            {
+                return Err(ApiError::invalid_input(
+                    "Original video cannot be copied to MP4. Choose a video codec or MKV.",
+                ));
+            }
+            vec!["-c:v", "copy"]
+        }
+        (VideoCodec::Av1, EncodingSpeed::Fast) => {
+            return Err(ApiError::invalid_input(
+                "Fast encoding is available for H.264 and H.265 only.",
+            ));
+        }
+        (codec, EncodingSpeed::Fast) => vec![
+            "-c:v",
+            hardware_encoder(codec)?,
+            "-q:v",
+            quality.videotoolbox_quality(),
+            "-prio_speed",
+            "1",
+        ],
+        (VideoCodec::H264, EncodingSpeed::Efficient) => vec![
             "-c:v",
             "libx264",
             "-preset",
             "medium",
             "-crf",
-            quality.crf(codec),
+            quality.crf(codec).expect("H.264 has a CRF value"),
         ],
-        VideoCodec::H265 => vec![
+        (VideoCodec::H265, EncodingSpeed::Efficient) => vec![
             "-c:v",
             "libx265",
             "-preset",
             "medium",
             "-crf",
-            quality.crf(codec),
+            quality.crf(codec).expect("H.265 has a CRF value"),
+        ],
+        (VideoCodec::Av1, EncodingSpeed::Efficient) => vec![
+            "-c:v",
+            "libsvtav1",
+            "-preset",
+            "8",
+            "-crf",
+            quality.crf(codec).expect("AV1 has a CRF value"),
         ],
     };
 
     if container == OutputContainer::Mp4 {
         arguments.extend(["-movflags", "+faststart"]);
-        if codec == VideoCodec::H265 {
+        if codec == VideoCodec::H265
+            || (codec == VideoCodec::Copy
+                && source_codec.is_some_and(|value| value.eq_ignore_ascii_case("hevc")))
+        {
             arguments.extend(["-tag:v", "hvc1"]);
         }
     }
 
-    arguments
+    Ok(arguments)
+}
+
+pub(super) fn validate_settings(request: &EncodeRequest, media: &MediaInfo) -> ApiResult<()> {
+    video_arguments(
+        request.container,
+        request.video_codec,
+        request.encoding_speed,
+        request.quality,
+        media.video.as_ref().map(|video| video.codec.as_str()),
+    )?;
+    audio_arguments(&media.audio, request.container, request.audio_mode)?;
+    Ok(())
 }
 
 pub(super) fn build_command(
     app: &AppHandle,
     job: &PendingJob,
 ) -> ApiResult<tauri_plugin_shell::process::Command> {
+    validate_settings(&job.request, &job.media)?;
     let input = validate_input(&job.request.input_path)?;
     let output = validate_output(&job.request.output_path, &input, job.request.container)?;
     let mut command = app
@@ -107,25 +219,32 @@ pub(super) fn build_command(
         .args(video_arguments(
             job.request.container,
             job.request.video_codec,
+            job.request.encoding_speed,
             job.request.quality,
-        ));
+            job.media.video.as_ref().map(|video| video.codec.as_str()),
+        )?);
 
     if job.request.container == OutputContainer::Mkv {
         command = command.args(["-map", "0:s?", "-c:s", "copy"]);
     }
 
-    Ok(
-        add_audio_arguments(command, &job.media.audio, job.request.container)
-            .args(["-progress", "pipe:1", "-nostats"])
-            .arg(output.as_os_str())
-            .env("AV_LOG_FORCE_NOCOLOR", "1"),
-    )
+    Ok(command
+        .args(audio_arguments(
+            &job.media.audio,
+            job.request.container,
+            job.request.audio_mode,
+        )?)
+        .args(["-progress", "pipe:1", "-nostats"])
+        .arg(output.as_os_str())
+        .env("AV_LOG_FORCE_NOCOLOR", "1"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{audio_bitrate_cap, video_arguments, GLOBAL_ARGUMENTS};
-    use crate::ffmpeg::{AudioStream, OutputContainer, QualityLevel, VideoCodec};
+    use super::{audio_arguments, audio_bitrate_cap, video_arguments, GLOBAL_ARGUMENTS};
+    use crate::ffmpeg::{
+        AudioMode, AudioStream, EncodingSpeed, OutputContainer, QualityLevel, VideoCodec,
+    };
 
     fn audio(codec: &str, channels: u32, bit_rate: Option<u64>) -> AudioStream {
         AudioStream {
@@ -152,10 +271,15 @@ mod tests {
 
     #[test]
     fn quality_levels_map_to_stable_crf_values() {
-        assert_eq!(QualityLevel::MaximumCompression.crf(VideoCodec::H264), "30");
-        assert_eq!(QualityLevel::Balanced.crf(VideoCodec::H264), "22");
-        assert_eq!(QualityLevel::NearSource.crf(VideoCodec::H264), "17");
-        assert_eq!(QualityLevel::Balanced.crf(VideoCodec::H265), "26");
+        assert_eq!(
+            QualityLevel::MaximumCompression.crf(VideoCodec::H264),
+            Some("30")
+        );
+        assert_eq!(QualityLevel::Balanced.crf(VideoCodec::H264), Some("22"));
+        assert_eq!(QualityLevel::NearSource.crf(VideoCodec::H264), Some("17"));
+        assert_eq!(QualityLevel::Balanced.crf(VideoCodec::H265), Some("26"));
+        assert_eq!(QualityLevel::Balanced.crf(VideoCodec::Av1), Some("33"));
+        assert_eq!(QualityLevel::Balanced.crf(VideoCodec::Copy), None);
     }
 
     #[test]
@@ -163,8 +287,11 @@ mod tests {
         let arguments = video_arguments(
             OutputContainer::Mp4,
             VideoCodec::H265,
+            EncodingSpeed::Efficient,
             QualityLevel::Balanced,
-        );
+            Some("h264"),
+        )
+        .unwrap();
 
         assert!(arguments.windows(2).any(|pair| pair == ["-tag:v", "hvc1"]));
         assert!(arguments
@@ -177,11 +304,98 @@ mod tests {
         let arguments = video_arguments(
             OutputContainer::Mkv,
             VideoCodec::H264,
+            EncodingSpeed::Efficient,
             QualityLevel::Balanced,
-        );
+            Some("h264"),
+        )
+        .unwrap();
 
         assert!(!arguments.contains(&"-movflags"));
         assert!(!arguments.contains(&"-tag:v"));
+    }
+
+    #[test]
+    fn av1_uses_svt_with_a_stable_preset() {
+        let arguments = video_arguments(
+            OutputContainer::Mkv,
+            VideoCodec::Av1,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            Some("h264"),
+        )
+        .unwrap();
+
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c:v", "libsvtav1"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-preset", "8"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-crf", "33"]));
+    }
+
+    #[test]
+    fn rejects_av1_in_mp4_and_fast_av1() {
+        assert!(video_arguments(
+            OutputContainer::Mp4,
+            VideoCodec::Av1,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            Some("h264"),
+        )
+        .is_err());
+        assert!(video_arguments(
+            OutputContainer::Mkv,
+            VideoCodec::Av1,
+            EncodingSpeed::Fast,
+            QualityLevel::Balanced,
+            Some("h264"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn validates_video_copy_for_the_output_container() {
+        assert!(video_arguments(
+            OutputContainer::Mp4,
+            VideoCodec::Copy,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            Some("vp9"),
+        )
+        .is_err());
+        assert!(video_arguments(
+            OutputContainer::Mkv,
+            VideoCodec::Copy,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            Some("vp9"),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn audio_modes_copy_or_convert_each_track_explicitly() {
+        let streams = vec![
+            audio("aac", 2, Some(128_000)),
+            audio("flac", 2, Some(900_000)),
+        ];
+        let automatic = audio_arguments(&streams, OutputContainer::Mp4, AudioMode::Auto).unwrap();
+        assert!(automatic.windows(2).any(|pair| pair == ["-c:a:0", "copy"]));
+        assert!(automatic.windows(2).any(|pair| pair == ["-c:a:1", "aac"]));
+
+        let opus = audio_arguments(&streams, OutputContainer::Mkv, AudioMode::Opus).unwrap();
+        assert!(opus.windows(2).any(|pair| pair == ["-c:a:0", "libopus"]));
+        assert!(opus.windows(2).any(|pair| pair == ["-c:a:1", "libopus"]));
+    }
+
+    #[test]
+    fn rejects_incompatible_audio_modes() {
+        let streams = vec![audio("flac", 2, Some(900_000))];
+        assert!(audio_arguments(&streams, OutputContainer::Mp4, AudioMode::Copy).is_err());
+        assert!(audio_arguments(&streams, OutputContainer::Mp4, AudioMode::Opus).is_err());
+        assert_eq!(
+            audio_arguments(&streams, OutputContainer::Mkv, AudioMode::None).unwrap(),
+            ["-an"]
+        );
     }
 
     #[test]
