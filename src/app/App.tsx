@@ -10,6 +10,7 @@ import { SettingsView } from "../components/views/SettingsView";
 import { QUALITY_LEVELS } from "../config/quality";
 import { canCopyAudioToMp4, canCopyVideoToMp4 } from "../config/encoding";
 import { useEncodingQueue } from "../hooks/useEncodingQueue";
+import { useConversionHistory } from "../hooks/useConversionHistory";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
 import type {
   AudioMode,
@@ -44,7 +45,8 @@ export default function App() {
     encodingSpeed,
     audioMode,
   });
-  const [title, subtitle] = viewMeta(view, queue.items);
+  const history = useConversionHistory();
+  const [title, subtitle] = viewMeta(view, queue.items, history.items.length);
 
   async function addVideos(preferredView: View) {
     const added = await queue.selectVideos();
@@ -158,7 +160,6 @@ export default function App() {
         status={status}
         isReady={isReady}
         queueCount={queue.queueCount}
-        historyCount={queue.finishedCount}
         onViewChange={setView}
         onNewConversion={() => void newConversion()}
       />
@@ -222,7 +223,15 @@ export default function App() {
             />
           )}
           {view === "history" && (
-            <HistoryView items={queue.items} onGoToConvert={() => setView("convert")} />
+            <HistoryView
+              items={history.items}
+              isLoading={history.isLoading}
+              error={history.error}
+              onGoToConvert={() => setView("convert")}
+              onReveal={history.reveal}
+              onDelete={history.remove}
+              onClear={history.clear}
+            />
           )}
           {view === "settings" && <SettingsView status={status} isReady={isReady} />}
         </div>

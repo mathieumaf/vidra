@@ -1,6 +1,7 @@
 use crate::{
     error::ApiResult,
     ffmpeg::{self, EncodeRequest, FfmpegStatus, MediaInfo, QueuedEncode},
+    history::{self, HistoryEntry, HistoryManager},
     jobs::JobManager,
 };
 use tauri::{AppHandle, State};
@@ -51,4 +52,24 @@ pub fn move_queued_encode(
     direction: i8,
 ) -> ApiResult<()> {
     ffmpeg::queue::move_pending(&jobs, &job_id, direction)
+}
+
+#[tauri::command]
+pub fn list_conversion_history(history: State<'_, HistoryManager>) -> ApiResult<Vec<HistoryEntry>> {
+    history.list()
+}
+
+#[tauri::command]
+pub fn delete_history_entry(history: State<'_, HistoryManager>, id: String) -> ApiResult<()> {
+    history.delete(&id)
+}
+
+#[tauri::command]
+pub fn clear_conversion_history(history: State<'_, HistoryManager>) -> ApiResult<()> {
+    history.clear()
+}
+
+#[tauri::command]
+pub fn reveal_history_output(history: State<'_, HistoryManager>, id: String) -> ApiResult<()> {
+    history::reveal_output(&history, &id)
 }

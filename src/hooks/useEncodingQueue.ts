@@ -175,7 +175,6 @@ export function useEncodingQueue({
   const primaryItem = selectedItem ?? readyItems[0] ?? encodingItem ?? items[0] ?? null;
   const hasActiveJobs = activeItems.length > 0;
   const queueCount = activeItems.length + readyItems.length;
-  const finishedCount = items.filter((item) => TERMINAL_JOB_STATUSES.has(item.status)).length;
 
   async function selectVideos(): Promise<number> {
     setError(null);
@@ -424,7 +423,6 @@ export function useEncodingQueue({
     primaryItem,
     hasActiveJobs,
     queueCount,
-    finishedCount,
     isProbing,
     isDraggingFiles,
     result,

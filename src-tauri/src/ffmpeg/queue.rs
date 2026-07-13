@@ -4,6 +4,7 @@ use super::{
 };
 use crate::{
     error::{ApiError, ApiResult},
+    history::{now_millis, HistoryDraft, HistoryManager, HistoryStatus},
     jobs::{process, CancelledJob, JobManager, PendingJob, ReservedJob},
 };
 use std::collections::{HashSet, VecDeque};
@@ -84,6 +85,7 @@ pub fn start_next(app: AppHandle) -> ApiResult<()> {
         let job_id = job.id.clone();
         let output_path = job.request.output_path.clone();
         let duration_seconds = job.media.duration_seconds;
+        let history = HistoryDraft::from_job(&job, now_millis());
 
         let command = encode::build_command(&app, &job);
         let (mut receiver, child) = match command.and_then(|command| {
@@ -94,6 +96,7 @@ pub fn start_next(app: AppHandle) -> ApiResult<()> {
             Ok(process) => process,
             Err(error) => {
                 manager.finish_active(&job_id)?;
+                record_history(&app, history, HistoryStatus::Failed, Some(&error.message));
                 let _ = app.emit(
                     "encode-finished",
                     EncodeFinished {
@@ -146,7 +149,7 @@ pub fn start_next(app: AppHandle) -> ApiResult<()> {
                 }
             }
 
-            finish_job(&task_app, job_id, output_path, errors, exit_code);
+            finish_job(&task_app, job_id, output_path, history, errors, exit_code);
             let _ = start_next(task_app);
         });
 
@@ -158,6 +161,7 @@ fn finish_job(
     app: &AppHandle,
     job_id: String,
     output_path: String,
+    history: HistoryDraft,
     errors: VecDeque<String>,
     exit_code: Option<i32>,
 ) {
@@ -184,6 +188,13 @@ fn finish_job(
         let _ = std::fs::remove_file(&output_path);
     }
 
+    let history_status = match status {
+        "completed" => HistoryStatus::Completed,
+        "cancelled" => HistoryStatus::Cancelled,
+        _ => HistoryStatus::Failed,
+    };
+    record_history(app, history, history_status, error.as_deref());
+
     let _ = app.emit(
         "encode-finished",
         EncodeFinished {
@@ -193,6 +204,23 @@ fn finish_job(
             error,
         },
     );
+}
+
+fn record_history(
+    app: &AppHandle,
+    draft: HistoryDraft,
+    status: HistoryStatus,
+    error: Option<&str>,
+) {
+    let manager = app.state::<HistoryManager>();
+    match manager.record(draft, status, error) {
+        Ok(entry) => {
+            let _ = app.emit("history-entry-created", entry);
+        }
+        Err(history_error) => {
+            eprintln!("Unable to save conversion history: {history_error}");
+        }
+    }
 }
 
 pub fn cancel(app: &AppHandle, jobs: &JobManager, job_id: &str) -> ApiResult<()> {
