@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     error::{ApiError, ApiResult},
-    jobs::{CancelledJob, JobManager, PendingJob},
+    jobs::{process, CancelledJob, JobManager, PendingJob},
 };
 use std::collections::{HashSet, VecDeque};
 use tauri::{AppHandle, Emitter, Manager};
@@ -183,9 +183,7 @@ fn finish_job(
 
 pub fn cancel(app: &AppHandle, jobs: &JobManager, job_id: &str) -> ApiResult<()> {
     match jobs.cancel(job_id)? {
-        CancelledJob::Active(child) => child
-            .kill()
-            .map_err(|error| ApiError::ffmpeg(format!("Unable to cancel FFmpeg: {error}"))),
+        CancelledJob::Active { child, process_id } => process::terminate(process_id, child),
         CancelledJob::Pending(job) => app
             .emit(
                 "encode-finished",

@@ -11,7 +11,7 @@ use std::{
 };
 use tauri_plugin_shell::process::CommandChild;
 
-mod process;
+pub(crate) mod process;
 
 pub struct PendingJob {
     pub id: String,
@@ -23,6 +23,7 @@ pub struct ActiveJob {
     pub id: String,
     pub output_path: String,
     pub child: Option<CommandChild>,
+    pub process_id: Option<u32>,
     pub paused: bool,
 }
 
@@ -40,7 +41,10 @@ pub struct JobManager {
 }
 
 pub enum CancelledJob {
-    Active(CommandChild),
+    Active {
+        child: CommandChild,
+        process_id: u32,
+    },
     Pending(Box<PendingJob>),
 }
 
@@ -87,12 +91,16 @@ impl JobManager {
             id: job.id.clone(),
             output_path: job.request.output_path.clone(),
             child: None,
+            process_id: None,
             paused: false,
         });
         Ok(Some(job))
     }
 
     pub fn attach_child(&self, job_id: &str, child: CommandChild) -> ApiResult<()> {
+        // Cache the PID before FFmpeg can be suspended. On macOS, querying the
+        // shell child after SIGSTOP can block behind its internal wait lock.
+        let process_id = child.pid();
         let mut state = self.lock()?;
         let active = state.active.as_mut().ok_or_else(|| {
             ApiError::new(
@@ -109,6 +117,7 @@ impl JobManager {
         }
 
         active.child = Some(child);
+        active.process_id = Some(process_id);
         Ok(())
     }
 
@@ -127,13 +136,9 @@ impl JobManager {
             .as_mut()
             .filter(|job| job.id == job_id)
             .ok_or_else(|| ApiError::invalid_input("The requested encoding job is not active."))?;
-        let process_id = active
-            .child
-            .as_ref()
-            .ok_or_else(|| {
-                ApiError::new("job_state_error", "The encoding process is still starting.")
-            })?
-            .pid();
+        let process_id = active.process_id.ok_or_else(|| {
+            ApiError::new("job_state_error", "The encoding process is still starting.")
+        })?;
         process::set_paused(process_id, paused)?;
         active.paused = paused;
         Ok(())
@@ -143,15 +148,15 @@ impl JobManager {
         let mut state = self.lock()?;
 
         if state.active.as_ref().map(|job| job.id.as_str()) == Some(job_id) {
-            let child = state
-                .active
-                .as_mut()
-                .and_then(|job| job.child.take())
-                .ok_or_else(|| {
-                    ApiError::new("job_state_error", "The encoding process is still starting.")
-                })?;
+            let active = state.active.as_mut().expect("the active job was checked");
+            let process_id = active.process_id.ok_or_else(|| {
+                ApiError::new("job_state_error", "The encoding process is still starting.")
+            })?;
+            let child = active.child.take().ok_or_else(|| {
+                ApiError::new("job_state_error", "The encoding process is still starting.")
+            })?;
             state.cancelled.insert(job_id.to_owned());
-            return Ok(CancelledJob::Active(child));
+            return Ok(CancelledJob::Active { child, process_id });
         }
 
         let Some(index) = state.pending.iter().position(|job| job.id == job_id) else {
