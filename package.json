@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "ffmpeg:prepare": "node scripts/ffmpeg/prepare.mjs",
+    "icon:prepare": "node scripts/icons/prepare-macos.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

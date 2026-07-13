@@ -1,4 +1,5 @@
 import { Icon } from "../ui/Icon";
+import vidraMark from "../../assets/vidra-mark.svg";
 import type { EncodeFinished, FfmpegStatus, View } from "../../types/media";
 import { DragRegion } from "./DragRegion";
 
@@ -27,7 +28,7 @@ export function Sidebar({
     <aside className="sidebar">
       <DragRegion className="window-drag-region" />
       <div className="brand">
-        <div className="brand-mark">V</div>
+        <img className="brand-mark" src={vidraMark} alt="" />
         <span>Vidra</span>
       </div>
 

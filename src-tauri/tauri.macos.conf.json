@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "icon": [
+      "generated/macos-icon/Vidra.icns"
+    ],
+    "macOS": {
+      "files": {
+        "Resources/Assets.car": "generated/macos-icon/Assets.car"
+      },
+      "infoPlist": "generated/macos-icon/icon-info.plist"
+    }
+  }
+}

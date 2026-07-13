@@ -12,6 +12,8 @@ dist
 dist-ssr
 .cache
 *.local
+.DS_Store
+design/preview/
 
 # Prepared FFmpeg sidecars (downloaded by scripts/ffmpeg/prepare.mjs)
 src-tauri/binaries/ffmpeg-*

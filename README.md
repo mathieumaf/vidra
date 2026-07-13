@@ -28,6 +28,7 @@ Requirements:
 - pnpm 11
 - Rust and the Tauri system prerequisites
 - macOS on Apple Silicon for the current FFmpeg bootstrap
+- Xcode 26 or later to regenerate the layered macOS icon
 
 Install dependencies and start the app:
 
@@ -36,7 +37,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-The Tauri development command runs `pnpm ffmpeg:prepare` automatically. It downloads pinned development-only FFmpeg and FFprobe archives, verifies their SHA-256 checksums, extracts the executables, and ad-hoc signs them for local use.
+The Tauri development command prepares both native assets automatically. `pnpm icon:prepare` compiles the Icon Composer document when Xcode is available and otherwise uses the checked-in fallback assets. `pnpm ffmpeg:prepare` downloads pinned development-only FFmpeg and FFprobe archives, verifies their SHA-256 checksums, extracts the executables, and ad-hoc signs them for local use.
 
 ## Checks
 
