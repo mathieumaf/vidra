@@ -2,6 +2,7 @@ import type { EncodeQueueItem } from "../../types/media";
 import { qualityLevel } from "../../config/quality";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
+import { outputFrameRateLabel } from "../../config/advanced";
 import { formatEta } from "../../lib/format";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
@@ -139,7 +140,10 @@ export function QueueView({
           const audioSummary = item.settings.audioMode === "none"
             ? "No audio"
             : `${audioModeLabel(item.settings.audioMode)} audio`;
-          const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)} · ${audioSummary}`;
+          const frameRateSummary = item.settings.outputFrameRate === "source"
+            ? ""
+            : ` · ${outputFrameRateLabel(item.settings.outputFrameRate)}`;
+          const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)}${frameRateSummary} · ${audioSummary}`;
 
           return (
             <section className={`queue-row ${item.status}`} key={item.clientId}>

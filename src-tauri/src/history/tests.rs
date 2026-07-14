@@ -1,6 +1,7 @@
 use super::{HistoryDraft, HistoryManager, HistoryStatus};
 use crate::ffmpeg::{
-    AudioMode, EncodingSpeed, OutputContainer, OutputResolution, QualityLevel, VideoCodec,
+    AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodingSpeed, OutputContainer,
+    OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
 };
 use std::{
     fs,
@@ -37,6 +38,14 @@ fn draft(id: usize, directory: &std::path::Path) -> HistoryDraft {
             encoding_speed: EncodingSpeed::Efficient,
             audio_mode: AudioMode::Auto,
             output_resolution: OutputResolution::Source,
+            output_frame_rate: OutputFrameRate::Source,
+            quality_tuning: 0,
+            audio_bitrate: AudioBitrate::Auto,
+            audio_channels: AudioChannels::Source,
+            audio_track_mode: AudioTrackMode::All,
+            preserve_subtitles: true,
+            preserve_metadata: true,
+            preserve_chapters: true,
         },
     }
 }
@@ -151,6 +160,13 @@ fn history_without_resolution_defaults_to_original() {
         entries[0].settings.output_resolution,
         OutputResolution::Source
     );
+    assert_eq!(
+        entries[0].settings.output_frame_rate,
+        OutputFrameRate::Source
+    );
+    assert!(entries[0].settings.preserve_subtitles);
+    assert!(entries[0].settings.preserve_metadata);
+    assert!(entries[0].settings.preserve_chapters);
     fs::remove_dir_all(directory).unwrap();
 }
 

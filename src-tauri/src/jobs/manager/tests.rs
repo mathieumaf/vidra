@@ -1,8 +1,8 @@
 use super::{ActiveJob, JobManager};
 use crate::{
     ffmpeg::{
-        AudioMode, EncodeRequest, EncodingSpeed, MediaInfo, OutputContainer, OutputResolution,
-        QualityLevel, VideoCodec,
+        AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodeRequest, EncodingSpeed,
+        MediaInfo, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
     },
     jobs::{PendingJob, ReservedJob},
 };
@@ -19,6 +19,14 @@ fn pending(id: &str) -> PendingJob {
             encoding_speed: EncodingSpeed::Efficient,
             audio_mode: AudioMode::Auto,
             output_resolution: OutputResolution::Source,
+            output_frame_rate: OutputFrameRate::Source,
+            quality_tuning: 0,
+            audio_bitrate: AudioBitrate::Auto,
+            audio_channels: AudioChannels::Source,
+            audio_track_mode: AudioTrackMode::All,
+            preserve_subtitles: true,
+            preserve_metadata: true,
+            preserve_chapters: true,
         },
         media: MediaInfo {
             path: format!("/{id}.mov"),

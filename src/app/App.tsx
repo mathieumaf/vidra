@@ -9,6 +9,11 @@ import { QueueView } from "../components/views/QueueView";
 import { SettingsView } from "../components/views/SettingsView";
 import { QUALITY_LEVELS } from "../config/quality";
 import { canCopyAudioToMp4, canCopyVideoToMp4 } from "../config/encoding";
+import {
+  advancedSettings as getAdvancedSettings,
+  DEFAULT_ADVANCED_SETTINGS,
+  type AdvancedEncodingSettings,
+} from "../config/advanced";
 import { useEncodingQueue } from "../hooks/useEncodingQueue";
 import { useConversionHistory } from "../hooks/useConversionHistory";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
@@ -37,6 +42,10 @@ export default function App() {
   const [encodingSpeed, setEncodingSpeed] = useState<EncodingSpeed>("efficient");
   const [audioMode, setAudioMode] = useState<AudioMode>("auto");
   const [outputResolution, setOutputResolution] = useState<OutputResolution>("source");
+  const [isAdvancedMode, setIsAdvancedMode] = useState(false);
+  const [advancedSettings, setAdvancedSettings] = useState<AdvancedEncodingSettings>(
+    DEFAULT_ADVANCED_SETTINGS,
+  );
   const { status, isReady } = useFfmpegStatus();
   const quality = QUALITY_LEVELS[qualityIndex];
   const queue = useEncodingQueue({
@@ -47,6 +56,7 @@ export default function App() {
     encodingSpeed,
     audioMode,
     outputResolution,
+    advancedSettings,
   });
   const history = useConversionHistory();
   const [title, subtitle] = viewMeta(view, queue.items, history.items.length);
@@ -61,6 +71,7 @@ export default function App() {
     setEncodingSpeed(item.settings.encodingSpeed);
     setAudioMode(item.settings.audioMode);
     setOutputResolution(item.settings.outputResolution);
+    setAdvancedSettings(getAdvancedSettings(item.settings));
   }, [queue.primaryItem?.clientId]);
 
   async function addVideos(preferredView: View) {
@@ -89,6 +100,7 @@ export default function App() {
     setEncodingSpeed(settings.encodingSpeed);
     setAudioMode(settings.audioMode);
     setOutputResolution(settings.outputResolution);
+    setAdvancedSettings(getAdvancedSettings(settings));
     if (queue.primaryItem?.status === "ready") {
       queue.updateItemSettings(queue.primaryItem, settings);
     }
@@ -103,6 +115,7 @@ export default function App() {
       encodingSpeed,
       audioMode,
       outputResolution,
+      ...advancedSettings,
     };
   }
 
@@ -132,6 +145,8 @@ export default function App() {
       videoCodec: codec,
       encodingSpeed: codec === "copy" || codec === "av1" ? "efficient" : encodingSpeed,
       outputResolution: codec === "copy" ? "source" : outputResolution,
+      outputFrameRate: codec === "copy" ? "source" : advancedSettings.outputFrameRate,
+      qualityTuning: codec === "copy" ? 0 : advancedSettings.qualityTuning,
     });
   }
 
@@ -146,6 +161,8 @@ export default function App() {
       ...currentSettings(),
       container: needsMkv ? "mkv" : outputContainer,
       audioMode: mode,
+      audioBitrate: mode === "copy" || mode === "auto" ? "auto" : advancedSettings.audioBitrate,
+      audioChannels: mode === "copy" || mode === "auto" ? "source" : advancedSettings.audioChannels,
     });
   }
 
@@ -155,6 +172,21 @@ export default function App() {
       videoCodec: resolution !== "source" && videoCodec === "copy" ? "h264" : videoCodec,
       encodingSpeed: resolution !== "source" && videoCodec === "copy" ? "efficient" : encodingSpeed,
       outputResolution: resolution,
+    });
+  }
+
+  function changeAdvancedSettings(patch: Partial<AdvancedEncodingSettings>) {
+    const next = { ...advancedSettings, ...patch };
+    const changesVideoTiming = next.outputFrameRate !== "source";
+    const changesAudio = next.audioBitrate !== "auto" || next.audioChannels !== "source";
+    commitSettings({
+      ...currentSettings(),
+      ...next,
+      videoCodec: changesVideoTiming && videoCodec === "copy" ? "h264" : videoCodec,
+      encodingSpeed: changesVideoTiming && videoCodec === "copy" ? "efficient" : encodingSpeed,
+      audioMode: changesAudio && (audioMode === "auto" || audioMode === "copy")
+        ? "aac"
+        : audioMode,
     });
   }
 
@@ -174,6 +206,7 @@ export default function App() {
     setEncodingSpeed(item.settings.encodingSpeed);
     setAudioMode(item.settings.audioMode);
     setOutputResolution(item.settings.outputResolution);
+    setAdvancedSettings(getAdvancedSettings(item.settings));
     setView("convert");
   }
 
@@ -215,6 +248,8 @@ export default function App() {
               encodingSpeed={encodingSpeed}
               audioMode={audioMode}
               outputResolution={outputResolution}
+              isAdvancedMode={isAdvancedMode}
+              advancedSettings={advancedSettings}
               isReady={isReady}
               isProbing={queue.isProbing}
               isActive={isPrimaryActive}
@@ -231,6 +266,8 @@ export default function App() {
               onEncodingSpeedChange={changeEncodingSpeed}
               onAudioModeChange={changeAudioMode}
               onOutputResolutionChange={changeOutputResolution}
+              onAdvancedModeChange={setIsAdvancedMode}
+              onAdvancedSettingsChange={changeAdvancedSettings}
               onStartEncoding={() => void startEncoding()}
               onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
               onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}
