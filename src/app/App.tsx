@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ConvertView } from "../components/convert/ConvertView";
 import { DragRegion } from "../components/layout/DragRegion";
 import { Sidebar } from "../components/layout/Sidebar";
@@ -18,6 +18,7 @@ import type {
   EncodingSettings,
   EncodingSpeed,
   OutputContainer,
+  OutputResolution,
   VideoCodec,
   View,
 } from "../types/media";
@@ -35,6 +36,7 @@ export default function App() {
   const [videoCodec, setVideoCodec] = useState<VideoCodec>("h264");
   const [encodingSpeed, setEncodingSpeed] = useState<EncodingSpeed>("efficient");
   const [audioMode, setAudioMode] = useState<AudioMode>("auto");
+  const [outputResolution, setOutputResolution] = useState<OutputResolution>("source");
   const { status, isReady } = useFfmpegStatus();
   const quality = QUALITY_LEVELS[qualityIndex];
   const queue = useEncodingQueue({
@@ -44,9 +46,22 @@ export default function App() {
     videoCodec,
     encodingSpeed,
     audioMode,
+    outputResolution,
   });
   const history = useConversionHistory();
   const [title, subtitle] = viewMeta(view, queue.items, history.items.length);
+
+  useEffect(() => {
+    const item = queue.primaryItem;
+    if (!item || item.status !== "ready") return;
+    const index = QUALITY_LEVELS.findIndex((level) => level.id === item.settings.quality);
+    setQualityIndex(index >= 0 ? index : 2);
+    setOutputContainer(item.settings.container);
+    setVideoCodec(item.settings.videoCodec);
+    setEncodingSpeed(item.settings.encodingSpeed);
+    setAudioMode(item.settings.audioMode);
+    setOutputResolution(item.settings.outputResolution);
+  }, [queue.primaryItem?.clientId]);
 
   async function addVideos(preferredView: View) {
     const added = await queue.selectVideos();
@@ -73,6 +88,7 @@ export default function App() {
     setVideoCodec(settings.videoCodec);
     setEncodingSpeed(settings.encodingSpeed);
     setAudioMode(settings.audioMode);
+    setOutputResolution(settings.outputResolution);
     if (queue.primaryItem?.status === "ready") {
       queue.updateItemSettings(queue.primaryItem, settings);
     }
@@ -86,6 +102,7 @@ export default function App() {
       videoCodec,
       encodingSpeed,
       audioMode,
+      outputResolution,
     };
   }
 
@@ -114,6 +131,7 @@ export default function App() {
       container: needsMkv ? "mkv" : outputContainer,
       videoCodec: codec,
       encodingSpeed: codec === "copy" || codec === "av1" ? "efficient" : encodingSpeed,
+      outputResolution: codec === "copy" ? "source" : outputResolution,
     });
   }
 
@@ -128,6 +146,15 @@ export default function App() {
       ...currentSettings(),
       container: needsMkv ? "mkv" : outputContainer,
       audioMode: mode,
+    });
+  }
+
+  function changeOutputResolution(resolution: OutputResolution) {
+    commitSettings({
+      ...currentSettings(),
+      videoCodec: resolution !== "source" && videoCodec === "copy" ? "h264" : videoCodec,
+      encodingSpeed: resolution !== "source" && videoCodec === "copy" ? "efficient" : encodingSpeed,
+      outputResolution: resolution,
     });
   }
 
@@ -146,6 +173,7 @@ export default function App() {
     setVideoCodec(item.settings.videoCodec);
     setEncodingSpeed(item.settings.encodingSpeed);
     setAudioMode(item.settings.audioMode);
+    setOutputResolution(item.settings.outputResolution);
     setView("convert");
   }
 
@@ -186,6 +214,7 @@ export default function App() {
               videoCodec={videoCodec}
               encodingSpeed={encodingSpeed}
               audioMode={audioMode}
+              outputResolution={outputResolution}
               isReady={isReady}
               isProbing={queue.isProbing}
               isActive={isPrimaryActive}
@@ -201,6 +230,7 @@ export default function App() {
               onVideoCodecChange={changeVideoCodec}
               onEncodingSpeedChange={changeEncodingSpeed}
               onAudioModeChange={changeAudioMode}
+              onOutputResolutionChange={changeOutputResolution}
               onStartEncoding={() => void startEncoding()}
               onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
               onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}

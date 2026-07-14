@@ -3,6 +3,14 @@ export type OutputContainer = "mp4" | "mkv";
 export type VideoCodec = "copy" | "h264" | "h265" | "av1";
 export type EncodingSpeed = "efficient" | "fast";
 export type AudioMode = "auto" | "copy" | "aac" | "opus" | "none";
+export type OutputResolution =
+  | "source"
+  | "2160p"
+  | "1440p"
+  | "1080p"
+  | "720p"
+  | "480p"
+  | "360p";
 export type QualityLevelId =
   | "maximum-compression"
   | "smaller-file"
@@ -16,6 +24,7 @@ export type EncodingSettings = {
   videoCodec: VideoCodec;
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
+  outputResolution: OutputResolution;
 };
 
 export type FfmpegStatus = {

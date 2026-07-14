@@ -1,5 +1,6 @@
 import { videoCodecLabel } from "../config/encoding";
 import { qualityLevel } from "../config/quality";
+import { outputResolutionLabel } from "../config/resolution";
 import type { HistoryEntry } from "../types/media";
 import { formatBytes } from "./format";
 
@@ -19,6 +20,7 @@ export function historySummary(entry: HistoryEntry): string {
       ? "Original video"
       : videoCodecLabel(entry.settings.videoCodec),
     qualityLevel(entry.settings.quality).label,
+    outputResolutionLabel(entry.settings.outputResolution),
   ];
   if (entry.outputSizeBytes !== null) details.push(formatBytes(entry.outputSizeBytes));
   details.push(historyDate(entry.finishedAtMs));

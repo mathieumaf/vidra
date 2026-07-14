@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { QualityLevel } from "../config/quality";
 import { outputContainer as getOutputContainer } from "../config/encoding";
+import { resolutionReducesVideo } from "../config/resolution";
 import { defaultOutputPath, errorMessage } from "../lib/format";
 import {
   batchOutputPaths,
@@ -30,6 +31,7 @@ import type {
   EncodeQueueItem,
   EncodeStarted,
   OutputContainer,
+  OutputResolution,
   VideoCodec,
 } from "../types/media";
 
@@ -54,6 +56,7 @@ type EncodingQueueOptions = {
   videoCodec: VideoCodec;
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
+  outputResolution: OutputResolution;
 };
 
 export function useEncodingQueue({
@@ -63,6 +66,7 @@ export function useEncodingQueue({
   videoCodec,
   encodingSpeed,
   audioMode,
+  outputResolution,
 }: EncodingQueueOptions) {
   const [items, setItems] = useState<EncodeQueueItem[]>([]);
   const [isProbing, setIsProbing] = useState(false);
@@ -76,6 +80,7 @@ export function useEncodingQueue({
     videoCodec,
     encodingSpeed,
     audioMode,
+    outputResolution,
   });
 
   useEffect(() => {
@@ -85,8 +90,9 @@ export function useEncodingQueue({
       videoCodec,
       encodingSpeed,
       audioMode,
+      outputResolution,
     };
-  }, [quality.id, outputContainer, videoCodec, encodingSpeed, audioMode]);
+  }, [quality.id, outputContainer, videoCodec, encodingSpeed, audioMode, outputResolution]);
 
   useEffect(() => {
     const subscriptions = Promise.all([
@@ -207,7 +213,14 @@ export function useEncodingQueue({
       const probes = await Promise.allSettled(paths.map(probeMedia));
       const media = probes.flatMap((probe) => probe.status === "fulfilled" ? [probe.value] : []);
       const failures = probes.length - media.length;
-      const newItems = media.map((item) => createQueueItem(item, defaultSettingsRef.current));
+      const newItems = media.map((item) => {
+        const defaults = defaultSettingsRef.current;
+        const settings = defaults.outputResolution !== "source"
+          && !resolutionReducesVideo(item.video, defaults.outputResolution)
+          ? { ...defaults, outputResolution: "source" as const }
+          : defaults;
+        return createQueueItem(item, settings);
+      });
       setItems((currentItems) => {
         const base = currentItems.every((item) => TERMINAL_JOB_STATUSES.has(item.status))
           ? []
@@ -276,6 +289,7 @@ export function useEncodingQueue({
         videoCodec: item.settings.videoCodec,
         encodingSpeed: item.settings.encodingSpeed,
         audioMode: item.settings.audioMode,
+        outputResolution: item.settings.outputResolution,
       })));
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),

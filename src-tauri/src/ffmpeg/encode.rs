@@ -18,7 +18,12 @@ pub(super) fn validate_settings(request: &EncodeRequest, media: &MediaInfo) -> A
         request.video_codec,
         request.encoding_speed,
         request.quality,
+        request.output_resolution,
         media.video.as_ref().map(|video| video.codec.as_str()),
+        media
+            .video
+            .as_ref()
+            .map(|video| (video.width, video.height)),
     )?;
     audio_arguments(&media.audio, request.container, request.audio_mode)?;
     Ok(())
@@ -52,7 +57,12 @@ pub(super) fn build_command(
             job.request.video_codec,
             job.request.encoding_speed,
             job.request.quality,
+            job.request.output_resolution,
             job.media.video.as_ref().map(|video| video.codec.as_str()),
+            job.media
+                .video
+                .as_ref()
+                .map(|video| (video.width, video.height)),
         )?);
 
     if job.request.container == OutputContainer::Mkv {

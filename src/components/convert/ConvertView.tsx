@@ -1,10 +1,12 @@
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
+import { outputResolutionLabel } from "../../config/resolution";
 import { formatDuration, formatEta } from "../../lib/format";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type {
   AudioMode,
   EncodingSpeed,
   OutputContainer,
+  OutputResolution,
   VideoCodec,
 } from "../../types/media";
 import { Icon } from "../ui/Icon";
@@ -12,6 +14,7 @@ import { AudioOptions } from "./AudioOptions";
 import { EncodingOptions } from "./EncodingOptions";
 import { MediaSourceCard } from "./MediaSourceCard";
 import { QualitySlider } from "./QualitySlider";
+import { ResolutionOptions } from "./ResolutionOptions";
 
 type ConvertViewProps = {
   media: MediaInfo | null;
@@ -22,6 +25,7 @@ type ConvertViewProps = {
   videoCodec: VideoCodec;
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
+  outputResolution: OutputResolution;
   isReady: boolean;
   isProbing: boolean;
   isActive: boolean;
@@ -37,6 +41,7 @@ type ConvertViewProps = {
   onVideoCodecChange: (codec: VideoCodec) => void;
   onEncodingSpeedChange: (speed: EncodingSpeed) => void;
   onAudioModeChange: (mode: AudioMode) => void;
+  onOutputResolutionChange: (resolution: OutputResolution) => void;
   onStartEncoding: () => void;
   onTogglePause: () => void;
   onCancelEncoding: () => void;
@@ -51,6 +56,7 @@ export function ConvertView({
   videoCodec,
   encodingSpeed,
   audioMode,
+  outputResolution,
   isReady,
   isProbing,
   isActive,
@@ -66,6 +72,7 @@ export function ConvertView({
   onVideoCodecChange,
   onEncodingSpeedChange,
   onAudioModeChange,
+  onOutputResolutionChange,
   onStartEncoding,
   onTogglePause,
   onCancelEncoding,
@@ -119,6 +126,14 @@ export function ConvertView({
             onChange={onQualityChange}
           />
 
+          <ResolutionOptions
+            video={media.video}
+            resolution={outputResolution}
+            videoCodec={videoCodec}
+            disabled={!canEdit}
+            onChange={onOutputResolutionChange}
+          />
+
           <AudioOptions
             audio={media.audio}
             container={outputContainer}
@@ -144,7 +159,7 @@ export function ConvertView({
         <div className="conversion-actions">
           <span>
             Output <strong>
-              {outputContainer.toUpperCase()} · {videoCodecLabel(videoCodec)} · {audioMode === "none" ? "No audio" : `${audioModeLabel(audioMode)} audio`}
+              {outputContainer.toUpperCase()} · {videoCodecLabel(videoCodec)} · {outputResolutionLabel(outputResolution)} · {audioMode === "none" ? "No audio" : `${audioModeLabel(audioMode)} audio`}
             </strong>
           </span>
           {isActive ? (
