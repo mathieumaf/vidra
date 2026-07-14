@@ -12,10 +12,16 @@ import { canCopyAudioToMp4, canCopyVideoToMp4 } from "../config/encoding";
 import {
   advancedSettings as getAdvancedSettings,
   DEFAULT_ADVANCED_SETTINGS,
+  usesAdvancedSettings,
   type AdvancedEncodingSettings,
 } from "../config/advanced";
+import {
+  compatibleProfileSettings,
+  encodingSettingsEqual,
+} from "../config/profiles";
 import { useEncodingQueue } from "../hooks/useEncodingQueue";
 import { useConversionHistory } from "../hooks/useConversionHistory";
+import { useEncodingProfiles } from "../hooks/useEncodingProfiles";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
 import type {
   AudioMode,
@@ -46,7 +52,9 @@ export default function App() {
   const [advancedSettings, setAdvancedSettings] = useState<AdvancedEncodingSettings>(
     DEFAULT_ADVANCED_SETTINGS,
   );
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>("built-in-balanced");
   const { status, isReady } = useFfmpegStatus();
+  const profileStore = useEncodingProfiles();
   const quality = QUALITY_LEVELS[qualityIndex];
   const queue = useEncodingQueue({
     isReady,
@@ -72,6 +80,21 @@ export default function App() {
     setAudioMode(item.settings.audioMode);
     setOutputResolution(item.settings.outputResolution);
     setAdvancedSettings(getAdvancedSettings(item.settings));
+    const preferredProfile = profileStore.profiles.find((profile) => (
+      profile.id === selectedProfileId
+      && encodingSettingsEqual(
+        compatibleProfileSettings(profile.settings, item.media),
+        item.settings,
+      )
+    ));
+    const matchedProfile = preferredProfile ?? profileStore.profiles.find((profile) => (
+      encodingSettingsEqual(
+        compatibleProfileSettings(profile.settings, item.media),
+        item.settings,
+      )
+    ));
+    setSelectedProfileId(matchedProfile?.id ?? null);
+    setIsAdvancedMode(matchedProfile?.isAdvanced ?? usesAdvancedSettings(item.settings));
   }, [queue.primaryItem?.clientId]);
 
   async function addVideos(preferredView: View) {
@@ -197,6 +220,44 @@ export default function App() {
     });
   }
 
+  function selectProfile(profileId: string | null) {
+    if (!profileId) {
+      setSelectedProfileId(null);
+      return;
+    }
+    const profile = profileStore.profiles.find((candidate) => candidate.id === profileId);
+    if (!profile) return;
+    commitSettings(compatibleProfileSettings(profile.settings, queue.primaryItem?.media ?? null));
+    setIsAdvancedMode(profile.isAdvanced);
+    setSelectedProfileId(profile.id);
+  }
+
+  function createProfile(name: string) {
+    const id = profileStore.createProfile(name, currentSettings(), isAdvancedMode);
+    setSelectedProfileId(id);
+  }
+
+  function updateSelectedProfile() {
+    if (!selectedProfileId) return;
+    profileStore.updateProfile(selectedProfileId, currentSettings(), isAdvancedMode);
+  }
+
+  function renameSelectedProfile(name: string) {
+    if (!selectedProfileId) return;
+    profileStore.renameProfile(selectedProfileId, name);
+  }
+
+  function deleteSelectedProfile() {
+    if (!selectedProfileId) return;
+    profileStore.deleteProfile(selectedProfileId);
+    setSelectedProfileId(null);
+  }
+
+  function deleteProfile(profileId: string) {
+    profileStore.deleteProfile(profileId);
+    if (selectedProfileId === profileId) setSelectedProfileId(null);
+  }
+
   function editItem(item: EncodeQueueItem) {
     queue.selectItem(item);
     const index = QUALITY_LEVELS.findIndex((quality) => quality.id === item.settings.quality);
@@ -213,6 +274,14 @@ export default function App() {
   const primaryItem = queue.primaryItem;
   const isPrimaryActive = primaryItem?.status === "encoding" || primaryItem?.status === "paused";
   const canEditPrimary = primaryItem?.status === "ready";
+  const selectedProfile = profileStore.profiles.find((profile) => profile.id === selectedProfileId) ?? null;
+  const isProfileModified = selectedProfile !== null && (
+    selectedProfile.isAdvanced !== isAdvancedMode
+    || !encodingSettingsEqual(
+      compatibleProfileSettings(selectedProfile.settings, primaryItem?.media ?? null),
+      currentSettings(),
+    )
+  );
 
   return (
     <div className={`desktop-shell${queue.isDraggingFiles ? " dragging-files" : ""}`}>
@@ -250,6 +319,9 @@ export default function App() {
               outputResolution={outputResolution}
               isAdvancedMode={isAdvancedMode}
               advancedSettings={advancedSettings}
+              profiles={profileStore.profiles}
+              selectedProfileId={selectedProfileId}
+              isProfileModified={isProfileModified}
               isReady={isReady}
               isProbing={queue.isProbing}
               isActive={isPrimaryActive}
@@ -268,6 +340,11 @@ export default function App() {
               onOutputResolutionChange={changeOutputResolution}
               onAdvancedModeChange={setIsAdvancedMode}
               onAdvancedSettingsChange={changeAdvancedSettings}
+              onProfileSelect={selectProfile}
+              onProfileCreate={createProfile}
+              onProfileUpdate={updateSelectedProfile}
+              onProfileRename={renameSelectedProfile}
+              onProfileDelete={deleteSelectedProfile}
               onStartEncoding={() => void startEncoding()}
               onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
               onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}
@@ -301,7 +378,16 @@ export default function App() {
               onClear={history.clear}
             />
           )}
-          {view === "settings" && <SettingsView status={status} isReady={isReady} />}
+          {view === "settings" && (
+            <SettingsView
+              status={status}
+              isReady={isReady}
+              profiles={profileStore.profiles}
+              onDuplicateProfile={(profileId) => { profileStore.duplicateProfile(profileId); }}
+              onRenameProfile={profileStore.renameProfile}
+              onDeleteProfile={deleteProfile}
+            />
+          )}
         </div>
       </section>
 

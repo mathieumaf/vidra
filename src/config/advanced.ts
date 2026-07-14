@@ -92,6 +92,12 @@ export function advancedSettings(settings: EncodingSettings): AdvancedEncodingSe
   };
 }
 
+export function usesAdvancedSettings(settings: EncodingSettings): boolean {
+  const advanced = advancedSettings(settings);
+  return (Object.keys(DEFAULT_ADVANCED_SETTINGS) as Array<keyof AdvancedEncodingSettings>)
+    .some((key) => advanced[key] !== DEFAULT_ADVANCED_SETTINGS[key]);
+}
+
 export function frameRateReducesVideo(
   video: VideoStream | null,
   frameRate: OutputFrameRate,
