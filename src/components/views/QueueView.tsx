@@ -1,6 +1,7 @@
 import type { EncodeQueueItem } from "../../types/media";
 import { qualityLevel } from "../../config/quality";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
+import { outputResolutionLabel } from "../../config/resolution";
 import { formatEta } from "../../lib/format";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
@@ -71,7 +72,7 @@ export function QueueView({
         <div>
           <span className="section-label">BATCH QUEUE</span>
           <strong>{items.length} {items.length === 1 ? "video" : "videos"}</strong>
-          <p>Each video keeps its own format, codec, and quality settings.</p>
+          <p>Each video keeps its own format, resolution, codec, and quality settings.</p>
         </div>
         <div className="queue-summary-actions">
           <button className="secondary-button" type="button" onClick={onAddVideos} disabled={isProbing}>
@@ -138,7 +139,7 @@ export function QueueView({
           const audioSummary = item.settings.audioMode === "none"
             ? "No audio"
             : `${audioModeLabel(item.settings.audioMode)} audio`;
-          const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${audioSummary}`;
+          const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)} · ${audioSummary}`;
 
           return (
             <section className={`queue-row ${item.status}`} key={item.clientId}>

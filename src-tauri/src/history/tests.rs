@@ -1,5 +1,7 @@
 use super::{HistoryDraft, HistoryManager, HistoryStatus};
-use crate::ffmpeg::{AudioMode, EncodingSpeed, OutputContainer, QualityLevel, VideoCodec};
+use crate::ffmpeg::{
+    AudioMode, EncodingSpeed, OutputContainer, OutputResolution, QualityLevel, VideoCodec,
+};
 use std::{
     fs,
     path::PathBuf,
@@ -34,6 +36,7 @@ fn draft(id: usize, directory: &std::path::Path) -> HistoryDraft {
             video_codec: VideoCodec::H264,
             encoding_speed: EncodingSpeed::Efficient,
             audio_mode: AudioMode::Auto,
+            output_resolution: OutputResolution::Source,
         },
     }
 }
@@ -108,6 +111,46 @@ fn invalid_files_are_ignored_and_replaced_on_the_next_write() {
         .record(draft(1, &directory), HistoryStatus::Cancelled, None)
         .unwrap();
     assert_eq!(HistoryManager::new(history_path).list().unwrap().len(), 1);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn history_without_resolution_defaults_to_original() {
+    let directory = test_directory();
+    fs::create_dir_all(&directory).unwrap();
+    let history_path = directory.join("history.json");
+    let legacy_history = serde_json::json!({
+        "version": 1,
+        "entries": [{
+            "id": "legacy-entry",
+            "sourcePath": "/source.mov",
+            "sourceName": "source.mov",
+            "outputPath": "/output.mp4",
+            "status": "completed",
+            "startedAtMs": 1,
+            "finishedAtMs": 2,
+            "mediaDurationSeconds": 10.0,
+            "sourceSizeBytes": 100,
+            "outputSizeBytes": 50,
+            "settings": {
+                "quality": "balanced",
+                "container": "mp4",
+                "videoCodec": "h264",
+                "encodingSpeed": "efficient",
+                "audioMode": "auto"
+            },
+            "error": null
+        }]
+    });
+    fs::write(&history_path, serde_json::to_vec(&legacy_history).unwrap()).unwrap();
+
+    let entries = HistoryManager::new(history_path).list().unwrap();
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].settings.output_resolution,
+        OutputResolution::Source
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 

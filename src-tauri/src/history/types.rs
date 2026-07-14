@@ -1,5 +1,7 @@
 use crate::{
-    ffmpeg::{AudioMode, EncodingSpeed, OutputContainer, QualityLevel, VideoCodec},
+    ffmpeg::{
+        AudioMode, EncodingSpeed, OutputContainer, OutputResolution, QualityLevel, VideoCodec,
+    },
     jobs::PendingJob,
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,8 @@ pub struct HistorySettings {
     pub video_codec: VideoCodec,
     pub encoding_speed: EncodingSpeed,
     pub audio_mode: AudioMode,
+    #[serde(default)]
+    pub output_resolution: OutputResolution,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -67,6 +71,7 @@ impl HistoryDraft {
                 video_codec: job.request.video_codec,
                 encoding_speed: job.request.encoding_speed,
                 audio_mode: job.request.audio_mode,
+                output_resolution: job.request.output_resolution,
             },
         }
     }

@@ -33,6 +33,13 @@ struct ProbeStream {
     bit_rate: Option<String>,
     #[serde(default)]
     tags: HashMap<String, String>,
+    #[serde(default)]
+    side_data_list: Vec<ProbeSideData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeSideData {
+    rotation: Option<i32>,
 }
 
 fn parse_frame_rate(value: Option<&str>) -> Option<f64> {
@@ -53,6 +60,26 @@ fn display_name(path: &Path) -> String {
         .and_then(|value| value.to_str())
         .unwrap_or("Unknown media")
         .to_owned()
+}
+
+fn display_dimensions(stream: &ProbeStream) -> (u32, u32) {
+    let width = stream.width.unwrap_or_default();
+    let height = stream.height.unwrap_or_default();
+    let rotation = stream
+        .side_data_list
+        .iter()
+        .find_map(|side_data| side_data.rotation)
+        .or_else(|| {
+            stream
+                .tags
+                .get("rotate")
+                .and_then(|value| value.parse().ok())
+        });
+    if rotation.is_some_and(|degrees| degrees.rem_euclid(180) == 90) {
+        (height, width)
+    } else {
+        (width, height)
+    }
 }
 
 pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
@@ -88,15 +115,18 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
         .streams
         .iter()
         .find(|stream| stream.codec_type.as_deref() == Some("video"))
-        .map(|stream| VideoStream {
-            codec: stream
-                .codec_name
-                .clone()
-                .unwrap_or_else(|| "unknown".into()),
-            width: stream.width.unwrap_or_default(),
-            height: stream.height.unwrap_or_default(),
-            frame_rate: parse_frame_rate(stream.avg_frame_rate.as_deref()),
-            pixel_format: stream.pix_fmt.clone(),
+        .map(|stream| {
+            let (width, height) = display_dimensions(stream);
+            VideoStream {
+                codec: stream
+                    .codec_name
+                    .clone()
+                    .unwrap_or_else(|| "unknown".into()),
+                width,
+                height,
+                frame_rate: parse_frame_rate(stream.avg_frame_rate.as_deref()),
+                pixel_format: stream.pix_fmt.clone(),
+            }
         });
 
     let audio = probe
@@ -144,12 +174,34 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_frame_rate;
+    use super::{display_dimensions, parse_frame_rate, ProbeSideData, ProbeStream};
+    use std::collections::HashMap;
 
     #[test]
     fn parses_fractional_frame_rates() {
         assert_eq!(parse_frame_rate(Some("30000/1001")), Some(30000.0 / 1001.0));
         assert_eq!(parse_frame_rate(Some("0/0")), None);
         assert_eq!(parse_frame_rate(None), None);
+    }
+
+    #[test]
+    fn reports_dimensions_in_display_orientation() {
+        let stream = ProbeStream {
+            codec_type: Some("video".to_owned()),
+            codec_name: Some("h264".to_owned()),
+            width: Some(1920),
+            height: Some(1080),
+            avg_frame_rate: None,
+            pix_fmt: None,
+            channels: None,
+            sample_rate: None,
+            bit_rate: None,
+            tags: HashMap::new(),
+            side_data_list: vec![ProbeSideData {
+                rotation: Some(-90),
+            }],
+        };
+
+        assert_eq!(display_dimensions(&stream), (1080, 1920));
     }
 }

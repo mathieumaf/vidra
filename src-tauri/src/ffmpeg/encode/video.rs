@@ -1,6 +1,6 @@
 use crate::{
     error::{ApiError, ApiResult},
-    ffmpeg::{EncodingSpeed, OutputContainer, QualityLevel, VideoCodec},
+    ffmpeg::{EncodingSpeed, OutputContainer, OutputResolution, QualityLevel, VideoCodec},
 };
 
 #[cfg(target_os = "macos")]
@@ -27,11 +27,23 @@ pub(super) fn video_arguments(
     codec: VideoCodec,
     speed: EncodingSpeed,
     quality: QualityLevel,
+    resolution: OutputResolution,
     source_codec: Option<&str>,
-) -> ApiResult<Vec<&'static str>> {
+    source_dimensions: Option<(u32, u32)>,
+) -> ApiResult<Vec<String>> {
     if codec == VideoCodec::Av1 && container != OutputContainer::Mkv {
         return Err(ApiError::invalid_input(
             "AV1 encoding is available with MKV output only.",
+        ));
+    }
+    if codec == VideoCodec::Copy && resolution != OutputResolution::Source {
+        return Err(ApiError::invalid_input(
+            "Original video cannot be resized. Choose a video codec or original resolution.",
+        ));
+    }
+    if resolution != OutputResolution::Source && source_dimensions.is_none() {
+        return Err(ApiError::invalid_input(
+            "The selected input has no video stream to resize.",
         ));
     }
 
@@ -89,25 +101,73 @@ pub(super) fn video_arguments(
             "-crf",
             quality.crf(codec).expect("AV1 has a CRF value"),
         ],
-    };
+    }
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
 
     if container == OutputContainer::Mp4 {
-        arguments.extend(["-movflags", "+faststart"]);
+        arguments.extend(["-movflags".to_owned(), "+faststart".to_owned()]);
         if codec == VideoCodec::H265
             || (codec == VideoCodec::Copy
                 && source_codec.is_some_and(|value| value.eq_ignore_ascii_case("hevc")))
         {
-            arguments.extend(["-tag:v", "hvc1"]);
+            arguments.extend(["-tag:v".to_owned(), "hvc1".to_owned()]);
         }
+    }
+
+    if let Some(filter) = scale_filter(resolution, source_dimensions) {
+        arguments.extend(["-vf".to_owned(), filter]);
     }
 
     Ok(arguments)
 }
 
+fn scale_filter(
+    resolution: OutputResolution,
+    source_dimensions: Option<(u32, u32)>,
+) -> Option<String> {
+    let (landscape_width, landscape_height) = resolution.landscape_bounds()?;
+    let (source_width, source_height) = source_dimensions?;
+    let (maximum_width, maximum_height) = if source_width >= source_height {
+        (landscape_width, landscape_height)
+    } else {
+        (landscape_height, landscape_width)
+    };
+    if source_width <= maximum_width && source_height <= maximum_height {
+        return None;
+    }
+
+    Some(format!(
+        "scale={maximum_width}:{maximum_height}:force_original_aspect_ratio=decrease:force_divisible_by=2"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::video_arguments;
-    use crate::ffmpeg::{EncodingSpeed, OutputContainer, QualityLevel, VideoCodec};
+    use crate::{
+        error::ApiResult,
+        ffmpeg::{EncodingSpeed, OutputContainer, OutputResolution, QualityLevel, VideoCodec},
+    };
+
+    fn original_arguments(
+        container: OutputContainer,
+        codec: VideoCodec,
+        speed: EncodingSpeed,
+        quality: QualityLevel,
+        source_codec: Option<&str>,
+    ) -> ApiResult<Vec<String>> {
+        video_arguments(
+            container,
+            codec,
+            speed,
+            quality,
+            OutputResolution::Source,
+            source_codec,
+            Some((1920, 1080)),
+        )
+    }
 
     #[test]
     fn quality_levels_map_to_stable_crf_values() {
@@ -124,7 +184,7 @@ mod tests {
 
     #[test]
     fn mp4_h265_uses_the_apple_compatible_codec_tag() {
-        let arguments = video_arguments(
+        let arguments = original_arguments(
             OutputContainer::Mp4,
             VideoCodec::H265,
             EncodingSpeed::Efficient,
@@ -141,7 +201,7 @@ mod tests {
 
     #[test]
     fn mkv_does_not_receive_mp4_specific_arguments() {
-        let arguments = video_arguments(
+        let arguments = original_arguments(
             OutputContainer::Mkv,
             VideoCodec::H264,
             EncodingSpeed::Efficient,
@@ -150,13 +210,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!arguments.contains(&"-movflags"));
-        assert!(!arguments.contains(&"-tag:v"));
+        assert!(!arguments.iter().any(|argument| argument == "-movflags"));
+        assert!(!arguments.iter().any(|argument| argument == "-tag:v"));
     }
 
     #[test]
     fn av1_uses_svt_with_a_stable_preset() {
-        let arguments = video_arguments(
+        let arguments = original_arguments(
             OutputContainer::Mkv,
             VideoCodec::Av1,
             EncodingSpeed::Efficient,
@@ -174,7 +234,7 @@ mod tests {
 
     #[test]
     fn rejects_av1_in_mp4_and_fast_av1() {
-        assert!(video_arguments(
+        assert!(original_arguments(
             OutputContainer::Mp4,
             VideoCodec::Av1,
             EncodingSpeed::Efficient,
@@ -182,7 +242,7 @@ mod tests {
             Some("h264"),
         )
         .is_err());
-        assert!(video_arguments(
+        assert!(original_arguments(
             OutputContainer::Mkv,
             VideoCodec::Av1,
             EncodingSpeed::Fast,
@@ -194,7 +254,7 @@ mod tests {
 
     #[test]
     fn validates_video_copy_for_the_output_container() {
-        assert!(video_arguments(
+        assert!(original_arguments(
             OutputContainer::Mp4,
             VideoCodec::Copy,
             EncodingSpeed::Efficient,
@@ -202,7 +262,7 @@ mod tests {
             Some("vp9"),
         )
         .is_err());
-        assert!(video_arguments(
+        assert!(original_arguments(
             OutputContainer::Mkv,
             VideoCodec::Copy,
             EncodingSpeed::Efficient,
@@ -210,5 +270,68 @@ mod tests {
             Some("vp9"),
         )
         .is_ok());
+    }
+
+    #[test]
+    fn scales_landscape_and_portrait_video_without_changing_aspect_ratio() {
+        let landscape = video_arguments(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            OutputResolution::P1080,
+            Some("h264"),
+            Some((3840, 1600)),
+        )
+        .unwrap();
+        assert!(landscape.windows(2).any(|pair| {
+            pair == [
+                "-vf",
+                "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2",
+            ]
+        }));
+
+        let portrait = video_arguments(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            OutputResolution::P1080,
+            Some("h264"),
+            Some((2160, 3840)),
+        )
+        .unwrap();
+        assert!(portrait.windows(2).any(|pair| {
+            pair == [
+                "-vf",
+                "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2",
+            ]
+        }));
+    }
+
+    #[test]
+    fn resolution_caps_never_upscale_and_require_reencoding() {
+        let arguments = video_arguments(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            OutputResolution::P1080,
+            Some("h264"),
+            Some((1280, 720)),
+        )
+        .unwrap();
+        assert!(!arguments.iter().any(|argument| argument == "-vf"));
+
+        assert!(video_arguments(
+            OutputContainer::Mkv,
+            VideoCodec::Copy,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            OutputResolution::P720,
+            Some("h264"),
+            Some((1920, 1080)),
+        )
+        .is_err());
     }
 }

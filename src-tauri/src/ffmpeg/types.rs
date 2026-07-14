@@ -126,6 +126,39 @@ pub enum AudioMode {
     None,
 }
 
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum OutputResolution {
+    #[default]
+    #[serde(rename = "source")]
+    Source,
+    #[serde(rename = "2160p")]
+    P2160,
+    #[serde(rename = "1440p")]
+    P1440,
+    #[serde(rename = "1080p")]
+    P1080,
+    #[serde(rename = "720p")]
+    P720,
+    #[serde(rename = "480p")]
+    P480,
+    #[serde(rename = "360p")]
+    P360,
+}
+
+impl OutputResolution {
+    pub fn landscape_bounds(self) -> Option<(u32, u32)> {
+        match self {
+            Self::Source => None,
+            Self::P2160 => Some((3840, 2160)),
+            Self::P1440 => Some((2560, 1440)),
+            Self::P1080 => Some((1920, 1080)),
+            Self::P720 => Some((1280, 720)),
+            Self::P480 => Some((854, 480)),
+            Self::P360 => Some((640, 360)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodeRequest {
@@ -136,6 +169,7 @@ pub struct EncodeRequest {
     pub video_codec: VideoCodec,
     pub encoding_speed: EncodingSpeed,
     pub audio_mode: AudioMode,
+    pub output_resolution: OutputResolution,
 }
 
 #[derive(Debug, Clone, Serialize)]

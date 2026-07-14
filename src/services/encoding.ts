@@ -18,6 +18,7 @@ export type EncodeRequest = {
   videoCodec: VideoCodec;
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
+  outputResolution: EncodingSettings["outputResolution"];
 };
 
 export function getFfmpegStatus(): Promise<FfmpegStatus> {

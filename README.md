@@ -14,6 +14,7 @@ Current capabilities:
 - local media inspection with FFprobe;
 - multi-file selection and native drag and drop;
 - MP4 and MKV output with H.264 or H.265 video;
+- orientation-aware output resolution limits from 360p to 4K without upscaling;
 - five codec-aware quality levels;
 - lossless audio stream copy when the selected container supports it;
 - source-aware audio bitrate caps for required transcoding;
