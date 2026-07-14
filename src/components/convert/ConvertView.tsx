@@ -4,6 +4,7 @@ import {
   outputFrameRateLabel,
   type AdvancedEncodingSettings,
 } from "../../config/advanced";
+import type { EncodingProfile } from "../../config/profiles";
 import { formatDuration, formatEta } from "../../lib/format";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type {
@@ -20,6 +21,7 @@ import { MediaSourceCard } from "./MediaSourceCard";
 import { QualitySlider } from "./QualitySlider";
 import { ResolutionOptions } from "./ResolutionOptions";
 import { AdvancedOptions } from "./AdvancedOptions";
+import { ProfileBar } from "./ProfileBar";
 
 type ConvertViewProps = {
   media: MediaInfo | null;
@@ -33,6 +35,9 @@ type ConvertViewProps = {
   outputResolution: OutputResolution;
   isAdvancedMode: boolean;
   advancedSettings: AdvancedEncodingSettings;
+  profiles: EncodingProfile[];
+  selectedProfileId: string | null;
+  isProfileModified: boolean;
   isReady: boolean;
   isProbing: boolean;
   isActive: boolean;
@@ -51,6 +56,11 @@ type ConvertViewProps = {
   onOutputResolutionChange: (resolution: OutputResolution) => void;
   onAdvancedModeChange: (advanced: boolean) => void;
   onAdvancedSettingsChange: (settings: Partial<AdvancedEncodingSettings>) => void;
+  onProfileSelect: (profileId: string | null) => void;
+  onProfileCreate: (name: string) => void;
+  onProfileUpdate: () => void;
+  onProfileRename: (name: string) => void;
+  onProfileDelete: () => void;
   onStartEncoding: () => void;
   onTogglePause: () => void;
   onCancelEncoding: () => void;
@@ -68,6 +78,9 @@ export function ConvertView({
   outputResolution,
   isAdvancedMode,
   advancedSettings,
+  profiles,
+  selectedProfileId,
+  isProfileModified,
   isReady,
   isProbing,
   isActive,
@@ -86,6 +99,11 @@ export function ConvertView({
   onOutputResolutionChange,
   onAdvancedModeChange,
   onAdvancedSettingsChange,
+  onProfileSelect,
+  onProfileCreate,
+  onProfileUpdate,
+  onProfileRename,
+  onProfileDelete,
   onStartEncoding,
   onTogglePause,
   onCancelEncoding,
@@ -122,6 +140,17 @@ export function ConvertView({
       <div className="conversion-workspace">
         <div className="conversion-content">
           <MediaSourceCard media={media} count={mediaCount} />
+          <ProfileBar
+            profiles={profiles}
+            selectedProfileId={selectedProfileId}
+            isModified={isProfileModified}
+            disabled={!canEdit}
+            onSelect={onProfileSelect}
+            onCreate={onProfileCreate}
+            onUpdate={onProfileUpdate}
+            onRename={onProfileRename}
+            onDelete={onProfileDelete}
+          />
           <div className="conversion-mode-switch" role="radiogroup" aria-label="Conversion mode">
             <button
               type="button"

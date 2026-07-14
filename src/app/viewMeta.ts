@@ -36,6 +36,6 @@ export function viewMeta(
           : "Finished conversions saved locally",
       ];
     case "settings":
-      return ["Settings", "Application and encoding engine"];
+      return ["Settings", "Profiles and application settings"];
   }
 }
