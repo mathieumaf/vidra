@@ -52,34 +52,34 @@ pub enum QualityLevel {
 }
 
 impl QualityLevel {
-    pub fn crf(self, codec: VideoCodec) -> Option<&'static str> {
+    pub fn crf(self, codec: VideoCodec) -> Option<u8> {
         match (codec, self) {
-            (VideoCodec::H264, Self::MaximumCompression) => Some("30"),
-            (VideoCodec::H264, Self::SmallerFile) => Some("26"),
-            (VideoCodec::H264, Self::Balanced) => Some("22"),
-            (VideoCodec::H264, Self::HighQuality) => Some("19"),
-            (VideoCodec::H264, Self::NearSource) => Some("17"),
-            (VideoCodec::H265, Self::MaximumCompression) => Some("34"),
-            (VideoCodec::H265, Self::SmallerFile) => Some("30"),
-            (VideoCodec::H265, Self::Balanced) => Some("26"),
-            (VideoCodec::H265, Self::HighQuality) => Some("23"),
-            (VideoCodec::H265, Self::NearSource) => Some("21"),
-            (VideoCodec::Av1, Self::MaximumCompression) => Some("45"),
-            (VideoCodec::Av1, Self::SmallerFile) => Some("39"),
-            (VideoCodec::Av1, Self::Balanced) => Some("33"),
-            (VideoCodec::Av1, Self::HighQuality) => Some("27"),
-            (VideoCodec::Av1, Self::NearSource) => Some("23"),
+            (VideoCodec::H264, Self::MaximumCompression) => Some(30),
+            (VideoCodec::H264, Self::SmallerFile) => Some(26),
+            (VideoCodec::H264, Self::Balanced) => Some(22),
+            (VideoCodec::H264, Self::HighQuality) => Some(19),
+            (VideoCodec::H264, Self::NearSource) => Some(17),
+            (VideoCodec::H265, Self::MaximumCompression) => Some(34),
+            (VideoCodec::H265, Self::SmallerFile) => Some(30),
+            (VideoCodec::H265, Self::Balanced) => Some(26),
+            (VideoCodec::H265, Self::HighQuality) => Some(23),
+            (VideoCodec::H265, Self::NearSource) => Some(21),
+            (VideoCodec::Av1, Self::MaximumCompression) => Some(45),
+            (VideoCodec::Av1, Self::SmallerFile) => Some(39),
+            (VideoCodec::Av1, Self::Balanced) => Some(33),
+            (VideoCodec::Av1, Self::HighQuality) => Some(27),
+            (VideoCodec::Av1, Self::NearSource) => Some(23),
             (VideoCodec::Copy, _) => None,
         }
     }
 
-    pub fn videotoolbox_quality(self) -> &'static str {
+    pub fn videotoolbox_quality(self) -> u8 {
         match self {
-            Self::MaximumCompression => "35",
-            Self::SmallerFile => "50",
-            Self::Balanced => "65",
-            Self::HighQuality => "80",
-            Self::NearSource => "90",
+            Self::MaximumCompression => 35,
+            Self::SmallerFile => 50,
+            Self::Balanced => 65,
+            Self::HighQuality => 80,
+            Self::NearSource => 90,
         }
     }
 }
@@ -159,6 +159,93 @@ impl OutputResolution {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum OutputFrameRate {
+    #[default]
+    #[serde(rename = "source")]
+    Source,
+    #[serde(rename = "24")]
+    Fps24,
+    #[serde(rename = "25")]
+    Fps25,
+    #[serde(rename = "30")]
+    Fps30,
+    #[serde(rename = "50")]
+    Fps50,
+    #[serde(rename = "60")]
+    Fps60,
+}
+
+impl OutputFrameRate {
+    pub fn value(self) -> Option<u32> {
+        match self {
+            Self::Source => None,
+            Self::Fps24 => Some(24),
+            Self::Fps25 => Some(25),
+            Self::Fps30 => Some(30),
+            Self::Fps50 => Some(50),
+            Self::Fps60 => Some(60),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum AudioBitrate {
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "96")]
+    Kbps96,
+    #[serde(rename = "128")]
+    Kbps128,
+    #[serde(rename = "160")]
+    Kbps160,
+    #[serde(rename = "192")]
+    Kbps192,
+    #[serde(rename = "256")]
+    Kbps256,
+}
+
+impl AudioBitrate {
+    pub fn bits_per_second(self) -> Option<u64> {
+        match self {
+            Self::Auto => None,
+            Self::Kbps96 => Some(96_000),
+            Self::Kbps128 => Some(128_000),
+            Self::Kbps160 => Some(160_000),
+            Self::Kbps192 => Some(192_000),
+            Self::Kbps256 => Some(256_000),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioChannels {
+    #[default]
+    Source,
+    Stereo,
+    Mono,
+}
+
+impl AudioChannels {
+    pub fn maximum(self) -> Option<u32> {
+        match self {
+            Self::Source => None,
+            Self::Stereo => Some(2),
+            Self::Mono => Some(1),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioTrackMode {
+    #[default]
+    All,
+    First,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodeRequest {
@@ -170,6 +257,14 @@ pub struct EncodeRequest {
     pub encoding_speed: EncodingSpeed,
     pub audio_mode: AudioMode,
     pub output_resolution: OutputResolution,
+    pub output_frame_rate: OutputFrameRate,
+    pub quality_tuning: i8,
+    pub audio_bitrate: AudioBitrate,
+    pub audio_channels: AudioChannels,
+    pub audio_track_mode: AudioTrackMode,
+    pub preserve_subtitles: bool,
+    pub preserve_metadata: bool,
+    pub preserve_chapters: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

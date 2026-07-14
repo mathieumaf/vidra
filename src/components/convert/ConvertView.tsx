@@ -1,5 +1,9 @@
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
+import {
+  outputFrameRateLabel,
+  type AdvancedEncodingSettings,
+} from "../../config/advanced";
 import { formatDuration, formatEta } from "../../lib/format";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type {
@@ -15,6 +19,7 @@ import { EncodingOptions } from "./EncodingOptions";
 import { MediaSourceCard } from "./MediaSourceCard";
 import { QualitySlider } from "./QualitySlider";
 import { ResolutionOptions } from "./ResolutionOptions";
+import { AdvancedOptions } from "./AdvancedOptions";
 
 type ConvertViewProps = {
   media: MediaInfo | null;
@@ -26,6 +31,8 @@ type ConvertViewProps = {
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
   outputResolution: OutputResolution;
+  isAdvancedMode: boolean;
+  advancedSettings: AdvancedEncodingSettings;
   isReady: boolean;
   isProbing: boolean;
   isActive: boolean;
@@ -42,6 +49,8 @@ type ConvertViewProps = {
   onEncodingSpeedChange: (speed: EncodingSpeed) => void;
   onAudioModeChange: (mode: AudioMode) => void;
   onOutputResolutionChange: (resolution: OutputResolution) => void;
+  onAdvancedModeChange: (advanced: boolean) => void;
+  onAdvancedSettingsChange: (settings: Partial<AdvancedEncodingSettings>) => void;
   onStartEncoding: () => void;
   onTogglePause: () => void;
   onCancelEncoding: () => void;
@@ -57,6 +66,8 @@ export function ConvertView({
   encodingSpeed,
   audioMode,
   outputResolution,
+  isAdvancedMode,
+  advancedSettings,
   isReady,
   isProbing,
   isActive,
@@ -73,6 +84,8 @@ export function ConvertView({
   onEncodingSpeedChange,
   onAudioModeChange,
   onOutputResolutionChange,
+  onAdvancedModeChange,
+  onAdvancedSettingsChange,
   onStartEncoding,
   onTogglePause,
   onCancelEncoding,
@@ -109,6 +122,22 @@ export function ConvertView({
       <div className="conversion-workspace">
         <div className="conversion-content">
           <MediaSourceCard media={media} count={mediaCount} />
+          <div className="conversion-mode-switch" role="radiogroup" aria-label="Conversion mode">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!isAdvancedMode}
+              className={!isAdvancedMode ? "active" : ""}
+              onClick={() => onAdvancedModeChange(false)}
+            >Simple</button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={isAdvancedMode}
+              className={isAdvancedMode ? "active" : ""}
+              onClick={() => onAdvancedModeChange(true)}
+            >Advanced</button>
+          </div>
           <EncodingOptions
             container={outputContainer}
             videoCodec={videoCodec}
@@ -142,6 +171,19 @@ export function ConvertView({
             onChange={onAudioModeChange}
           />
 
+          {isAdvancedMode && (
+            <AdvancedOptions
+              video={media.video}
+              audio={media.audio}
+              container={outputContainer}
+              videoCodec={videoCodec}
+              audioMode={audioMode}
+              settings={advancedSettings}
+              disabled={!canEdit}
+              onChange={onAdvancedSettingsChange}
+            />
+          )}
+
           {!isActive && result?.status === "completed" && (
             <div className="success-message">
               <span>✓</span>
@@ -159,7 +201,9 @@ export function ConvertView({
         <div className="conversion-actions">
           <span>
             Output <strong>
-              {outputContainer.toUpperCase()} · {videoCodecLabel(videoCodec)} · {outputResolutionLabel(outputResolution)} · {audioMode === "none" ? "No audio" : `${audioModeLabel(audioMode)} audio`}
+              {outputContainer.toUpperCase()} · {videoCodecLabel(videoCodec)} · {outputResolutionLabel(outputResolution)}
+              {advancedSettings.outputFrameRate !== "source" ? ` · ${outputFrameRateLabel(advancedSettings.outputFrameRate)}` : ""}
+              {audioMode === "none" ? " · No audio" : ` · ${audioModeLabel(audioMode)} audio`}
             </strong>
           </span>
           {isActive ? (

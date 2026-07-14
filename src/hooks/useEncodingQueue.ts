@@ -5,6 +5,10 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import type { QualityLevel } from "../config/quality";
 import { outputContainer as getOutputContainer } from "../config/encoding";
 import { resolutionReducesVideo } from "../config/resolution";
+import {
+  frameRateReducesVideo,
+  type AdvancedEncodingSettings,
+} from "../config/advanced";
 import { defaultOutputPath, errorMessage } from "../lib/format";
 import {
   batchOutputPaths,
@@ -57,6 +61,7 @@ type EncodingQueueOptions = {
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
   outputResolution: OutputResolution;
+  advancedSettings: AdvancedEncodingSettings;
 };
 
 export function useEncodingQueue({
@@ -67,6 +72,7 @@ export function useEncodingQueue({
   encodingSpeed,
   audioMode,
   outputResolution,
+  advancedSettings,
 }: EncodingQueueOptions) {
   const [items, setItems] = useState<EncodeQueueItem[]>([]);
   const [isProbing, setIsProbing] = useState(false);
@@ -81,6 +87,7 @@ export function useEncodingQueue({
     encodingSpeed,
     audioMode,
     outputResolution,
+    ...advancedSettings,
   });
 
   useEffect(() => {
@@ -91,8 +98,17 @@ export function useEncodingQueue({
       encodingSpeed,
       audioMode,
       outputResolution,
+      ...advancedSettings,
     };
-  }, [quality.id, outputContainer, videoCodec, encodingSpeed, audioMode, outputResolution]);
+  }, [
+    quality.id,
+    outputContainer,
+    videoCodec,
+    encodingSpeed,
+    audioMode,
+    outputResolution,
+    advancedSettings,
+  ]);
 
   useEffect(() => {
     const subscriptions = Promise.all([
@@ -215,10 +231,16 @@ export function useEncodingQueue({
       const failures = probes.length - media.length;
       const newItems = media.map((item) => {
         const defaults = defaultSettingsRef.current;
-        const settings = defaults.outputResolution !== "source"
+        let settings = defaults.outputResolution !== "source"
           && !resolutionReducesVideo(item.video, defaults.outputResolution)
           ? { ...defaults, outputResolution: "source" as const }
           : defaults;
+        if (
+          settings.outputFrameRate !== "source"
+          && !frameRateReducesVideo(item.video, settings.outputFrameRate)
+        ) {
+          settings = { ...settings, outputFrameRate: "source" };
+        }
         return createQueueItem(item, settings);
       });
       setItems((currentItems) => {
@@ -290,6 +312,14 @@ export function useEncodingQueue({
         encodingSpeed: item.settings.encodingSpeed,
         audioMode: item.settings.audioMode,
         outputResolution: item.settings.outputResolution,
+        outputFrameRate: item.settings.outputFrameRate,
+        qualityTuning: item.settings.qualityTuning,
+        audioBitrate: item.settings.audioBitrate,
+        audioChannels: item.settings.audioChannels,
+        audioTrackMode: item.settings.audioTrackMode,
+        preserveSubtitles: item.settings.preserveSubtitles,
+        preserveMetadata: item.settings.preserveMetadata,
+        preserveChapters: item.settings.preserveChapters,
       })));
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),

@@ -1,6 +1,7 @@
 use crate::{
     ffmpeg::{
-        AudioMode, EncodingSpeed, OutputContainer, OutputResolution, QualityLevel, VideoCodec,
+        AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodingSpeed, OutputContainer,
+        OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
     },
     jobs::PendingJob,
 };
@@ -24,6 +25,26 @@ pub struct HistorySettings {
     pub audio_mode: AudioMode,
     #[serde(default)]
     pub output_resolution: OutputResolution,
+    #[serde(default)]
+    pub output_frame_rate: OutputFrameRate,
+    #[serde(default)]
+    pub quality_tuning: i8,
+    #[serde(default)]
+    pub audio_bitrate: AudioBitrate,
+    #[serde(default)]
+    pub audio_channels: AudioChannels,
+    #[serde(default)]
+    pub audio_track_mode: AudioTrackMode,
+    #[serde(default = "default_true")]
+    pub preserve_subtitles: bool,
+    #[serde(default = "default_true")]
+    pub preserve_metadata: bool,
+    #[serde(default = "default_true")]
+    pub preserve_chapters: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -72,6 +93,14 @@ impl HistoryDraft {
                 encoding_speed: job.request.encoding_speed,
                 audio_mode: job.request.audio_mode,
                 output_resolution: job.request.output_resolution,
+                output_frame_rate: job.request.output_frame_rate,
+                quality_tuning: job.request.quality_tuning,
+                audio_bitrate: job.request.audio_bitrate,
+                audio_channels: job.request.audio_channels,
+                audio_track_mode: job.request.audio_track_mode,
+                preserve_subtitles: job.request.preserve_subtitles,
+                preserve_metadata: job.request.preserve_metadata,
+                preserve_chapters: job.request.preserve_chapters,
             },
         }
     }

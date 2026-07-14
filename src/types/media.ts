@@ -11,6 +11,10 @@ export type OutputResolution =
   | "720p"
   | "480p"
   | "360p";
+export type OutputFrameRate = "source" | "24" | "25" | "30" | "50" | "60";
+export type AudioBitrate = "auto" | "96" | "128" | "160" | "192" | "256";
+export type AudioChannels = "source" | "stereo" | "mono";
+export type AudioTrackMode = "all" | "first";
 export type QualityLevelId =
   | "maximum-compression"
   | "smaller-file"
@@ -25,6 +29,14 @@ export type EncodingSettings = {
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
   outputResolution: OutputResolution;
+  outputFrameRate: OutputFrameRate;
+  qualityTuning: number;
+  audioBitrate: AudioBitrate;
+  audioChannels: AudioChannels;
+  audioTrackMode: AudioTrackMode;
+  preserveSubtitles: boolean;
+  preserveMetadata: boolean;
+  preserveChapters: boolean;
 };
 
 export type FfmpegStatus = {

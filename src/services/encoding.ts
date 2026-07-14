@@ -19,6 +19,14 @@ export type EncodeRequest = {
   encodingSpeed: EncodingSpeed;
   audioMode: AudioMode;
   outputResolution: EncodingSettings["outputResolution"];
+  outputFrameRate: EncodingSettings["outputFrameRate"];
+  qualityTuning: number;
+  audioBitrate: EncodingSettings["audioBitrate"];
+  audioChannels: EncodingSettings["audioChannels"];
+  audioTrackMode: EncodingSettings["audioTrackMode"];
+  preserveSubtitles: boolean;
+  preserveMetadata: boolean;
+  preserveChapters: boolean;
 };
 
 export function getFfmpegStatus(): Promise<FfmpegStatus> {

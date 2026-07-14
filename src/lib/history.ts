@@ -1,6 +1,7 @@
 import { videoCodecLabel } from "../config/encoding";
 import { qualityLevel } from "../config/quality";
 import { outputResolutionLabel } from "../config/resolution";
+import { outputFrameRateLabel } from "../config/advanced";
 import type { HistoryEntry } from "../types/media";
 import { formatBytes } from "./format";
 
@@ -22,6 +23,9 @@ export function historySummary(entry: HistoryEntry): string {
     qualityLevel(entry.settings.quality).label,
     outputResolutionLabel(entry.settings.outputResolution),
   ];
+  if (entry.settings.outputFrameRate !== "source") {
+    details.push(outputFrameRateLabel(entry.settings.outputFrameRate));
+  }
   if (entry.outputSizeBytes !== null) details.push(formatBytes(entry.outputSizeBytes));
   details.push(historyDate(entry.finishedAtMs));
   return details.join(" · ");
