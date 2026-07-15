@@ -1,4 +1,4 @@
-use super::{validate_input, AudioStream, MediaInfo, VideoStream};
+use super::{validate_input, AudioStream, MediaInfo, SubtitleStream, VideoStream};
 use crate::error::{ApiError, ApiResult};
 use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
@@ -10,15 +10,23 @@ struct ProbeOutput {
     format: ProbeFormat,
     #[serde(default)]
     streams: Vec<ProbeStream>,
+    #[serde(default)]
+    chapters: Vec<ProbeChapter>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ProbeFormat {
     #[serde(default)]
     format_name: String,
+    format_long_name: Option<String>,
     duration: Option<String>,
     size: Option<String>,
+    #[serde(default)]
+    tags: HashMap<String, String>,
 }
+
+#[derive(Debug, Deserialize)]
+struct ProbeChapter {}
 
 #[derive(Debug, Deserialize)]
 struct ProbeStream {
@@ -94,6 +102,7 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
             "error",
             "-show_format",
             "-show_streams",
+            "-show_chapters",
             "-of",
             "json",
         ])
@@ -108,7 +117,11 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
         ));
     }
 
-    let probe: ProbeOutput = serde_json::from_slice(&output.stdout)
+    parse_media_info(&output.stdout, &input)
+}
+
+fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
+    let probe: ProbeOutput = serde_json::from_slice(output)
         .map_err(|error| ApiError::ffmpeg(format!("Unable to parse FFprobe output: {error}")))?;
 
     let video = probe
@@ -148,12 +161,27 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
                 .as_deref()
                 .and_then(|value| value.parse().ok()),
             language: stream.tags.get("language").cloned(),
+            title: stream.tags.get("title").cloned(),
+        })
+        .collect();
+
+    let subtitles = probe
+        .streams
+        .iter()
+        .filter(|stream| stream.codec_type.as_deref() == Some("subtitle"))
+        .map(|stream| SubtitleStream {
+            codec: stream
+                .codec_name
+                .clone()
+                .unwrap_or_else(|| "unknown".into()),
+            language: stream.tags.get("language").cloned(),
+            title: stream.tags.get("title").cloned(),
         })
         .collect();
 
     Ok(MediaInfo {
         path: input.to_string_lossy().into_owned(),
-        name: display_name(&input),
+        name: display_name(input),
         duration_seconds: probe
             .format
             .duration
@@ -167,15 +195,21 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
             .and_then(|value| value.parse().ok())
             .unwrap_or_default(),
         format_name: probe.format.format_name,
+        format_long_name: probe.format.format_long_name,
         video,
         audio,
+        subtitles,
+        chapter_count: probe.chapters.len(),
+        has_metadata: !probe.format.tags.is_empty(),
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{display_dimensions, parse_frame_rate, ProbeSideData, ProbeStream};
-    use std::collections::HashMap;
+    use super::{
+        display_dimensions, parse_frame_rate, parse_media_info, ProbeSideData, ProbeStream,
+    };
+    use std::{collections::HashMap, path::Path};
 
     #[test]
     fn parses_fractional_frame_rates() {
@@ -203,5 +237,57 @@ mod tests {
         };
 
         assert_eq!(display_dimensions(&stream), (1080, 1920));
+    }
+
+    #[test]
+    fn parses_media_details() {
+        let output = br#"{
+          "streams": [
+            {
+              "codec_name": "hevc",
+              "codec_type": "video",
+              "width": 3840,
+              "height": 2160,
+              "avg_frame_rate": "24000/1001",
+              "pix_fmt": "yuv420p10le"
+            },
+            {
+              "codec_name": "aac",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "channels": 6,
+              "bit_rate": "256000",
+              "tags": { "language": "eng", "title": "Surround" }
+            },
+            {
+              "codec_name": "subrip",
+              "codec_type": "subtitle",
+              "tags": { "language": "fra", "title": "French" }
+            }
+          ],
+          "chapters": [{ "id": 0 }, { "id": 1 }],
+          "format": {
+            "format_name": "matroska,webm",
+            "format_long_name": "Matroska / WebM",
+            "duration": "125.5",
+            "size": "1048576",
+            "tags": { "title": "Example" }
+          }
+        }"#;
+
+        let media = parse_media_info(output, Path::new("/tmp/example.mkv")).unwrap();
+
+        assert_eq!(media.format_name, "matroska,webm");
+        assert_eq!(media.format_long_name.as_deref(), Some("Matroska / WebM"));
+        assert_eq!(media.chapter_count, 2);
+        assert!(media.has_metadata);
+        assert_eq!(
+            media.video.unwrap().pixel_format.as_deref(),
+            Some("yuv420p10le")
+        );
+        assert_eq!(media.audio[0].language.as_deref(), Some("eng"));
+        assert_eq!(media.audio[0].title.as_deref(), Some("Surround"));
+        assert_eq!(media.subtitles[0].codec, "subrip");
+        assert_eq!(media.subtitles[0].language.as_deref(), Some("fra"));
     }
 }

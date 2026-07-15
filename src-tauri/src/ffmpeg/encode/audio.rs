@@ -139,6 +139,7 @@ mod tests {
             sample_rate: Some(48_000),
             bit_rate,
             language: None,
+            title: None,
         }
     }
 
