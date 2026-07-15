@@ -199,7 +199,7 @@ export function useEncodingQueue({
   const hasActiveJobs = activeItems.length > 0;
   const queueCount = activeItems.length + readyItems.length;
 
-  async function selectVideos(): Promise<number> {
+  async function selectVideos(settingsOverride?: EncodingSettings): Promise<number> {
     setError(null);
     setResult(null);
     const selected = await open({
@@ -214,10 +214,13 @@ export function useEncodingQueue({
       ],
     });
     if (!selected) return 0;
-    return addVideoPaths(Array.isArray(selected) ? selected : [selected]);
+    return addVideoPaths(Array.isArray(selected) ? selected : [selected], settingsOverride);
   }
 
-  async function addVideoPaths(selectedPaths: string[]): Promise<number> {
+  async function addVideoPaths(
+    selectedPaths: string[],
+    settingsOverride?: EncodingSettings,
+  ): Promise<number> {
     const paths = selectedPaths.filter((path) => {
       const extension = path.split(".").pop()?.toLowerCase() ?? "";
       return supportedExtensions.has(extension);
@@ -230,7 +233,7 @@ export function useEncodingQueue({
       const media = probes.flatMap((probe) => probe.status === "fulfilled" ? [probe.value] : []);
       const failures = probes.length - media.length;
       const newItems = media.map((item) => {
-        const defaults = defaultSettingsRef.current;
+        const defaults = settingsOverride ?? defaultSettingsRef.current;
         let settings = defaults.outputResolution !== "source"
           && !resolutionReducesVideo(item.video, defaults.outputResolution)
           ? { ...defaults, outputResolution: "source" as const }

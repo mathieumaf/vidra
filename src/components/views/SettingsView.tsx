@@ -9,21 +9,28 @@ type SettingsViewProps = {
   status: FfmpegStatus | null;
   isReady: boolean;
   profiles: EncodingProfile[];
+  defaultProfileId: string | null;
+  lastUsedProfileId: string;
   onDuplicateProfile: (profileId: string) => void;
   onRenameProfile: (profileId: string, name: string) => void;
   onDeleteProfile: (profileId: string) => void;
+  onDefaultProfileChange: (profileId: string | null) => void;
 };
 
 export function SettingsView({
   status,
   isReady,
   profiles,
+  defaultProfileId,
+  lastUsedProfileId,
   onDuplicateProfile,
   onRenameProfile,
   onDeleteProfile,
+  onDefaultProfileChange,
 }: SettingsViewProps) {
   const builtInProfiles = profiles.filter((profile) => profile.isBuiltIn);
   const userProfiles = profiles.filter((profile) => !profile.isBuiltIn);
+  const lastUsedProfile = profiles.find((profile) => profile.id === lastUsedProfileId);
 
   return (
     <div className="settings-view">
@@ -34,6 +41,36 @@ export function SettingsView({
             <span>{userProfiles.length} personal</span>
           </div>
 
+          <div className="settings-default-profile">
+            <div>
+              <strong>Default for new conversions</strong>
+              <p>{defaultProfileId === null
+                ? `Uses the last selected profile${lastUsedProfile ? `: ${lastUsedProfile.name}` : ""}.`
+                : "Applied automatically when starting a new conversion."}</p>
+            </div>
+            <select
+              aria-label="Default encoding profile"
+              value={defaultProfileId ?? "last-used"}
+              onChange={(event) => onDefaultProfileChange(
+                event.target.value === "last-used" ? null : event.target.value,
+              )}
+            >
+              <option value="last-used">Last used profile</option>
+              <optgroup label="Built-in">
+                {builtInProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>{profile.name}</option>
+                ))}
+              </optgroup>
+              {userProfiles.length > 0 && (
+                <optgroup label="My profiles">
+                  {userProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+
           <div className="settings-profile-group">
             <span className="settings-group-label">BUILT-IN · READ ONLY</span>
             <div className="settings-card profile-settings-card">
@@ -41,6 +78,7 @@ export function SettingsView({
                 <SettingsProfileRow
                   key={profile.id}
                   profile={profile}
+                  isDefault={defaultProfileId === profile.id}
                   onDuplicate={() => onDuplicateProfile(profile.id)}
                 />
               ))}
@@ -54,6 +92,7 @@ export function SettingsView({
                 <SettingsProfileRow
                   key={profile.id}
                   profile={profile}
+                  isDefault={defaultProfileId === profile.id}
                   onDuplicate={() => onDuplicateProfile(profile.id)}
                   onRename={(name) => onRenameProfile(profile.id, name)}
                   onDelete={() => onDeleteProfile(profile.id)}
@@ -97,11 +136,13 @@ export function SettingsView({
 
 function SettingsProfileRow({
   profile,
+  isDefault,
   onDuplicate,
   onRename,
   onDelete,
 }: {
   profile: EncodingProfile;
+  isDefault: boolean;
   onDuplicate: () => void;
   onRename?: (name: string) => void;
   onDelete?: () => void;
@@ -129,6 +170,7 @@ function SettingsProfileRow({
           <span className={`profile-kind ${profile.isBuiltIn ? "built-in" : "personal"}`}>
             {profile.isBuiltIn ? "Built-in · Read only" : "Personal"}
           </span>
+          {isDefault && <span className="profile-kind default">Default</span>}
         </div>
         <p>{profileSummary(profile)}</p>
       </div>

@@ -5,24 +5,28 @@ type ProfileBarProps = {
   profiles: EncodingProfile[];
   selectedProfileId: string | null;
   isModified: boolean;
+  readyItemCount: number;
   disabled: boolean;
   onSelect: (profileId: string | null) => void;
   onCreate: (name: string) => void;
   onUpdate: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onApplyToAll: () => void;
 };
 
 export function ProfileBar({
   profiles,
   selectedProfileId,
   isModified,
+  readyItemCount,
   disabled,
   onSelect,
   onCreate,
   onUpdate,
   onRename,
   onDelete,
+  onApplyToAll,
 }: ProfileBarProps) {
   const [editor, setEditor] = useState<"create" | "rename" | null>(null);
   const [name, setName] = useState("");
@@ -86,6 +90,15 @@ export function ProfileBar({
         </div>
 
         <div className="profile-actions">
+          {readyItemCount > 1 && (
+            <button
+              className="profile-apply-all-button"
+              type="button"
+              disabled={disabled}
+              title={`Apply these settings to ${readyItemCount} ready videos`}
+              onClick={onApplyToAll}
+            >Apply to all</button>
+          )}
           {selectedProfile && !selectedProfile.isBuiltIn ? (
             <>
               <button type="button" disabled={disabled || !isModified} onClick={onUpdate}>Update</button>
