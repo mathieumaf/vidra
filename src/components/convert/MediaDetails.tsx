@@ -1,4 +1,12 @@
 import { formatBitrate, formatBytes, formatDuration } from "../../lib/format";
+import {
+  audioTrackName,
+  channelLabel,
+  codecLabel,
+  languageLabel,
+  sampleRateLabel,
+  subtitleTrackName,
+} from "../../lib/tracks";
 import type { AudioStream, MediaInfo, SubtitleStream } from "../../types/media";
 
 export function MediaDetails({ media }: { media: MediaInfo }) {
@@ -83,12 +91,12 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
 }
 
 function AudioTrack({ track, index }: { track: AudioStream; index: number }) {
-  const title = track.title ? `Audio ${index + 1} · ${track.title}` : `Audio ${index + 1}`;
+  const language = languageLabel(track.language);
   return (
     <div className="media-stream-row">
       <div className="media-stream-title">
-        <strong>{title}</strong>
-        {track.language && <span>{track.language.toUpperCase()}</span>}
+        <strong>{audioTrackName(track, index)}</strong>
+        {language && <span>{language}</span>}
       </div>
       <div className="media-stream-facts">
         <span>{codecLabel(track.codec)}</span>
@@ -101,12 +109,14 @@ function AudioTrack({ track, index }: { track: AudioStream; index: number }) {
 }
 
 function SubtitleTrack({ track, index }: { track: SubtitleStream; index: number }) {
-  const title = track.title ? `Subtitle ${index + 1} · ${track.title}` : `Subtitle ${index + 1}`;
+  const language = languageLabel(track.language);
   return (
     <div className="media-stream-row compact-stream-row">
       <div className="media-stream-title">
-        <strong>{title}</strong>
-        {track.language && <span>{track.language.toUpperCase()}</span>}
+        <strong>{subtitleTrackName(track, index)}</strong>
+        {language && <span>{language}</span>}
+        {track.isDefault && <span>Default</span>}
+        {track.isForced && <span>Forced</span>}
       </div>
       <div className="media-stream-facts"><span>{codecLabel(track.codec)}</span></div>
     </div>
@@ -135,24 +145,9 @@ function streamSummary(media: MediaInfo): string {
   return values.join(" · ");
 }
 
-function codecLabel(codec: string): string {
-  return codec === "unknown" ? "Unknown codec" : codec.toUpperCase();
-}
-
 function frameRateLabel(frameRate: number | null): string {
   if (frameRate === null || !Number.isFinite(frameRate)) return "Unknown frame rate";
   return `${Number(frameRate.toFixed(2))} fps`;
-}
-
-function channelLabel(channels: number | null): string {
-  if (channels === 1) return "Mono";
-  if (channels === 2) return "Stereo";
-  return channels ? `${channels} channels` : "Unknown channels";
-}
-
-function sampleRateLabel(sampleRate: number | null): string {
-  if (!sampleRate) return "Unknown sample rate";
-  return `${Number((sampleRate / 1000).toFixed(1))} kHz`;
 }
 
 function bitrateLabel(bitRate: number | null): string {

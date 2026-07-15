@@ -30,6 +30,7 @@ struct ProbeChapter {}
 
 #[derive(Debug, Deserialize)]
 struct ProbeStream {
+    index: u32,
     codec_type: Option<String>,
     codec_name: Option<String>,
     width: Option<u32>,
@@ -42,7 +43,17 @@ struct ProbeStream {
     #[serde(default)]
     tags: HashMap<String, String>,
     #[serde(default)]
+    disposition: ProbeDisposition,
+    #[serde(default)]
     side_data_list: Vec<ProbeSideData>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ProbeDisposition {
+    #[serde(default, rename = "default")]
+    is_default: u8,
+    #[serde(default)]
+    forced: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +158,7 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
         .iter()
         .filter(|stream| stream.codec_type.as_deref() == Some("audio"))
         .map(|stream| AudioStream {
+            index: stream.index,
             codec: stream
                 .codec_name
                 .clone()
@@ -170,12 +182,15 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
         .iter()
         .filter(|stream| stream.codec_type.as_deref() == Some("subtitle"))
         .map(|stream| SubtitleStream {
+            index: stream.index,
             codec: stream
                 .codec_name
                 .clone()
                 .unwrap_or_else(|| "unknown".into()),
             language: stream.tags.get("language").cloned(),
             title: stream.tags.get("title").cloned(),
+            is_default: stream.disposition.is_default != 0,
+            is_forced: stream.disposition.forced != 0,
         })
         .collect();
 
@@ -207,7 +222,8 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
 #[cfg(test)]
 mod tests {
     use super::{
-        display_dimensions, parse_frame_rate, parse_media_info, ProbeSideData, ProbeStream,
+        display_dimensions, parse_frame_rate, parse_media_info, ProbeDisposition, ProbeSideData,
+        ProbeStream,
     };
     use std::{collections::HashMap, path::Path};
 
@@ -221,6 +237,7 @@ mod tests {
     #[test]
     fn reports_dimensions_in_display_orientation() {
         let stream = ProbeStream {
+            index: 0,
             codec_type: Some("video".to_owned()),
             codec_name: Some("h264".to_owned()),
             width: Some(1920),
@@ -231,6 +248,7 @@ mod tests {
             sample_rate: None,
             bit_rate: None,
             tags: HashMap::new(),
+            disposition: ProbeDisposition::default(),
             side_data_list: vec![ProbeSideData {
                 rotation: Some(-90),
             }],
@@ -244,6 +262,7 @@ mod tests {
         let output = br#"{
           "streams": [
             {
+              "index": 0,
               "codec_name": "hevc",
               "codec_type": "video",
               "width": 3840,
@@ -252,6 +271,7 @@ mod tests {
               "pix_fmt": "yuv420p10le"
             },
             {
+              "index": 1,
               "codec_name": "aac",
               "codec_type": "audio",
               "sample_rate": "48000",
@@ -260,8 +280,10 @@ mod tests {
               "tags": { "language": "eng", "title": "Surround" }
             },
             {
+              "index": 2,
               "codec_name": "subrip",
               "codec_type": "subtitle",
+              "disposition": { "default": 1, "forced": 1 },
               "tags": { "language": "fra", "title": "French" }
             }
           ],
@@ -286,8 +308,12 @@ mod tests {
             Some("yuv420p10le")
         );
         assert_eq!(media.audio[0].language.as_deref(), Some("eng"));
+        assert_eq!(media.audio[0].index, 1);
         assert_eq!(media.audio[0].title.as_deref(), Some("Surround"));
         assert_eq!(media.subtitles[0].codec, "subrip");
+        assert_eq!(media.subtitles[0].index, 2);
         assert_eq!(media.subtitles[0].language.as_deref(), Some("fra"));
+        assert!(media.subtitles[0].is_default);
+        assert!(media.subtitles[0].is_forced);
     }
 }

@@ -9,10 +9,12 @@ import { formatDuration, formatEta } from "../../lib/format";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type {
   AudioMode,
+  AudioTrackMode,
   EncodingSpeed,
   OutputContainer,
   OutputResolution,
   VideoCodec,
+  TrackSelection,
 } from "../../types/media";
 import { Icon } from "../ui/Icon";
 import { AudioOptions } from "./AudioOptions";
@@ -23,6 +25,7 @@ import { QualitySlider } from "./QualitySlider";
 import { ResolutionOptions } from "./ResolutionOptions";
 import { AdvancedOptions } from "./AdvancedOptions";
 import { ProfileBar } from "./ProfileBar";
+import { TrackSelectionOptions } from "./TrackSelectionOptions";
 
 type ConvertViewProps = {
   media: MediaInfo | null;
@@ -36,6 +39,7 @@ type ConvertViewProps = {
   outputResolution: OutputResolution;
   isAdvancedMode: boolean;
   advancedSettings: AdvancedEncodingSettings;
+  trackSelection: TrackSelection;
   profiles: EncodingProfile[];
   selectedProfileId: string | null;
   isProfileModified: boolean;
@@ -58,6 +62,8 @@ type ConvertViewProps = {
   onOutputResolutionChange: (resolution: OutputResolution) => void;
   onAdvancedModeChange: (advanced: boolean) => void;
   onAdvancedSettingsChange: (settings: Partial<AdvancedEncodingSettings>) => void;
+  onAudioTrackSelectionChange: (indexes: number[], strategy?: AudioTrackMode) => void;
+  onSubtitleTrackSelectionChange: (indexes: number[]) => void;
   onProfileSelect: (profileId: string | null) => void;
   onProfileCreate: (name: string) => void;
   onProfileUpdate: () => void;
@@ -81,6 +87,7 @@ export function ConvertView({
   outputResolution,
   isAdvancedMode,
   advancedSettings,
+  trackSelection,
   profiles,
   selectedProfileId,
   isProfileModified,
@@ -103,6 +110,8 @@ export function ConvertView({
   onOutputResolutionChange,
   onAdvancedModeChange,
   onAdvancedSettingsChange,
+  onAudioTrackSelectionChange,
+  onSubtitleTrackSelectionChange,
   onProfileSelect,
   onProfileCreate,
   onProfileUpdate,
@@ -174,7 +183,21 @@ export function ConvertView({
               onClick={() => onAdvancedModeChange(true)}
             >Advanced</button>
           </div>
-          {isAdvancedMode && <MediaDetails media={media} />}
+          {isAdvancedMode && (
+            <>
+              <MediaDetails media={media} />
+              <TrackSelectionOptions
+                audio={media.audio}
+                subtitles={media.subtitles}
+                container={outputContainer}
+                audioMode={audioMode}
+                selection={trackSelection}
+                disabled={!canEdit}
+                onAudioChange={onAudioTrackSelectionChange}
+                onSubtitleChange={onSubtitleTrackSelectionChange}
+              />
+            </>
+          )}
           <EncodingOptions
             container={outputContainer}
             videoCodec={videoCodec}
@@ -212,7 +235,6 @@ export function ConvertView({
             <AdvancedOptions
               video={media.video}
               audio={media.audio}
-              container={outputContainer}
               videoCodec={videoCodec}
               audioMode={audioMode}
               settings={advancedSettings}
@@ -240,7 +262,9 @@ export function ConvertView({
             Output <strong>
               {outputContainer.toUpperCase()} · {videoCodecLabel(videoCodec)} · {outputResolutionLabel(outputResolution)}
               {advancedSettings.outputFrameRate !== "source" ? ` · ${outputFrameRateLabel(advancedSettings.outputFrameRate)}` : ""}
-              {audioMode === "none" ? " · No audio" : ` · ${audioModeLabel(audioMode)} audio`}
+              {audioMode === "none" || trackSelection.audioStreamIndexes.length === 0
+                ? " · No audio"
+                : ` · ${audioModeLabel(audioMode)} audio`}
             </strong>
           </span>
           {isActive ? (

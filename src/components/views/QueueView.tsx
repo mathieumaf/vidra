@@ -4,6 +4,7 @@ import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
 import { outputFrameRateLabel } from "../../config/advanced";
 import { formatEta } from "../../lib/format";
+import { queueTrackSummary } from "../../lib/tracks";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
 
@@ -73,7 +74,7 @@ export function QueueView({
         <div>
           <span className="section-label">BATCH QUEUE</span>
           <strong>{items.length} {items.length === 1 ? "video" : "videos"}</strong>
-          <p>Each video keeps its own format, resolution, codec, and quality settings.</p>
+          <p>Each video keeps its own conversion settings and track selection.</p>
         </div>
         <div className="queue-summary-actions">
           <button className="secondary-button" type="button" onClick={onAddVideos} disabled={isProbing}>
@@ -138,6 +139,7 @@ export function QueueView({
             ? "Original video"
             : `${videoCodecLabel(item.settings.videoCodec)} · ${quality.label}`;
           const audioSummary = item.settings.audioMode === "none"
+            || item.trackSelection.audioStreamIndexes.length === 0
             ? "No audio"
             : `${audioModeLabel(item.settings.audioMode)} audio`;
           const frameRateSummary = item.settings.outputFrameRate === "source"
@@ -159,6 +161,7 @@ export function QueueView({
                   {item.media.video ? `${item.media.video.width} × ${item.media.video.height} · ` : ""}
                   {settingsSummary}
                 </p>
+                <p className="queue-item-tracks">{queueTrackSummary(item)}</p>
                 {isCurrent && (
                   <p>
                     {item.status === "paused"

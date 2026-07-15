@@ -24,6 +24,7 @@ import { useEncodingProfiles } from "../hooks/useEncodingProfiles";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
 import type {
   AudioMode,
+  AudioTrackMode,
   EncodeQueueItem,
   EncodingSettings,
   EncodingSpeed,
@@ -135,10 +136,10 @@ export default function App() {
     setAdvancedSettings(getAdvancedSettings(settings));
   }
 
-  function commitSettings(settings: EncodingSettings) {
+  function commitSettings(settings: EncodingSettings, applyTrackDefaults = false) {
     syncSettingsState(settings);
     if (queue.primaryItem?.status === "ready") {
-      queue.updateItemSettings(queue.primaryItem, settings);
+      queue.updateItemSettings(queue.primaryItem, settings, applyTrackDefaults);
     }
     queue.setError(null);
   }
@@ -226,6 +227,27 @@ export default function App() {
     });
   }
 
+  function changeAudioTrackSelection(indexes: number[], strategy?: AudioTrackMode) {
+    const item = queue.primaryItem;
+    if (!item || item.status !== "ready") return;
+    queue.updateItemTrackSelection(item, { audioStreamIndexes: indexes });
+    if (strategy && strategy !== advancedSettings.audioTrackMode) {
+      commitSettings({ ...currentSettings(), audioTrackMode: strategy });
+    }
+    queue.setError(null);
+  }
+
+  function changeSubtitleTrackSelection(indexes: number[]) {
+    const item = queue.primaryItem;
+    if (!item || item.status !== "ready") return;
+    queue.updateItemTrackSelection(item, { subtitleStreamIndexes: indexes });
+    const preserveSubtitles = indexes.length > 0;
+    if (preserveSubtitles !== advancedSettings.preserveSubtitles) {
+      commitSettings({ ...currentSettings(), preserveSubtitles });
+    }
+    queue.setError(null);
+  }
+
   function changeQuality(qualityIndex: number) {
     commitSettings({
       ...currentSettings(),
@@ -240,7 +262,10 @@ export default function App() {
     }
     const profile = profileStore.profiles.find((candidate) => candidate.id === profileId);
     if (!profile) return;
-    commitSettings(compatibleProfileSettings(profile.settings, queue.primaryItem?.media ?? null));
+    commitSettings(
+      compatibleProfileSettings(profile.settings, queue.primaryItem?.media ?? null),
+      true,
+    );
     setIsAdvancedMode(profile.isAdvanced);
     setSelectedProfileId(profile.id);
     profileStore.rememberProfile(profile.id);
@@ -283,7 +308,7 @@ export default function App() {
       );
     const settings = profileIsUnmodified ? profile.settings : current;
     queue.readyItems.forEach((item) => {
-      queue.updateItemSettings(item, compatibleProfileSettings(settings, item.media));
+      queue.updateItemSettings(item, compatibleProfileSettings(settings, item.media), true);
     });
     queue.setError(null);
   }
@@ -360,6 +385,10 @@ export default function App() {
               outputResolution={outputResolution}
               isAdvancedMode={isAdvancedMode}
               advancedSettings={advancedSettings}
+              trackSelection={primaryItem?.trackSelection ?? {
+                audioStreamIndexes: [],
+                subtitleStreamIndexes: [],
+              }}
               profiles={profileStore.profiles}
               selectedProfileId={selectedProfileId}
               isProfileModified={isProfileModified}
@@ -382,6 +411,8 @@ export default function App() {
               onOutputResolutionChange={changeOutputResolution}
               onAdvancedModeChange={setIsAdvancedMode}
               onAdvancedSettingsChange={changeAdvancedSettings}
+              onAudioTrackSelectionChange={changeAudioTrackSelection}
+              onSubtitleTrackSelectionChange={changeSubtitleTrackSelection}
               onProfileSelect={selectProfile}
               onProfileCreate={createProfile}
               onProfileUpdate={updateSelectedProfile}

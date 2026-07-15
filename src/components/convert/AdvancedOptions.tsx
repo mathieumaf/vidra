@@ -2,7 +2,6 @@ import type { CSSProperties } from "react";
 import {
   AUDIO_BITRATE_OPTIONS,
   AUDIO_CHANNEL_OPTIONS,
-  AUDIO_TRACK_OPTIONS,
   FRAME_RATE_OPTIONS,
   QUALITY_TUNING_LABELS,
   frameRateReducesVideo,
@@ -11,7 +10,6 @@ import {
 import type {
   AudioMode,
   AudioStream,
-  OutputContainer,
   VideoCodec,
   VideoStream,
 } from "../../types/media";
@@ -19,7 +17,6 @@ import type {
 type AdvancedOptionsProps = {
   video: VideoStream | null;
   audio: AudioStream[];
-  container: OutputContainer;
   videoCodec: VideoCodec;
   audioMode: AudioMode;
   settings: AdvancedEncodingSettings;
@@ -30,7 +27,6 @@ type AdvancedOptionsProps = {
 export function AdvancedOptions({
   video,
   audio,
-  container,
   videoCodec,
   audioMode,
   settings,
@@ -133,31 +129,8 @@ export function AdvancedOptions({
           <small>Channels are only reduced, never added.</small>
         </label>
 
-        <label className="advanced-field">
-          <span>Audio tracks</span>
-          <select
-            value={settings.audioTrackMode}
-            disabled={disabled || !hasAudio || audio.length < 2}
-            onChange={(event) => onChange({
-              audioTrackMode: event.target.value as AdvancedEncodingSettings["audioTrackMode"],
-            })}
-          >
-            {AUDIO_TRACK_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
-          </select>
-          <small>{audio.length > 1 ? `${audio.length} source tracks available.` : "One source track available."}</small>
-        </label>
-
         <div className="preservation-field">
           <span>Preserve source information</span>
-          <Toggle
-            label="Subtitles"
-            checked={settings.preserveSubtitles}
-            disabled={disabled || container !== "mkv"}
-            title={container !== "mkv" ? "Compatible subtitle preservation is available with MKV" : undefined}
-            onChange={(preserveSubtitles) => onChange({ preserveSubtitles })}
-          />
           <Toggle
             label="Metadata"
             checked={settings.preserveMetadata}

@@ -48,6 +48,7 @@
 .queue-status-label.failed { color: #983d35; background: #faeae8; }
 .queue-status-label.cancelled { color: #766c5e; background: #f4f0e9; }
 .queue-item-details > p { margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--text-caption); }
+.queue-item-details > .queue-item-tracks { margin-top: 2px; color: #626d66; }
 .queue-item-details .progress-track { margin: 8px 0 0; }
 .queue-item-details > .queue-error { color: #9a4138; }
 .queue-row-actions { display: flex; align-items: center; gap: 2px; }

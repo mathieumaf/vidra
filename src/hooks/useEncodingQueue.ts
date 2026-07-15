@@ -13,7 +13,9 @@ import { defaultOutputPath, errorMessage } from "../lib/format";
 import {
   batchOutputPaths,
   createQueueItem,
+  defaultTrackSelection,
   emptyProgress,
+  normalizedTrackSelection,
   TERMINAL_JOB_STATUSES,
 } from "../lib/queue";
 import {
@@ -36,6 +38,7 @@ import type {
   EncodeStarted,
   OutputContainer,
   OutputResolution,
+  TrackSelection,
   VideoCodec,
 } from "../types/media";
 
@@ -320,6 +323,8 @@ export function useEncodingQueue({
         audioBitrate: item.settings.audioBitrate,
         audioChannels: item.settings.audioChannels,
         audioTrackMode: item.settings.audioTrackMode,
+        audioStreamIndexes: item.trackSelection.audioStreamIndexes,
+        subtitleStreamIndexes: item.trackSelection.subtitleStreamIndexes,
         preserveSubtitles: item.settings.preserveSubtitles,
         preserveMetadata: item.settings.preserveMetadata,
         preserveChapters: item.settings.preserveChapters,
@@ -428,13 +433,40 @@ export function useEncodingQueue({
     setSelectedClientId(item.clientId);
   }
 
-  function updateItemSettings(item: EncodeQueueItem, settings: EncodingSettings) {
+  function updateItemSettings(
+    item: EncodeQueueItem,
+    settings: EncodingSettings,
+    applyTrackDefaults = false,
+  ) {
     if (item.status !== "ready") return;
     setItems((current) => current.map((candidate) => (
       candidate.clientId === item.clientId
-        ? { ...candidate, settings: { ...settings } }
+        ? {
+            ...candidate,
+            settings: { ...settings },
+            trackSelection: applyTrackDefaults
+              ? defaultTrackSelection(candidate.media, settings)
+              : candidate.trackSelection,
+          }
         : candidate
     )));
+  }
+
+  function updateItemTrackSelection(
+    item: EncodeQueueItem,
+    patch: Partial<TrackSelection>,
+  ) {
+    if (item.status !== "ready") return;
+    setItems((current) => current.map((candidate) => {
+      if (candidate.clientId !== item.clientId) return candidate;
+      return {
+        ...candidate,
+        trackSelection: normalizedTrackSelection(candidate.media, {
+          ...candidate.trackSelection,
+          ...patch,
+        }),
+      };
+    }));
   }
 
   async function moveItem(item: EncodeQueueItem, direction: -1 | 1) {
@@ -499,6 +531,7 @@ export function useEncodingQueue({
     moveItem,
     selectItem,
     updateItemSettings,
+    updateItemTrackSelection,
     reset,
     setError,
   };

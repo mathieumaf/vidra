@@ -3,13 +3,14 @@ mod video;
 
 use self::{audio::audio_arguments, video::video_arguments};
 use super::{
-    validate_input, validate_output, AudioStream, AudioTrackMode, EncodeRequest, MediaInfo,
-    OutputContainer,
+    validate_input, validate_output, AudioMode, AudioStream, EncodeRequest, MediaInfo,
+    OutputContainer, SubtitleStream,
 };
 use crate::{
     error::{ApiError, ApiResult},
     jobs::PendingJob,
 };
+use std::collections::HashSet;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
@@ -17,8 +18,10 @@ const GLOBAL_ARGUMENTS: [&str; 4] = ["-hide_banner", "-nostdin", "-y", "-i"];
 
 pub(super) fn validate_settings(request: &EncodeRequest, media: &MediaInfo) -> ApiResult<()> {
     video_arguments(request, media.video.as_ref())?;
+    let audio_streams = selected_audio_streams(&media.audio, &request.audio_stream_indexes)?;
+    validate_subtitle_streams(&media.subtitles, &request.subtitle_stream_indexes)?;
     audio_arguments(
-        selected_audio_streams(&media.audio, request.audio_track_mode),
+        &audio_streams,
         request.container,
         request.audio_mode,
         request.audio_bitrate,
@@ -27,29 +30,62 @@ pub(super) fn validate_settings(request: &EncodeRequest, media: &MediaInfo) -> A
     Ok(())
 }
 
-fn selected_audio_streams(streams: &[AudioStream], mode: AudioTrackMode) -> &[AudioStream] {
-    match mode {
-        AudioTrackMode::All => streams,
-        AudioTrackMode::First => &streams[..streams.len().min(1)],
-    }
+fn selected_audio_streams(streams: &[AudioStream], indexes: &[u32]) -> ApiResult<Vec<AudioStream>> {
+    let mut unique = HashSet::with_capacity(indexes.len());
+    indexes
+        .iter()
+        .map(|index| {
+            if !unique.insert(*index) {
+                return Err(ApiError::invalid_input(
+                    "An audio track cannot be selected more than once.",
+                ));
+            }
+            streams
+                .iter()
+                .find(|stream| stream.index == *index)
+                .cloned()
+                .ok_or_else(|| ApiError::invalid_input("A selected audio track is unavailable."))
+        })
+        .collect()
 }
 
-fn mapping_arguments(request: &EncodeRequest) -> Vec<&'static str> {
-    let mut arguments = vec![
-        "-map",
-        "0:v:0?",
-        "-map",
-        match request.audio_track_mode {
-            AudioTrackMode::All => "0:a?",
-            AudioTrackMode::First => "0:a:0?",
-        },
-        "-map_metadata",
-        if request.preserve_metadata { "0" } else { "-1" },
-        "-map_chapters",
-        if request.preserve_chapters { "0" } else { "-1" },
-    ];
+fn validate_subtitle_streams(streams: &[SubtitleStream], indexes: &[u32]) -> ApiResult<()> {
+    let mut unique = HashSet::with_capacity(indexes.len());
+    for index in indexes {
+        if !unique.insert(*index) {
+            return Err(ApiError::invalid_input(
+                "A subtitle track cannot be selected more than once.",
+            ));
+        }
+        if !streams.iter().any(|stream| stream.index == *index) {
+            return Err(ApiError::invalid_input(
+                "A selected subtitle track is unavailable.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn mapping_arguments(request: &EncodeRequest) -> Vec<String> {
+    let mut arguments = vec!["-map".to_owned(), "0:v:0?".to_owned()];
+    if request.audio_mode != AudioMode::None {
+        for index in &request.audio_stream_indexes {
+            arguments.extend(["-map".to_owned(), format!("0:{index}")]);
+        }
+    }
+    arguments.extend([
+        "-map_metadata".to_owned(),
+        if request.preserve_metadata { "0" } else { "-1" }.to_owned(),
+        "-map_chapters".to_owned(),
+        if request.preserve_chapters { "0" } else { "-1" }.to_owned(),
+    ]);
     if request.container == OutputContainer::Mkv && request.preserve_subtitles {
-        arguments.extend(["-map", "0:s?", "-c:s", "copy"]);
+        for index in &request.subtitle_stream_indexes {
+            arguments.extend(["-map".to_owned(), format!("0:{index}")]);
+        }
+        if !request.subtitle_stream_indexes.is_empty() {
+            arguments.extend(["-c:s".to_owned(), "copy".to_owned()]);
+        }
     }
     arguments
 }
@@ -61,7 +97,8 @@ pub(super) fn build_command(
     validate_settings(&job.request, &job.media)?;
     let input = validate_input(&job.request.input_path)?;
     let output = validate_output(&job.request.output_path, &input, job.request.container)?;
-    let audio_streams = selected_audio_streams(&job.media.audio, job.request.audio_track_mode);
+    let audio_streams =
+        selected_audio_streams(&job.media.audio, &job.request.audio_stream_indexes)?;
     let command = app
         .shell()
         .sidecar("ffmpeg")
@@ -73,7 +110,7 @@ pub(super) fn build_command(
 
     Ok(command
         .args(audio_arguments(
-            audio_streams,
+            &audio_streams,
             job.request.container,
             job.request.audio_mode,
             job.request.audio_bitrate,
@@ -86,10 +123,13 @@ pub(super) fn build_command(
 
 #[cfg(test)]
 mod tests {
-    use super::{mapping_arguments, GLOBAL_ARGUMENTS};
+    use super::{
+        mapping_arguments, selected_audio_streams, validate_subtitle_streams, GLOBAL_ARGUMENTS,
+    };
     use crate::ffmpeg::{
-        AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodeRequest, EncodingSpeed,
-        OutputContainer, OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
+        AudioBitrate, AudioChannels, AudioMode, AudioStream, AudioTrackMode, EncodeRequest,
+        EncodingSpeed, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel,
+        SubtitleStream, VideoCodec,
     };
 
     fn request(container: OutputContainer) -> EncodeRequest {
@@ -107,6 +147,8 @@ mod tests {
             audio_bitrate: AudioBitrate::Auto,
             audio_channels: AudioChannels::Source,
             audio_track_mode: AudioTrackMode::All,
+            audio_stream_indexes: vec![1, 2],
+            subtitle_stream_indexes: vec![3, 4],
             preserve_subtitles: true,
             preserve_metadata: true,
             preserve_chapters: true,
@@ -121,13 +163,16 @@ mod tests {
     #[test]
     fn advanced_mapping_controls_tracks_and_source_information() {
         let mut request = request(OutputContainer::Mkv);
-        request.audio_track_mode = AudioTrackMode::First;
+        request.audio_stream_indexes = vec![2];
+        request.subtitle_stream_indexes = vec![4];
         request.preserve_metadata = false;
         request.preserve_chapters = false;
         let arguments = mapping_arguments(&request);
 
-        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:a:0?"]));
-        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:s?"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:2"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
+        assert!(!arguments.iter().any(|argument| argument == "0:1"));
+        assert!(!arguments.iter().any(|argument| argument == "0:3"));
         assert!(arguments
             .windows(2)
             .any(|pair| pair == ["-map_metadata", "-1"]));
@@ -136,6 +181,41 @@ mod tests {
             .any(|pair| pair == ["-map_chapters", "-1"]));
 
         request.container = OutputContainer::Mp4;
-        assert!(!mapping_arguments(&request).contains(&"0:s?"));
+        assert!(!mapping_arguments(&request)
+            .iter()
+            .any(|argument| argument == "0:4"));
+
+        request.audio_mode = AudioMode::None;
+        assert!(!mapping_arguments(&request)
+            .iter()
+            .any(|argument| argument == "0:2"));
+    }
+
+    #[test]
+    fn validates_source_specific_track_indexes() {
+        let audio = vec![AudioStream {
+            index: 1,
+            codec: "aac".to_owned(),
+            channels: Some(2),
+            sample_rate: Some(48_000),
+            bit_rate: Some(128_000),
+            language: Some("eng".to_owned()),
+            title: None,
+        }];
+        let subtitles = vec![SubtitleStream {
+            index: 2,
+            codec: "subrip".to_owned(),
+            language: Some("fra".to_owned()),
+            title: None,
+            is_default: true,
+            is_forced: false,
+        }];
+
+        assert_eq!(selected_audio_streams(&audio, &[1]).unwrap()[0].index, 1);
+        assert!(selected_audio_streams(&audio, &[1, 1]).is_err());
+        assert!(selected_audio_streams(&audio, &[3]).is_err());
+        assert!(validate_subtitle_streams(&subtitles, &[2]).is_ok());
+        assert!(validate_subtitle_streams(&subtitles, &[2, 2]).is_err());
+        assert!(validate_subtitle_streams(&subtitles, &[3]).is_err());
     }
 }

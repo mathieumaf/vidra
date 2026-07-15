@@ -38,6 +38,7 @@ pub struct VideoStream {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioStream {
+    pub index: u32,
     pub codec: String,
     pub channels: Option<u32>,
     pub sample_rate: Option<u32>,
@@ -49,9 +50,12 @@ pub struct AudioStream {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleStream {
+    pub index: u32,
     pub codec: String,
     pub language: Option<String>,
     pub title: Option<String>,
+    pub is_default: bool,
+    pub is_forced: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -275,6 +279,8 @@ pub struct EncodeRequest {
     pub audio_bitrate: AudioBitrate,
     pub audio_channels: AudioChannels,
     pub audio_track_mode: AudioTrackMode,
+    pub audio_stream_indexes: Vec<u32>,
+    pub subtitle_stream_indexes: Vec<u32>,
     pub preserve_subtitles: bool,
     pub preserve_metadata: bool,
     pub preserve_chapters: bool,
