@@ -60,6 +60,13 @@ export type AudioStream = {
   sampleRate: number | null;
   bitRate: number | null;
   language: string | null;
+  title: string | null;
+};
+
+export type SubtitleStream = {
+  codec: string;
+  language: string | null;
+  title: string | null;
 };
 
 export type MediaInfo = {
@@ -68,8 +75,12 @@ export type MediaInfo = {
   durationSeconds: number;
   sizeBytes: number;
   formatName: string;
+  formatLongName: string | null;
   video: VideoStream | null;
   audio: AudioStream[];
+  subtitles: SubtitleStream[];
+  chapterCount: number;
+  hasMetadata: boolean;
 };
 
 export type EncodeProgress = {

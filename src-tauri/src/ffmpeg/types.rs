@@ -17,8 +17,12 @@ pub struct MediaInfo {
     pub duration_seconds: f64,
     pub size_bytes: u64,
     pub format_name: String,
+    pub format_long_name: Option<String>,
     pub video: Option<VideoStream>,
     pub audio: Vec<AudioStream>,
+    pub subtitles: Vec<SubtitleStream>,
+    pub chapter_count: usize,
+    pub has_metadata: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +43,15 @@ pub struct AudioStream {
     pub sample_rate: Option<u32>,
     pub bit_rate: Option<u64>,
     pub language: Option<String>,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleStream {
+    pub codec: String,
+    pub language: Option<String>,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]

@@ -34,8 +34,12 @@ fn pending(id: &str) -> PendingJob {
             duration_seconds: 10.0,
             size_bytes: 100,
             format_name: "mov".to_owned(),
+            format_long_name: Some("QuickTime / MOV".to_owned()),
             video: None,
             audio: vec![],
+            subtitles: vec![],
+            chapter_count: 0,
+            has_metadata: false,
         },
     }
 }

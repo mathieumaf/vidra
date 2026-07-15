@@ -18,6 +18,7 @@ import { Icon } from "../ui/Icon";
 import { AudioOptions } from "./AudioOptions";
 import { EncodingOptions } from "./EncodingOptions";
 import { MediaSourceCard } from "./MediaSourceCard";
+import { MediaDetails } from "./MediaDetails";
 import { QualitySlider } from "./QualitySlider";
 import { ResolutionOptions } from "./ResolutionOptions";
 import { AdvancedOptions } from "./AdvancedOptions";
@@ -173,6 +174,7 @@ export function ConvertView({
               onClick={() => onAdvancedModeChange(true)}
             >Advanced</button>
           </div>
+          {isAdvancedMode && <MediaDetails media={media} />}
           <EncodingOptions
             container={outputContainer}
             videoCodec={videoCodec}
