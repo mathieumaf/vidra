@@ -134,6 +134,7 @@ mod tests {
 
     fn audio(codec: &str, channels: u32, bit_rate: Option<u64>) -> AudioStream {
         AudioStream {
+            index: 0,
             codec: codec.to_owned(),
             channels: Some(channels),
             sample_rate: Some(48_000),

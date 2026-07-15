@@ -24,6 +24,8 @@ export type EncodeRequest = {
   audioBitrate: EncodingSettings["audioBitrate"];
   audioChannels: EncodingSettings["audioChannels"];
   audioTrackMode: EncodingSettings["audioTrackMode"];
+  audioStreamIndexes: number[];
+  subtitleStreamIndexes: number[];
   preserveSubtitles: boolean;
   preserveMetadata: boolean;
   preserveChapters: boolean;

@@ -219,6 +219,8 @@ mod tests {
             audio_bitrate: AudioBitrate::Auto,
             audio_channels: AudioChannels::Source,
             audio_track_mode: AudioTrackMode::All,
+            audio_stream_indexes: vec![],
+            subtitle_stream_indexes: vec![],
             preserve_subtitles: true,
             preserve_metadata: true,
             preserve_chapters: true,

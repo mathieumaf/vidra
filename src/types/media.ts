@@ -55,6 +55,7 @@ export type VideoStream = {
 };
 
 export type AudioStream = {
+  index: number;
   codec: string;
   channels: number | null;
   sampleRate: number | null;
@@ -64,9 +65,12 @@ export type AudioStream = {
 };
 
 export type SubtitleStream = {
+  index: number;
   codec: string;
   language: string | null;
   title: string | null;
+  isDefault: boolean;
+  isForced: boolean;
 };
 
 export type MediaInfo = {
@@ -116,11 +120,17 @@ export type QueuedEncode = {
 
 export type EncodeJobStatus = "ready" | "queued" | "encoding" | "paused" | "completed" | "failed" | "cancelled";
 
+export type TrackSelection = {
+  audioStreamIndexes: number[];
+  subtitleStreamIndexes: number[];
+};
+
 export type EncodeQueueItem = {
   clientId: string;
   jobId: string | null;
   media: MediaInfo;
   settings: EncodingSettings;
+  trackSelection: TrackSelection;
   outputPath: string | null;
   status: EncodeJobStatus;
   progress: EncodeProgress;
