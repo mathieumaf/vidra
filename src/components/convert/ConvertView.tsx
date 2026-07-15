@@ -38,6 +38,7 @@ type ConvertViewProps = {
   profiles: EncodingProfile[];
   selectedProfileId: string | null;
   isProfileModified: boolean;
+  readyItemCount: number;
   isReady: boolean;
   isProbing: boolean;
   isActive: boolean;
@@ -61,6 +62,7 @@ type ConvertViewProps = {
   onProfileUpdate: () => void;
   onProfileRename: (name: string) => void;
   onProfileDelete: () => void;
+  onApplyProfileToAll: () => void;
   onStartEncoding: () => void;
   onTogglePause: () => void;
   onCancelEncoding: () => void;
@@ -81,6 +83,7 @@ export function ConvertView({
   profiles,
   selectedProfileId,
   isProfileModified,
+  readyItemCount,
   isReady,
   isProbing,
   isActive,
@@ -104,6 +107,7 @@ export function ConvertView({
   onProfileUpdate,
   onProfileRename,
   onProfileDelete,
+  onApplyProfileToAll,
   onStartEncoding,
   onTogglePause,
   onCancelEncoding,
@@ -144,12 +148,14 @@ export function ConvertView({
             profiles={profiles}
             selectedProfileId={selectedProfileId}
             isModified={isProfileModified}
+            readyItemCount={readyItemCount}
             disabled={!canEdit}
             onSelect={onProfileSelect}
             onCreate={onProfileCreate}
             onUpdate={onProfileUpdate}
             onRename={onProfileRename}
             onDelete={onProfileDelete}
+            onApplyToAll={onApplyProfileToAll}
           />
           <div className="conversion-mode-switch" role="radiogroup" aria-label="Conversion mode">
             <button

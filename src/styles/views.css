@@ -94,6 +94,11 @@
 .settings-section-heading strong { font-size: var(--text-ui); }
 .settings-section-heading p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-small); }
 .settings-section-heading > span { flex: 0 0 auto; color: var(--muted); font-size: var(--text-caption); }
+.settings-default-profile { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; padding: 11px 13px 11px 15px; border: 1px solid #dce6df; border-radius: 12px; background: #f8fbf9; }
+.settings-default-profile > div { min-width: 0; }
+.settings-default-profile strong { font-size: var(--text-body); }
+.settings-default-profile p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.settings-default-profile select { width: min(245px, 34vw); height: 33px; flex: 0 0 auto; padding: 0 28px 0 9px; border: 1px solid #d4ddd6; border-radius: 8px; color: var(--ink); background: #fff; font-size: var(--text-small); font-weight: var(--weight-semibold); }
 .settings-profile-group + .settings-profile-group { margin-top: 12px; }
 .settings-group-label { display: block; margin: 0 4px 5px; color: #7d8781; font-size: var(--text-caption); font-weight: 760; letter-spacing: 0.1em; }
 .settings-card { overflow: hidden; }
@@ -106,6 +111,7 @@
 .settings-profile-details p { margin: 4px 0 0; overflow: hidden; color: var(--muted); font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
 .profile-kind { flex: 0 0 auto; padding: 2px 6px; border-radius: 6px; color: #5f6b64; background: #eef2ef; font-size: var(--text-caption); font-weight: var(--weight-semibold); }
 .profile-kind.personal { color: var(--green); background: var(--green-soft); }
+.profile-kind.default { color: #725e28; background: #f8f0d8; }
 .settings-profile-actions { display: flex; align-items: center; gap: 4px; }
 .settings-profile-actions button, .settings-profile-editor button { min-height: 29px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; color: #526058; background: #fafbfa; font-size: var(--text-caption); font-weight: var(--weight-semibold); cursor: pointer; }
 .settings-profile-actions button:hover, .settings-profile-editor button:hover:not(:disabled) { border-color: #bdc9c1; color: var(--ink); background: #f3f6f4; }

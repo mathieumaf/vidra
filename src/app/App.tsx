@@ -11,7 +11,6 @@ import { QUALITY_LEVELS } from "../config/quality";
 import { canCopyAudioToMp4, canCopyVideoToMp4 } from "../config/encoding";
 import {
   advancedSettings as getAdvancedSettings,
-  DEFAULT_ADVANCED_SETTINGS,
   usesAdvancedSettings,
   type AdvancedEncodingSettings,
 } from "../config/advanced";
@@ -41,20 +40,25 @@ import "../styles/conversion.css";
 import "../styles/views.css";
 
 export default function App() {
-  const [view, setView] = useState<View>("convert");
-  const [qualityIndex, setQualityIndex] = useState(2);
-  const [outputContainer, setOutputContainer] = useState<OutputContainer>("mp4");
-  const [videoCodec, setVideoCodec] = useState<VideoCodec>("h264");
-  const [encodingSpeed, setEncodingSpeed] = useState<EncodingSpeed>("efficient");
-  const [audioMode, setAudioMode] = useState<AudioMode>("auto");
-  const [outputResolution, setOutputResolution] = useState<OutputResolution>("source");
-  const [isAdvancedMode, setIsAdvancedMode] = useState(false);
-  const [advancedSettings, setAdvancedSettings] = useState<AdvancedEncodingSettings>(
-    DEFAULT_ADVANCED_SETTINGS,
-  );
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>("built-in-balanced");
-  const { status, isReady } = useFfmpegStatus();
   const profileStore = useEncodingProfiles();
+  const initialProfile = profileStore.effectiveDefaultProfile;
+  const initialSettings = initialProfile.settings;
+  const [view, setView] = useState<View>("convert");
+  const [qualityIndex, setQualityIndex] = useState(() => {
+    const index = QUALITY_LEVELS.findIndex((level) => level.id === initialSettings.quality);
+    return index >= 0 ? index : 2;
+  });
+  const [outputContainer, setOutputContainer] = useState<OutputContainer>(initialSettings.container);
+  const [videoCodec, setVideoCodec] = useState<VideoCodec>(initialSettings.videoCodec);
+  const [encodingSpeed, setEncodingSpeed] = useState<EncodingSpeed>(initialSettings.encodingSpeed);
+  const [audioMode, setAudioMode] = useState<AudioMode>(initialSettings.audioMode);
+  const [outputResolution, setOutputResolution] = useState<OutputResolution>(initialSettings.outputResolution);
+  const [isAdvancedMode, setIsAdvancedMode] = useState(initialProfile.isAdvanced);
+  const [advancedSettings, setAdvancedSettings] = useState<AdvancedEncodingSettings>(
+    getAdvancedSettings(initialSettings),
+  );
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(initialProfile.id);
+  const { status, isReady } = useFfmpegStatus();
   const quality = QUALITY_LEVELS[qualityIndex];
   const queue = useEncodingQueue({
     isReady,
@@ -97,8 +101,8 @@ export default function App() {
     setIsAdvancedMode(matchedProfile?.isAdvanced ?? usesAdvancedSettings(item.settings));
   }, [queue.primaryItem?.clientId]);
 
-  async function addVideos(preferredView: View) {
-    const added = await queue.selectVideos();
+  async function addVideos(preferredView: View, settingsOverride?: EncodingSettings) {
+    const added = await queue.selectVideos(settingsOverride);
     if (added > 0) setView(preferredView);
   }
 
@@ -108,14 +112,19 @@ export default function App() {
   }
 
   async function newConversion() {
+    const profile = profileStore.effectiveDefaultProfile;
+    syncSettingsState(profile.settings);
+    setIsAdvancedMode(profile.isAdvanced);
+    setSelectedProfileId(profile.id);
+    profileStore.rememberProfile(profile.id);
     const hasOpenItems = queue.items.some((item) => (
       item.status === "ready" || item.status === "queued" || item.status === "encoding" || item.status === "paused"
     ));
     if (!hasOpenItems) queue.reset();
-    await addVideos("convert");
+    await addVideos("convert", profile.settings);
   }
 
-  function commitSettings(settings: EncodingSettings) {
+  function syncSettingsState(settings: EncodingSettings) {
     const index = QUALITY_LEVELS.findIndex((level) => level.id === settings.quality);
     setQualityIndex(index >= 0 ? index : 2);
     setOutputContainer(settings.container);
@@ -124,6 +133,10 @@ export default function App() {
     setAudioMode(settings.audioMode);
     setOutputResolution(settings.outputResolution);
     setAdvancedSettings(getAdvancedSettings(settings));
+  }
+
+  function commitSettings(settings: EncodingSettings) {
+    syncSettingsState(settings);
     if (queue.primaryItem?.status === "ready") {
       queue.updateItemSettings(queue.primaryItem, settings);
     }
@@ -230,6 +243,7 @@ export default function App() {
     commitSettings(compatibleProfileSettings(profile.settings, queue.primaryItem?.media ?? null));
     setIsAdvancedMode(profile.isAdvanced);
     setSelectedProfileId(profile.id);
+    profileStore.rememberProfile(profile.id);
   }
 
   function createProfile(name: string) {
@@ -256,6 +270,33 @@ export default function App() {
   function deleteProfile(profileId: string) {
     profileStore.deleteProfile(profileId);
     if (selectedProfileId === profileId) setSelectedProfileId(null);
+  }
+
+  function applySettingsToAllReady() {
+    const profile = profileStore.profiles.find((candidate) => candidate.id === selectedProfileId);
+    const current = currentSettings();
+    const profileIsUnmodified = profile !== undefined
+      && profile.isAdvanced === isAdvancedMode
+      && encodingSettingsEqual(
+        compatibleProfileSettings(profile.settings, queue.primaryItem?.media ?? null),
+        current,
+      );
+    const settings = profileIsUnmodified ? profile.settings : current;
+    queue.readyItems.forEach((item) => {
+      queue.updateItemSettings(item, compatibleProfileSettings(settings, item.media));
+    });
+    queue.setError(null);
+  }
+
+  function changeDefaultProfile(profileId: string | null) {
+    profileStore.setDefaultProfile(profileId);
+    if (queue.items.length > 0) return;
+    const effectiveId = profileId ?? profileStore.lastUsedProfileId;
+    const profile = profileStore.profiles.find((candidate) => candidate.id === effectiveId)
+      ?? profileStore.profiles[0];
+    syncSettingsState(profile.settings);
+    setIsAdvancedMode(profile.isAdvanced);
+    setSelectedProfileId(profile.id);
   }
 
   function editItem(item: EncodeQueueItem) {
@@ -322,6 +363,7 @@ export default function App() {
               profiles={profileStore.profiles}
               selectedProfileId={selectedProfileId}
               isProfileModified={isProfileModified}
+              readyItemCount={queue.readyItems.length}
               isReady={isReady}
               isProbing={queue.isProbing}
               isActive={isPrimaryActive}
@@ -345,6 +387,7 @@ export default function App() {
               onProfileUpdate={updateSelectedProfile}
               onProfileRename={renameSelectedProfile}
               onProfileDelete={deleteSelectedProfile}
+              onApplyProfileToAll={applySettingsToAllReady}
               onStartEncoding={() => void startEncoding()}
               onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
               onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}
@@ -383,9 +426,12 @@ export default function App() {
               status={status}
               isReady={isReady}
               profiles={profileStore.profiles}
+              defaultProfileId={profileStore.defaultProfileId}
+              lastUsedProfileId={profileStore.lastUsedProfileId}
               onDuplicateProfile={(profileId) => { profileStore.duplicateProfile(profileId); }}
               onRenameProfile={profileStore.renameProfile}
               onDeleteProfile={deleteProfile}
+              onDefaultProfileChange={changeDefaultProfile}
             />
           )}
         </div>
