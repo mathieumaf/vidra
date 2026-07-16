@@ -1,5 +1,13 @@
 import { formatBitrate, formatBytes, formatDuration } from "../../lib/format";
 import {
+  bitDepthLabel,
+  colorPrimariesLabel,
+  colorRangeLabel,
+  colorSpaceLabel,
+  colorTransferLabel,
+  hdrFormatLabel,
+} from "../../lib/color";
+import {
   audioTrackName,
   channelLabel,
   codecLabel,
@@ -32,12 +40,42 @@ export function MediaDetails({ media }: { media: MediaInfo }) {
           <GroupHeading label="Video" count={media.video ? 1 : 0} />
           {media.video ? (
             <div className="media-stream-row">
-              <div className="media-stream-title"><strong>Video track</strong></div>
+              <div className="media-stream-title">
+                <strong>Video track</strong>
+                {media.video.hdrFormat && <span className="hdr-badge">{hdrFormatLabel(media.video.hdrFormat)}</span>}
+                {media.video.bitDepth && <span>{bitDepthLabel(media.video.bitDepth)}</span>}
+              </div>
               <div className="media-stream-facts">
                 <span>{codecLabel(media.video.codec)}</span>
                 <span>{media.video.width} × {media.video.height}</span>
                 <span>{frameRateLabel(media.video.frameRate)}</span>
                 <span>{media.video.pixelFormat?.toUpperCase() ?? "Unknown pixel format"}</span>
+              </div>
+              <div className="media-color-facts">
+                <ColorFact
+                  label="Primaries"
+                  value={media.video.colorPrimaries
+                    ? colorPrimariesLabel(media.video.colorPrimaries)
+                    : "Unknown"}
+                />
+                <ColorFact
+                  label="Transfer"
+                  value={media.video.colorTransfer
+                    ? colorTransferLabel(media.video.colorTransfer)
+                    : "Unknown"}
+                />
+                <ColorFact
+                  label="Matrix"
+                  value={media.video.colorSpace
+                    ? colorSpaceLabel(media.video.colorSpace)
+                    : "Unknown"}
+                />
+                <ColorFact
+                  label="Range"
+                  value={media.video.colorRange
+                    ? colorRangeLabel(media.video.colorRange)
+                    : "Unknown"}
+                />
               </div>
             </div>
           ) : (
@@ -70,6 +108,10 @@ export function MediaDetails({ media }: { media: MediaInfo }) {
       </div>
     </section>
   );
+}
+
+function ColorFact({ label, value }: { label: string; value: string }) {
+  return <span title={`${label}: ${value}`}><strong>{label}</strong>{value}</span>;
 }
 
 function OverviewItem({ label, value }: { label: string; value: string }) {

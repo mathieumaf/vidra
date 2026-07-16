@@ -33,6 +33,23 @@ pub struct VideoStream {
     pub height: u32,
     pub frame_rate: Option<f64>,
     pub pixel_format: Option<String>,
+    pub bit_depth: Option<u8>,
+    pub color_range: Option<String>,
+    pub color_space: Option<String>,
+    pub color_transfer: Option<String>,
+    pub color_primaries: Option<String>,
+    pub hdr_format: Option<HdrFormat>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum HdrFormat {
+    DolbyVision,
+    Hdr10Plus,
+    Hdr10,
+    Hlg,
+    Pq,
+    Hdr,
 }
 
 #[derive(Debug, Clone, Serialize)]

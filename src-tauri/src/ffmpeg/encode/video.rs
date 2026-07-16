@@ -234,6 +234,12 @@ mod tests {
             height,
             frame_rate: Some(frame_rate),
             pixel_format: None,
+            bit_depth: None,
+            color_range: None,
+            color_space: None,
+            color_transfer: None,
+            color_primaries: None,
+            hdr_format: None,
         }
     }
 

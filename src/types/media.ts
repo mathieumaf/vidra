@@ -52,7 +52,15 @@ export type VideoStream = {
   height: number;
   frameRate: number | null;
   pixelFormat: string | null;
+  bitDepth: number | null;
+  colorRange: string | null;
+  colorSpace: string | null;
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
+  hdrFormat: HdrFormat | null;
 };
+
+export type HdrFormat = "dolby-vision" | "hdr10-plus" | "hdr10" | "hlg" | "pq" | "hdr";
 
 export type AudioStream = {
   index: number;

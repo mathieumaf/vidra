@@ -4,6 +4,7 @@ import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
 import { outputFrameRateLabel } from "../../config/advanced";
 import { formatEta } from "../../lib/format";
+import { colorConversionRisk } from "../../lib/color";
 import { queueTrackSummary } from "../../lib/tracks";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
@@ -146,6 +147,7 @@ export function QueueView({
             ? ""
             : ` · ${outputFrameRateLabel(item.settings.outputFrameRate)}`;
           const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)}${frameRateSummary} · ${audioSummary}`;
+          const colorRisk = colorConversionRisk(item.media.video, item.settings.videoCodec);
 
           return (
             <section className={`queue-row ${item.status}`} key={item.clientId}>
@@ -162,6 +164,9 @@ export function QueueView({
                   {settingsSummary}
                 </p>
                 <p className="queue-item-tracks">{queueTrackSummary(item)}</p>
+                {colorRisk && item.status !== "completed" && (
+                  <p className="queue-color-risk"><Icon name="warning" />{colorRisk.title}</p>
+                )}
                 {isCurrent && (
                   <p>
                     {item.status === "paused"

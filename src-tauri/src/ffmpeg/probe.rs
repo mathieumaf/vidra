@@ -1,4 +1,4 @@
-use super::{validate_input, AudioStream, MediaInfo, SubtitleStream, VideoStream};
+use super::{validate_input, AudioStream, HdrFormat, MediaInfo, SubtitleStream, VideoStream};
 use crate::error::{ApiError, ApiResult};
 use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
@@ -37,6 +37,11 @@ struct ProbeStream {
     height: Option<u32>,
     avg_frame_rate: Option<String>,
     pix_fmt: Option<String>,
+    bits_per_raw_sample: Option<String>,
+    color_range: Option<String>,
+    color_space: Option<String>,
+    color_transfer: Option<String>,
+    color_primaries: Option<String>,
     channels: Option<u32>,
     sample_rate: Option<String>,
     bit_rate: Option<String>,
@@ -59,6 +64,7 @@ struct ProbeDisposition {
 #[derive(Debug, Deserialize)]
 struct ProbeSideData {
     rotation: Option<i32>,
+    side_data_type: Option<String>,
 }
 
 fn parse_frame_rate(value: Option<&str>) -> Option<f64> {
@@ -98,6 +104,92 @@ fn display_dimensions(stream: &ProbeStream) -> (u32, u32) {
         (height, width)
     } else {
         (width, height)
+    }
+}
+
+fn video_bit_depth(stream: &ProbeStream) -> Option<u8> {
+    let reported = stream
+        .bits_per_raw_sample
+        .as_deref()
+        .and_then(|value| value.parse::<u8>().ok())
+        .filter(|value| *value > 0);
+    reported.or_else(|| pixel_format_bit_depth(stream.pix_fmt.as_deref()?))
+}
+
+fn pixel_format_bit_depth(pixel_format: &str) -> Option<u8> {
+    let format = pixel_format.to_ascii_lowercase();
+    let high_depth_patterns = [
+        ("f32", 32),
+        ("p016", 16),
+        ("p012", 12),
+        ("p010", 10),
+        ("p16", 16),
+        ("p14", 14),
+        ("p12", 12),
+        ("p10", 10),
+        ("p9", 9),
+        ("gray16", 16),
+        ("gray14", 14),
+        ("gray12", 12),
+        ("gray10", 10),
+        ("gray9", 9),
+        ("xyz12", 12),
+        ("rgb48", 16),
+        ("bgr48", 16),
+        ("rgba64", 16),
+        ("bgra64", 16),
+        ("ayuv64", 16),
+        ("rgb10", 10),
+        ("bgr10", 10),
+        ("y210", 10),
+        ("y212", 12),
+        ("y410", 10),
+        ("y412", 12),
+        ("v210", 10),
+    ];
+    high_depth_patterns
+        .iter()
+        .find_map(|(pattern, depth)| format.contains(pattern).then_some(*depth))
+        .or_else(|| {
+            let eight_bit_patterns = [
+                "yuv420p", "yuv422p", "yuv444p", "yuva420p", "yuva422p", "yuva444p", "nv12",
+                "nv21", "rgb24", "bgr24", "rgba", "bgra", "argb", "abgr", "gray", "pal8",
+                "yuyv422", "uyvy422",
+            ];
+            eight_bit_patterns
+                .iter()
+                .any(|pattern| format.contains(pattern))
+                .then_some(8)
+        })
+}
+
+fn hdr_format(stream: &ProbeStream) -> Option<HdrFormat> {
+    let side_data = stream
+        .side_data_list
+        .iter()
+        .filter_map(|data| data.side_data_type.as_deref())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    if side_data.contains("dovi") || side_data.contains("dolby vision") {
+        return Some(HdrFormat::DolbyVision);
+    }
+    if side_data.contains("hdr10+") || side_data.contains("smpte2094-40") {
+        return Some(HdrFormat::Hdr10Plus);
+    }
+
+    match stream.color_transfer.as_deref() {
+        Some("arib-std-b67") => Some(HdrFormat::Hlg),
+        Some("smpte2084") if stream.color_primaries.as_deref() == Some("bt2020") => {
+            Some(HdrFormat::Hdr10)
+        }
+        Some("smpte2084") => Some(HdrFormat::Pq),
+        _ if side_data.contains("mastering display metadata")
+            || side_data.contains("content light level metadata") =>
+        {
+            Some(HdrFormat::Hdr)
+        }
+        _ => None,
     }
 }
 
@@ -150,6 +242,12 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
                 height,
                 frame_rate: parse_frame_rate(stream.avg_frame_rate.as_deref()),
                 pixel_format: stream.pix_fmt.clone(),
+                bit_depth: video_bit_depth(stream),
+                color_range: stream.color_range.clone(),
+                color_space: stream.color_space.clone(),
+                color_transfer: stream.color_transfer.clone(),
+                color_primaries: stream.color_primaries.clone(),
+                hdr_format: hdr_format(stream),
             }
         });
 
@@ -222,8 +320,8 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
 #[cfg(test)]
 mod tests {
     use super::{
-        display_dimensions, parse_frame_rate, parse_media_info, ProbeDisposition, ProbeSideData,
-        ProbeStream,
+        display_dimensions, hdr_format, parse_frame_rate, parse_media_info, pixel_format_bit_depth,
+        video_bit_depth, HdrFormat, ProbeDisposition, ProbeSideData, ProbeStream,
     };
     use std::{collections::HashMap, path::Path};
 
@@ -235,8 +333,43 @@ mod tests {
     }
 
     #[test]
+    fn infers_bit_depth_from_reported_bits_or_pixel_format() {
+        let mut stream = probe_video_stream();
+        stream.pix_fmt = Some("yuv420p10le".to_owned());
+        assert_eq!(video_bit_depth(&stream), Some(10));
+        assert_eq!(pixel_format_bit_depth("p012le"), Some(12));
+        assert_eq!(pixel_format_bit_depth("unknown-hardware-surface"), None);
+
+        stream.bits_per_raw_sample = Some("12".to_owned());
+        assert_eq!(video_bit_depth(&stream), Some(12));
+    }
+
+    #[test]
+    fn classifies_hlg_and_dolby_vision_sources() {
+        let mut stream = probe_video_stream();
+        stream.color_transfer = Some("arib-std-b67".to_owned());
+        assert_eq!(hdr_format(&stream), Some(HdrFormat::Hlg));
+
+        stream.side_data_list.push(ProbeSideData {
+            rotation: None,
+            side_data_type: Some("DOVI configuration record".to_owned()),
+        });
+        assert_eq!(hdr_format(&stream), Some(HdrFormat::DolbyVision));
+    }
+
+    #[test]
     fn reports_dimensions_in_display_orientation() {
-        let stream = ProbeStream {
+        let mut stream = probe_video_stream();
+        stream.side_data_list.push(ProbeSideData {
+            rotation: Some(-90),
+            side_data_type: Some("Display Matrix".to_owned()),
+        });
+
+        assert_eq!(display_dimensions(&stream), (1080, 1920));
+    }
+
+    fn probe_video_stream() -> ProbeStream {
+        ProbeStream {
             index: 0,
             codec_type: Some("video".to_owned()),
             codec_name: Some("h264".to_owned()),
@@ -244,17 +377,18 @@ mod tests {
             height: Some(1080),
             avg_frame_rate: None,
             pix_fmt: None,
+            bits_per_raw_sample: None,
+            color_range: None,
+            color_space: None,
+            color_transfer: None,
+            color_primaries: None,
             channels: None,
             sample_rate: None,
             bit_rate: None,
             tags: HashMap::new(),
             disposition: ProbeDisposition::default(),
-            side_data_list: vec![ProbeSideData {
-                rotation: Some(-90),
-            }],
-        };
-
-        assert_eq!(display_dimensions(&stream), (1080, 1920));
+            side_data_list: Vec::new(),
+        }
     }
 
     #[test]
@@ -268,7 +402,15 @@ mod tests {
               "width": 3840,
               "height": 2160,
               "avg_frame_rate": "24000/1001",
-              "pix_fmt": "yuv420p10le"
+              "pix_fmt": "yuv420p10le",
+              "bits_per_raw_sample": "10",
+              "color_range": "tv",
+              "color_space": "bt2020nc",
+              "color_transfer": "smpte2084",
+              "color_primaries": "bt2020",
+              "side_data_list": [
+                { "side_data_type": "Mastering display metadata" }
+              ]
             },
             {
               "index": 1,
@@ -303,10 +445,14 @@ mod tests {
         assert_eq!(media.format_long_name.as_deref(), Some("Matroska / WebM"));
         assert_eq!(media.chapter_count, 2);
         assert!(media.has_metadata);
-        assert_eq!(
-            media.video.unwrap().pixel_format.as_deref(),
-            Some("yuv420p10le")
-        );
+        let video = media.video.unwrap();
+        assert_eq!(video.pixel_format.as_deref(), Some("yuv420p10le"));
+        assert_eq!(video.bit_depth, Some(10));
+        assert_eq!(video.color_range.as_deref(), Some("tv"));
+        assert_eq!(video.color_space.as_deref(), Some("bt2020nc"));
+        assert_eq!(video.color_transfer.as_deref(), Some("smpte2084"));
+        assert_eq!(video.color_primaries.as_deref(), Some("bt2020"));
+        assert_eq!(video.hdr_format, Some(super::HdrFormat::Hdr10));
         assert_eq!(media.audio[0].language.as_deref(), Some("eng"));
         assert_eq!(media.audio[0].index, 1);
         assert_eq!(media.audio[0].title.as_deref(), Some("Surround"));

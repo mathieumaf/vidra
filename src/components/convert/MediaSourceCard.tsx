@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { bitDepthLabel, hdrFormatLabel } from "../../lib/color";
 import { formatBytes, formatDuration } from "../../lib/format";
 import type { MediaInfo } from "../../types/media";
 import { Icon } from "../ui/Icon";
@@ -9,6 +10,8 @@ export function MediaSourceCard({ media, count = 1 }: { media: MediaInfo; count?
     if (media.video) {
       values.unshift(`${media.video.width} × ${media.video.height}`);
       values.push(media.video.codec.toUpperCase());
+      if (media.video.hdrFormat) values.push(hdrFormatLabel(media.video.hdrFormat));
+      if (media.video.bitDepth) values.push(bitDepthLabel(media.video.bitDepth));
     }
     return values;
   }, [media]);

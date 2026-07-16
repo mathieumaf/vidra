@@ -34,6 +34,7 @@ import type {
   View,
 } from "../types/media";
 import { viewMeta } from "./viewMeta";
+import { colorConversionRisk } from "../lib/color";
 import "../styles/tokens.css";
 import "../styles/base.css";
 import "../styles/shell.css";
@@ -348,6 +349,9 @@ export default function App() {
       currentSettings(),
     )
   );
+  const readyColorRiskCount = queue.readyItems.filter((item) => (
+    colorConversionRisk(item.media.video, item.settings.videoCodec) !== null
+  )).length;
 
   return (
     <div className={`desktop-shell${queue.isDraggingFiles ? " dragging-files" : ""}`}>
@@ -393,6 +397,7 @@ export default function App() {
               selectedProfileId={selectedProfileId}
               isProfileModified={isProfileModified}
               readyItemCount={queue.readyItems.length}
+              colorRiskCount={readyColorRiskCount}
               isReady={isReady}
               isProbing={queue.isProbing}
               isActive={isPrimaryActive}
