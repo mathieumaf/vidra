@@ -97,28 +97,47 @@ pub(super) fn build_command(
     validate_settings(&job.request, &job.media)?;
     let input = validate_input(&job.request.input_path)?;
     let output = validate_output(&job.request.output_path, &input, job.request.container)?;
-    let audio_streams =
-        selected_audio_streams(&job.media.audio, &job.request.audio_stream_indexes)?;
     let command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|error| ApiError::ffmpeg(error.to_string()))?
         .args(GLOBAL_ARGUMENTS)
         .arg(input.as_os_str())
-        .args(mapping_arguments(&job.request))
-        .args(video_arguments(&job.request, job.media.video.as_ref())?);
+        .args(encoding_arguments(job)?);
 
     Ok(command
-        .args(audio_arguments(
-            &audio_streams,
-            job.request.container,
-            job.request.audio_mode,
-            job.request.audio_bitrate,
-            job.request.audio_channels,
-        )?)
-        .args(["-progress", "pipe:1", "-nostats"])
         .arg(output.as_os_str())
         .env("AV_LOG_FORCE_NOCOLOR", "1"))
+}
+
+fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
+    let request = &job.request;
+    let audio_streams = selected_audio_streams(&job.media.audio, &request.audio_stream_indexes)?;
+    let mut arguments = mapping_arguments(request);
+    arguments.extend(video_arguments(request, job.media.video.as_ref())?);
+    arguments.extend(audio_arguments(
+        &audio_streams,
+        request.container,
+        request.audio_mode,
+        request.audio_bitrate,
+        request.audio_channels,
+    )?);
+    arguments.extend([
+        "-progress".to_owned(),
+        "pipe:1".to_owned(),
+        "-nostats".to_owned(),
+    ]);
+    Ok(arguments)
+}
+
+pub(crate) fn redacted_command(job: &PendingJob) -> ApiResult<String> {
+    validate_settings(&job.request, &job.media)?;
+    let mut arguments = vec!["ffmpeg".to_owned()];
+    arguments.extend(GLOBAL_ARGUMENTS.into_iter().map(str::to_owned));
+    arguments.push("<source>".to_owned());
+    arguments.extend(encoding_arguments(job)?);
+    arguments.push("<output>".to_owned());
+    Ok(arguments.join(" "))
 }
 
 #[cfg(test)]

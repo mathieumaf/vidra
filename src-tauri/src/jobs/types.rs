@@ -5,6 +5,7 @@ pub struct PendingJob {
     pub id: String,
     pub request: EncodeRequest,
     pub media: MediaInfo,
+    pub ffmpeg_version: Option<String>,
 }
 
 pub struct ActiveJob {

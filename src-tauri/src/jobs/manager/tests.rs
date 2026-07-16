@@ -43,6 +43,7 @@ fn pending(id: &str) -> PendingJob {
             chapter_count: 0,
             has_metadata: false,
         },
+        ffmpeg_version: Some("ffmpeg test".to_owned()),
     }
 }
 

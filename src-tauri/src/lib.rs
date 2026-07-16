@@ -1,4 +1,5 @@
 mod commands;
+mod diagnostics;
 mod error;
 mod ffmpeg;
 mod history;
@@ -32,7 +33,8 @@ pub fn run() {
             commands::delete_history_entry,
             commands::clear_conversion_history,
             commands::reveal_history_output,
-            commands::reveal_output_file
+            commands::reveal_output_file,
+            commands::save_diagnostic_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vidra");

@@ -1,5 +1,8 @@
 use super::{HistoryDraft, HistoryEntry, HistoryStatus};
-use crate::error::{ApiError, ApiResult};
+use crate::{
+    diagnostics::DiagnosticReport,
+    error::{ApiError, ApiResult},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -46,6 +49,7 @@ impl HistoryManager {
         draft: HistoryDraft,
         status: HistoryStatus,
         error: Option<&str>,
+        diagnostic: Option<DiagnosticReport>,
     ) -> ApiResult<HistoryEntry> {
         let finished_at_ms = now_millis();
         let sequence = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -73,6 +77,7 @@ impl HistoryManager {
             output_size_bytes,
             settings: draft.settings,
             error: concise_error(error),
+            diagnostic,
         };
 
         let mut entries = self.lock()?;

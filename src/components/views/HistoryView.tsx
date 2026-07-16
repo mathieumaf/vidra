@@ -2,6 +2,7 @@ import type { HistoryEntry } from "../../types/media";
 import { historyDescription, historySummary } from "../../lib/history";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
+import { DiagnosticDetails } from "./DiagnosticDetails";
 
 type HistoryViewProps = {
   items: HistoryEntry[];
@@ -83,6 +84,9 @@ export function HistoryView({
               <p className={item.status === "failed" ? "history-error" : ""} title={historyDescription(item)}>
                 {historyDescription(item)}
               </p>
+              {item.status === "failed" && item.diagnostic && (
+                <DiagnosticDetails diagnostic={item.diagnostic} sourceName={item.sourceName} />
+              )}
             </div>
             <div className="history-actions">
               {item.status === "completed" && (

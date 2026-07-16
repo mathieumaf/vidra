@@ -32,6 +32,7 @@ export function createQueueItem(media: MediaInfo, settings: EncodingSettings): E
     status: "ready",
     progress: emptyProgress(),
     error: null,
+    diagnostic: null,
   };
 }
 

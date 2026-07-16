@@ -1,3 +1,4 @@
+use crate::diagnostics::DiagnosticReport;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -321,6 +322,7 @@ pub struct EncodeFinished {
     pub status: String,
     pub output_path: String,
     pub error: Option<String>,
+    pub diagnostic: Option<DiagnosticReport>,
 }
 
 #[derive(Debug, Clone, Serialize)]

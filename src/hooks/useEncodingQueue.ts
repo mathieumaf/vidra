@@ -159,6 +159,7 @@ export function useEncodingQueue({
                 status: payload.status,
                 outputPath: payload.outputPath,
                 error: payload.error,
+                diagnostic: payload.diagnostic,
                 progress: payload.status === "completed"
                   ? { ...item.progress, percent: 100, etaSeconds: 0 }
                   : item.progress,

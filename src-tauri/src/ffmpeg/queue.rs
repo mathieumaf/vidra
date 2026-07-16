@@ -3,15 +3,14 @@ use super::{
     EncodePauseChanged, EncodeRequest, EncodeStarted, QueuedEncode,
 };
 use crate::{
+    diagnostics::{failure_report, BoundedLog, DiagnosticReport},
     error::{ApiError, ApiResult},
     history::{now_millis, HistoryDraft, HistoryManager, HistoryStatus},
     jobs::{process, CancelledJob, JobManager, PendingJob, ReservedJob},
 };
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::CommandEvent;
-
-const MAX_ERROR_LINES: usize = 8;
 
 pub async fn enqueue(
     app: AppHandle,
@@ -23,6 +22,7 @@ pub async fn enqueue(
             "At least one encoding request is required.",
         ));
     }
+    let ffmpeg_version = super::binary::version(&app, "ffmpeg").await.ok();
 
     let mut outputs = HashSet::new();
     let mut prepared = Vec::with_capacity(requests.len());
@@ -52,7 +52,15 @@ pub async fn enqueue(
                 input_path: request.input_path.clone(),
                 output_path: request.output_path.clone(),
             };
-            (PendingJob { id, request, media }, snapshot)
+            (
+                PendingJob {
+                    id,
+                    request,
+                    media,
+                    ffmpeg_version: ffmpeg_version.clone(),
+                },
+                snapshot,
+            )
         })
         .collect::<Vec<_>>();
     let snapshots = queued
@@ -95,15 +103,26 @@ pub fn start_next(app: AppHandle) -> ApiResult<()> {
         }) {
             Ok(process) => process,
             Err(error) => {
+                let mut log = BoundedLog::default();
+                log.push(&error.message);
+                let diagnostic = failure_report(&job, log, None);
+                let message = diagnostic.summary.clone();
                 manager.finish_active(&job_id)?;
-                record_history(&app, history, HistoryStatus::Failed, Some(&error.message));
+                record_history(
+                    &app,
+                    history,
+                    HistoryStatus::Failed,
+                    Some(&message),
+                    Some(diagnostic.clone()),
+                );
                 let _ = app.emit(
                     "encode-finished",
                     EncodeFinished {
                         job_id,
                         status: "failed".to_owned(),
                         output_path,
-                        error: Some(error.message),
+                        error: Some(message),
+                        diagnostic: Some(diagnostic),
                     },
                 );
                 continue;
@@ -121,7 +140,7 @@ pub fn start_next(app: AppHandle) -> ApiResult<()> {
         let task_app = app.clone();
         tauri::async_runtime::spawn(async move {
             let mut progress = ProgressParser::default();
-            let mut errors = VecDeque::with_capacity(MAX_ERROR_LINES);
+            let mut log = BoundedLog::default();
             let mut exit_code = None;
 
             while let Some(event) = receiver.recv().await {
@@ -133,23 +152,17 @@ pub fn start_next(app: AppHandle) -> ApiResult<()> {
                         }
                     }
                     CommandEvent::Stderr(bytes) => {
-                        if errors.len() == MAX_ERROR_LINES {
-                            errors.pop_front();
-                        }
-                        errors.push_back(String::from_utf8_lossy(&bytes).into_owned());
+                        log.push(&String::from_utf8_lossy(&bytes));
                     }
                     CommandEvent::Error(error) => {
-                        if errors.len() == MAX_ERROR_LINES {
-                            errors.pop_front();
-                        }
-                        errors.push_back(error);
+                        log.push(&error);
                     }
                     CommandEvent::Terminated(payload) => exit_code = payload.code,
                     _ => {}
                 }
             }
 
-            finish_job(&task_app, job_id, output_path, history, errors, exit_code);
+            finish_job(&task_app, job_id, output_path, history, job, log, exit_code);
             let _ = start_next(task_app);
         });
 
@@ -162,20 +175,16 @@ fn finish_job(
     job_id: String,
     output_path: String,
     history: HistoryDraft,
-    errors: VecDeque<String>,
+    job: Box<PendingJob>,
+    log: BoundedLog,
     exit_code: Option<i32>,
 ) {
     let manager = app.state::<JobManager>();
     let _ = manager.finish_active(&job_id);
     let cancelled = manager.take_cancelled(&job_id);
-    let error = (!cancelled && exit_code != Some(0)).then(|| {
-        let message = errors.into_iter().collect::<Vec<_>>().join("\n");
-        if message.trim().is_empty() {
-            format!("FFmpeg exited with code {:?}.", exit_code)
-        } else {
-            message
-        }
-    });
+    let diagnostic =
+        (!cancelled && exit_code != Some(0)).then(|| failure_report(&job, log, exit_code));
+    let error = diagnostic.as_ref().map(|report| report.summary.clone());
     let status = if cancelled {
         "cancelled"
     } else if exit_code == Some(0) {
@@ -193,7 +202,13 @@ fn finish_job(
         "cancelled" => HistoryStatus::Cancelled,
         _ => HistoryStatus::Failed,
     };
-    record_history(app, history, history_status, error.as_deref());
+    record_history(
+        app,
+        history,
+        history_status,
+        error.as_deref(),
+        diagnostic.clone(),
+    );
 
     let _ = app.emit(
         "encode-finished",
@@ -202,6 +217,7 @@ fn finish_job(
             status: status.to_owned(),
             output_path,
             error,
+            diagnostic,
         },
     );
 }
@@ -211,9 +227,10 @@ fn record_history(
     draft: HistoryDraft,
     status: HistoryStatus,
     error: Option<&str>,
+    diagnostic: Option<DiagnosticReport>,
 ) {
     let manager = app.state::<HistoryManager>();
-    match manager.record(draft, status, error) {
+    match manager.record(draft, status, error, diagnostic) {
         Ok(entry) => {
             let _ = app.emit("history-entry-created", entry);
         }
@@ -234,6 +251,7 @@ pub fn cancel(app: &AppHandle, jobs: &JobManager, job_id: &str) -> ApiResult<()>
                     status: "cancelled".to_owned(),
                     output_path: job.request.output_path,
                     error: None,
+                    diagnostic: None,
                 },
             )
             .map_err(|error| ApiError::new("event_error", error.to_string())),
