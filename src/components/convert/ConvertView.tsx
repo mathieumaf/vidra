@@ -6,6 +6,7 @@ import {
 } from "../../config/advanced";
 import type { EncodingProfile } from "../../config/profiles";
 import { formatDuration, formatEta } from "../../lib/format";
+import { colorConversionRisk, type ColorConversionRisk } from "../../lib/color";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type {
   AudioMode,
@@ -44,6 +45,7 @@ type ConvertViewProps = {
   selectedProfileId: string | null;
   isProfileModified: boolean;
   readyItemCount: number;
+  colorRiskCount: number;
   isReady: boolean;
   isProbing: boolean;
   isActive: boolean;
@@ -92,6 +94,7 @@ export function ConvertView({
   selectedProfileId,
   isProfileModified,
   readyItemCount,
+  colorRiskCount,
   isReady,
   isProbing,
   isActive,
@@ -148,6 +151,8 @@ export function ConvertView({
       </div>
     );
   }
+
+  const colorRisk = colorConversionRisk(media.video, videoCodec);
 
   return (
     <div className="convert-view">
@@ -207,6 +212,13 @@ export function ConvertView({
             onVideoCodecChange={onVideoCodecChange}
             onEncodingSpeedChange={onEncodingSpeedChange}
           />
+          {colorRiskCount > 0 && (
+            <ColorRiskWarning
+              risk={colorRisk}
+              affectedCount={colorRiskCount}
+              mediaCount={mediaCount}
+            />
+          )}
           <QualitySlider
             qualityIndex={qualityIndex}
             videoCodec={videoCodec}
@@ -292,6 +304,31 @@ export function ConvertView({
         </div>
       </div>
       {status && !status.ready && <EngineUnavailable />}
+    </div>
+  );
+}
+
+function ColorRiskWarning({
+  risk,
+  affectedCount,
+  mediaCount,
+}: {
+  risk: ColorConversionRisk | null;
+  affectedCount: number;
+  mediaCount: number;
+}) {
+  const batchWarning = mediaCount > 1 && (affectedCount > 1 || !risk);
+  return (
+    <div className="color-risk-message" role="status" aria-live="polite">
+      <Icon name="warning" />
+      <div>
+        <strong>{batchWarning
+          ? `${affectedCount} ${affectedCount === 1 ? "video may" : "videos may"} have color changes`
+          : risk?.title}</strong>
+        <p>{batchWarning
+          ? "HDR, high-bit-depth, or wide-gamut sources will be re-encoded. Review each video or choose Original video to preserve its video stream."
+          : risk?.message}</p>
+      </div>
     </div>
   );
 }

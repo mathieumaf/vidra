@@ -13,12 +13,13 @@ import {
   Settings,
   ShieldCheck,
   Trash2,
+  TriangleAlert,
   X,
   type LucideIcon,
 } from "lucide-react";
 import type { View } from "../../types/media";
 
-export type IconName = View | "plus" | "file" | "shield" | "audio" | "up" | "down" | "remove" | "pause" | "resume" | "reveal" | "delete";
+export type IconName = View | "plus" | "file" | "shield" | "audio" | "up" | "down" | "remove" | "pause" | "resume" | "reveal" | "delete" | "warning";
 
 const icons: Record<IconName, LucideIcon> = {
   convert: ArrowRightLeft,
@@ -36,6 +37,7 @@ const icons: Record<IconName, LucideIcon> = {
   resume: Play,
   reveal: FolderSearch,
   delete: Trash2,
+  warning: TriangleAlert,
 };
 
 export function Icon({ name }: { name: IconName }) {

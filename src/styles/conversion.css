@@ -69,8 +69,12 @@
 .media-stream-title { min-width: 0; display: flex; align-items: center; gap: 6px; }
 .media-stream-title strong { overflow: hidden; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }
 .media-stream-title > span { flex: 0 0 auto; padding: 2px 5px; border-radius: 5px; color: #57665d; background: #eef2ef; font-size: var(--text-caption); font-weight: var(--weight-semibold); }
+.media-stream-title > .hdr-badge { color: #7a5723; background: #fbf1dc; }
 .media-stream-facts { display: flex; flex-wrap: wrap; margin-top: 4px; color: var(--muted); font-family: var(--font-mono); font-size: var(--text-caption); }
 .media-stream-facts span:not(:last-child)::after { content: "·"; margin: 0 5px; color: #b2b8b4; }
+.media-color-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 9px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #edf0ed; color: var(--muted); font-size: var(--text-caption); }
+.media-color-facts span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-color-facts strong { margin-right: 4px; color: #59645e; font-weight: var(--weight-semibold); }
 .compact-stream-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .compact-stream-row .media-stream-facts { flex: 0 0 auto; margin-top: 0; }
 .empty-track-copy { margin: 0; padding: 9px; color: var(--muted); font-size: var(--text-caption); }
@@ -197,6 +201,10 @@
 .progress-meta { color: var(--muted); font-size: var(--text-caption); }
 
 .success-message, .notice-message, .error-message { border-radius: 10px; font-size: var(--text-small); }
+.color-risk-message { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border: 1px solid #ead8ad; border-radius: 10px; color: #725d32; background: #faf5e9; font-size: var(--text-small); }
+.color-risk-message > svg { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 1px; }
+.color-risk-message div { min-width: 0; }
+.color-risk-message p { margin: 2px 0 0; color: #806f49; font-size: var(--text-caption); line-height: 1.35; }
 .success-message { display: flex; gap: 9px; align-items: flex-start; padding: 10px 12px; color: #155d3d; background: #edf8f1; }
 .success-message > span { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #35a66f; }
 .success-message div { min-width: 0; }

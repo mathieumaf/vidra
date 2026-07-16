@@ -12,6 +12,7 @@ The project currently targets macOS on Apple Silicon. Windows, Linux, and additi
 Current capabilities:
 
 - local media inspection with FFprobe;
+- HDR, color-space, color-range, and bit-depth inspection with re-encoding risk warnings;
 - multi-file selection and native drag and drop;
 - MP4 and MKV output with H.264 or H.265 video;
 - orientation-aware output resolution limits from 360p to 4K without upscaling;
