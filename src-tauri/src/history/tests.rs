@@ -1,7 +1,10 @@
 use super::{HistoryDraft, HistoryManager, HistoryStatus};
-use crate::ffmpeg::{
-    AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodingSpeed, OutputContainer,
-    OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
+use crate::{
+    diagnostics::DiagnosticReport,
+    ffmpeg::{
+        AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodingSpeed, OutputContainer,
+        OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
+    },
 };
 use std::{
     fs,
@@ -60,7 +63,7 @@ fn completed_entries_persist_with_the_output_size() {
     fs::write(&item.output_path, b"encoded").unwrap();
 
     let entry = manager
-        .record(item, HistoryStatus::Completed, None)
+        .record(item, HistoryStatus::Completed, None, None)
         .unwrap();
 
     assert_eq!(entry.output_size_bytes, Some(7));
@@ -79,7 +82,12 @@ fn errors_are_bounded_and_only_keep_the_last_two_lines() {
     let error = format!("first line\nsecond line\n{long_line}");
 
     let entry = manager
-        .record(draft(1, &directory), HistoryStatus::Failed, Some(&error))
+        .record(
+            draft(1, &directory),
+            HistoryStatus::Failed,
+            Some(&error),
+            None,
+        )
         .unwrap();
 
     let summary = entry.error.unwrap();
@@ -90,13 +98,40 @@ fn errors_are_bounded_and_only_keep_the_last_two_lines() {
 }
 
 #[test]
+fn failed_entries_persist_their_diagnostic_report() {
+    let directory = test_directory();
+    let history_path = directory.join("history.json");
+    let manager = HistoryManager::new(history_path.clone());
+    let diagnostic = DiagnosticReport {
+        code: "ffmpeg_failure".to_owned(),
+        summary: "FFmpeg could not complete this conversion.".to_owned(),
+        report: "Vidra diagnostic report".to_owned(),
+    };
+
+    manager
+        .record(
+            draft(1, &directory),
+            HistoryStatus::Failed,
+            Some(&diagnostic.summary),
+            Some(diagnostic.clone()),
+        )
+        .unwrap();
+
+    assert_eq!(
+        HistoryManager::new(history_path).list().unwrap()[0].diagnostic,
+        Some(diagnostic)
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn history_is_limited_to_the_most_recent_entries() {
     let directory = test_directory();
     let manager = HistoryManager::new(directory.join("history.json"));
 
     for id in 0..=super::manager::MAX_HISTORY_ENTRIES {
         manager
-            .record(draft(id, &directory), HistoryStatus::Cancelled, None)
+            .record(draft(id, &directory), HistoryStatus::Cancelled, None, None)
             .unwrap();
     }
 
@@ -117,7 +152,7 @@ fn invalid_files_are_ignored_and_replaced_on_the_next_write() {
 
     assert!(manager.list().unwrap().is_empty());
     manager
-        .record(draft(1, &directory), HistoryStatus::Cancelled, None)
+        .record(draft(1, &directory), HistoryStatus::Cancelled, None, None)
         .unwrap();
     assert_eq!(HistoryManager::new(history_path).list().unwrap().len(), 1);
     fs::remove_dir_all(directory).unwrap();
@@ -167,6 +202,7 @@ fn history_without_resolution_defaults_to_original() {
     assert!(entries[0].settings.preserve_subtitles);
     assert!(entries[0].settings.preserve_metadata);
     assert!(entries[0].settings.preserve_chapters);
+    assert!(entries[0].diagnostic.is_none());
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -180,10 +216,10 @@ fn deleting_or_clearing_history_never_deletes_media() {
     fs::write(&first.output_path, b"one").unwrap();
     fs::write(&second.output_path, b"two").unwrap();
     let first_entry = manager
-        .record(first.clone(), HistoryStatus::Completed, None)
+        .record(first.clone(), HistoryStatus::Completed, None, None)
         .unwrap();
     manager
-        .record(second.clone(), HistoryStatus::Completed, None)
+        .record(second.clone(), HistoryStatus::Completed, None, None)
         .unwrap();
 
     manager.delete(&first_entry.id).unwrap();

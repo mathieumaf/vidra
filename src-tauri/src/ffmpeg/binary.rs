@@ -2,7 +2,7 @@ use super::FfmpegStatus;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
-async fn version(app: &AppHandle, binary: &str) -> Result<String, String> {
+pub(super) async fn version(app: &AppHandle, binary: &str) -> Result<String, String> {
     let command = app
         .shell()
         .sidecar(binary)

@@ -1,4 +1,5 @@
 use crate::{
+    diagnostics,
     error::ApiResult,
     ffmpeg::{self, EncodeRequest, FfmpegStatus, MediaInfo, QueuedEncode},
     history::{self, HistoryEntry, HistoryManager},
@@ -78,4 +79,9 @@ pub fn reveal_history_output(history: State<'_, HistoryManager>, id: String) -> 
 #[tauri::command]
 pub fn reveal_output_file(path: String) -> ApiResult<()> {
     output::reveal(&path)
+}
+
+#[tauri::command]
+pub fn save_diagnostic_report(path: String, report: String) -> ApiResult<()> {
+    diagnostics::save_report(&path, &report)
 }

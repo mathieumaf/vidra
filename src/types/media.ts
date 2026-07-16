@@ -109,6 +109,13 @@ export type EncodeFinished = {
   status: "completed" | "failed" | "cancelled";
   outputPath: string;
   error: string | null;
+  diagnostic: DiagnosticReport | null;
+};
+
+export type DiagnosticReport = {
+  code: string;
+  summary: string;
+  report: string;
 };
 
 export type EncodeStarted = {
@@ -143,6 +150,7 @@ export type EncodeQueueItem = {
   status: EncodeJobStatus;
   progress: EncodeProgress;
   error: string | null;
+  diagnostic: DiagnosticReport | null;
 };
 
 export type HistoryStatus = "completed" | "failed" | "cancelled";
@@ -160,6 +168,7 @@ export type HistoryEntry = {
   outputSizeBytes: number | null;
   settings: EncodingSettings;
   error: string | null;
+  diagnostic: DiagnosticReport | null;
 };
 
 export type ApiError = {

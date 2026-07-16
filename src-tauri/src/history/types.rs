@@ -1,4 +1,5 @@
 use crate::{
+    diagnostics::DiagnosticReport,
     ffmpeg::{
         AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodingSpeed, OutputContainer,
         OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
@@ -62,6 +63,8 @@ pub struct HistoryEntry {
     pub output_size_bytes: Option<u64>,
     pub settings: HistorySettings,
     pub error: Option<String>,
+    #[serde(default)]
+    pub diagnostic: Option<DiagnosticReport>,
 }
 
 #[derive(Debug, Clone)]

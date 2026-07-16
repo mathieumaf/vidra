@@ -2,6 +2,8 @@ import {
   ArrowRightLeft,
   ChevronDown,
   ChevronUp,
+  ClipboardCopy,
+  Download,
   FileVideo,
   FolderSearch,
   History,
@@ -19,7 +21,7 @@ import {
 } from "lucide-react";
 import type { View } from "../../types/media";
 
-export type IconName = View | "plus" | "file" | "shield" | "audio" | "up" | "down" | "remove" | "pause" | "resume" | "reveal" | "delete" | "warning";
+export type IconName = View | "plus" | "file" | "shield" | "audio" | "up" | "down" | "remove" | "pause" | "resume" | "reveal" | "delete" | "warning" | "copy" | "download";
 
 const icons: Record<IconName, LucideIcon> = {
   convert: ArrowRightLeft,
@@ -38,6 +40,8 @@ const icons: Record<IconName, LucideIcon> = {
   reveal: FolderSearch,
   delete: Trash2,
   warning: TriangleAlert,
+  copy: ClipboardCopy,
+  download: Download,
 };
 
 export function Icon({ name }: { name: IconName }) {

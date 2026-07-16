@@ -8,6 +8,7 @@ import { colorConversionRisk } from "../../lib/color";
 import { queueTrackSummary } from "../../lib/tracks";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
+import { DiagnosticDetails } from "./DiagnosticDetails";
 
 type QueueViewProps = {
   items: EncodeQueueItem[];
@@ -180,6 +181,9 @@ export function QueueView({
                   </div>
                 )}
                 {item.status === "failed" && item.error && <p className="queue-error">{item.error}</p>}
+                {item.status === "failed" && item.diagnostic && (
+                  <DiagnosticDetails diagnostic={item.diagnostic} sourceName={item.media.name} />
+                )}
               </div>
               <div className="queue-row-actions">
                 {item.status === "completed" && (
