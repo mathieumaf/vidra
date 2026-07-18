@@ -89,10 +89,26 @@ jobs:
 
       - name: Verify signature and notarization
         run: |
-          APP_PATH="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          DMG_PATH="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$DMG_PATH"
+          codesign --verify --strict --verbose=2 "$DMG_PATH"
+
+          MOUNT_POINT="$RUNNER_TEMP/vidra-dmg"
+          mkdir -p "$MOUNT_POINT"
+          detach_dmg() {
+            hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || true
+          }
+          trap detach_dmg EXIT
+          hdiutil attach "$DMG_PATH" -nobrowse -readonly -mountpoint "$MOUNT_POINT"
+
+          APP_PATH="$(find "$MOUNT_POINT" -maxdepth 1 -name '*.app' -print -quit)"
           test -n "$APP_PATH"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
           spctl --assess --type execute --verbose=2 "$APP_PATH"
+
+          detach_dmg
+          trap - EXIT
 
       - name: Create artifact checksums
         run: |

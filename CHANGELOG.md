@@ -4,7 +4,7 @@ All notable changes to Vidra are documented in this file.
 
 ## Unreleased
 
-## 0.1.0-beta.1 - 2026-07-18
+## 0.1.0-beta.2 - 2026-07-18
 
 ### Added
 

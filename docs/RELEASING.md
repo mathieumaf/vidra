@@ -30,8 +30,8 @@ The release workflow installs Apple's Developer ID G2 intermediate certificate f
 Create and push a signed tag. A prerelease tag may add a suffix without changing the application bundle version:
 
 ```sh
-git tag -s v0.1.0-beta.1 -m "Vidra 0.1.0 beta 1"
-git push origin v0.1.0-beta.1
+git tag -s v0.1.0-beta.2 -m "Vidra 0.1.0 beta 2"
+git push origin v0.1.0-beta.2
 ```
 
 The release workflow then:
