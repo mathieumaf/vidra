@@ -298,6 +298,14 @@ export function ConvertView({
             <button className="primary-button" type="button" onClick={onStartEncoding} disabled={!isReady}>
               {mediaCount > 1 ? `Choose folder and encode ${mediaCount} videos` : "Choose output and encode"} <span>→</span>
             </button>
+          ) : result ? (
+            <span className="queued-action-copy">{
+              result.status === "completed"
+                ? "Encoding complete"
+                : result.status === "cancelled"
+                  ? "Encoding cancelled"
+                  : "Encoding failed"
+            }</span>
           ) : (
             <span className="queued-action-copy">Waiting in the queue</span>
           )}

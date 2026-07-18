@@ -23,13 +23,16 @@ pub async fn enqueue(
         ));
     }
     let ffmpeg_version = super::binary::version(&app, "ffmpeg").await.ok();
+    let inputs = requests
+        .iter()
+        .map(|request| validate_input(&request.input_path))
+        .collect::<ApiResult<Vec<_>>>()?;
 
     let mut outputs = HashSet::new();
     let mut prepared = Vec::with_capacity(requests.len());
 
-    for mut request in requests {
-        let input = validate_input(&request.input_path)?;
-        let output = validate_output(&request.output_path, &input, request.container)?;
+    for (mut request, input) in requests.into_iter().zip(inputs.iter()) {
+        let output = validate_output(&request.output_path, &inputs, request.container)?;
         if !outputs.insert(output.clone()) {
             return Err(ApiError::invalid_input(
                 "Two queued videos cannot use the same output path.",

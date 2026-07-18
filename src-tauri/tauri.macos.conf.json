@@ -5,6 +5,7 @@
       "generated/macos-icon/Vidra.icns"
     ],
     "macOS": {
+      "minimumSystemVersion": "12.0",
       "files": {
         "Resources/Assets.car": "generated/macos-icon/Assets.car"
       },

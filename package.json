@@ -9,7 +9,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm build && pnpm test && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
+    "release:check": "node scripts/release/check-version.mjs",
     "ffmpeg:prepare": "node scripts/ffmpeg/prepare.mjs",
+    "ffmpeg:release": "VIDRA_FFMPEG_MODE=release node scripts/ffmpeg/prepare.mjs",
     "icon:prepare": "node scripts/icons/prepare-macos.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
@@ -27,6 +32,7 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.10"
   }
 }
