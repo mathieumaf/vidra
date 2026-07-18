@@ -48,6 +48,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare release FFmpeg sidecars
+        run: pnpm ffmpeg:release
+
       - name: Validate source and release version
         run: |
           pnpm check
@@ -83,7 +86,9 @@ jobs:
         run: |
           DMG_PATH="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$DMG_PATH"
-          shasum -a 256 "$DMG_PATH" > "$DMG_PATH.sha256"
+          DMG_DIRECTORY="$(dirname "$DMG_PATH")"
+          DMG_NAME="$(basename "$DMG_PATH")"
+          (cd "$DMG_DIRECTORY" && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
 
       - name: Attach corresponding sources and checksums
         env:
