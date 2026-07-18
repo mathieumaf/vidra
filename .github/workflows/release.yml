@@ -56,6 +56,18 @@ jobs:
           pnpm check
           pnpm release:check -- "$GITHUB_REF_NAME"
 
+      - name: Install Developer ID G2 intermediate certificate
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          EXPECTED_SHA256="f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a"
+          curl --fail --location --silent --show-error \
+            https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+            --output "$CERTIFICATE_PATH"
+          ACTUAL_SHA256="$(shasum -a 256 "$CERTIFICATE_PATH" | awk '{print $1}')"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          security import "$CERTIFICATE_PATH" \
+            -k "$HOME/Library/Keychains/login.keychain-db"
+
       - name: Build signed and notarized application
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
