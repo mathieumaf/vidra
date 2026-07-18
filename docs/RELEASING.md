@@ -4,7 +4,7 @@ Vidra is currently distributed as a prerelease for macOS on Apple Silicon. Publi
 
 ## One-time Apple setup
 
-An Apple Developer Program membership and a Developer ID Application certificate are required for direct distribution outside the Mac App Store. Add these GitHub Actions repository secrets:
+An Apple Developer Program membership and a Developer ID Application certificate are required for direct distribution outside the Mac App Store. Add these GitHub Actions environment secrets:
 
 - `APPLE_CERTIFICATE`: the Developer ID Application certificate exported as a base64-encoded PKCS #12 file;
 - `APPLE_CERTIFICATE_PASSWORD`: the export password for that certificate;
@@ -14,6 +14,8 @@ An Apple Developer Program membership and a Developer ID Application certificate
 - `APPLE_TEAM_ID`: the Apple Developer team identifier.
 
 Create a protected GitHub Actions environment named `release`, require a maintainer's approval, store the secrets in that environment, and restrict deployment access to release tags.
+
+The release workflow installs Apple's Developer ID G2 intermediate certificate from the official Apple PKI endpoint and verifies its pinned SHA-256 checksum before importing it. Update the checksum only after confirming an intentional certificate change on Apple's PKI page.
 
 ## Prepare a beta
 
