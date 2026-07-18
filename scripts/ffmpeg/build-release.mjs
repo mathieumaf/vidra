@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-const BUILD_RECIPE_VERSION = 2;
+const BUILD_RECIPE_VERSION = 3;
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
@@ -72,7 +72,7 @@ await Promise.all([
   mkdir(assetDirectory, { recursive: true }),
 ]);
 
-for (const command of ["curl", "tar", "make", "cmake", "pkg-config", "codesign", "strip", "ditto"]) {
+for (const command of ["curl", "tar", "make", "cmake", "pkg-config", "codesign", "strip", "ditto", "otool"]) {
   requireCommand(command);
 }
 
@@ -117,7 +117,12 @@ for (const name of ["ffmpeg", "ffprobe"]) {
   run("codesign", ["--force", "--sign", "-", destination]);
 }
 
-verifyReleaseBinary(join(binaryDirectory, `ffmpeg-${target}`));
+const releaseFfmpeg = join(binaryDirectory, `ffmpeg-${target}`);
+const releaseFfprobe = join(binaryDirectory, `ffprobe-${target}`);
+verifyReleaseFfmpeg(releaseFfmpeg);
+verifyReleaseFfprobe(releaseFfprobe);
+verifySystemDependencies(releaseFfmpeg);
+verifySystemDependencies(releaseFfprobe);
 await packageCorrespondingSources();
 console.log(`Release FFmpeg ${release.sources.ffmpeg.version} is ready for ${target}.`);
 
@@ -198,9 +203,10 @@ function ffmpegConfiguration() {
     "--pkg-config-flags=--static",
     "--extra-cflags=-I../../prefix/include",
     "--extra-ldflags=-L../../prefix/lib",
-    "--extra-libs=-lpthread -lm -lc++",
+    "--extra-libs=-lpthread -lm -lc++ -liconv",
     "--enable-static",
     "--disable-shared",
+    "--disable-autodetect",
     "--disable-debug",
     "--disable-doc",
     "--disable-ffplay",
@@ -210,6 +216,10 @@ function ffmpegConfiguration() {
     "--enable-libx265",
     "--enable-libsvtav1",
     "--enable-libopus",
+    "--enable-pthreads",
+    "--enable-bzlib",
+    "--enable-iconv",
+    "--enable-zlib",
     "--enable-videotoolbox",
     "--enable-audiotoolbox",
   ];
@@ -252,7 +262,7 @@ function copySourceTree(source, destination) {
   run("ditto", [source, destination]);
 }
 
-function verifyReleaseBinary(ffmpeg) {
+function verifyReleaseFfmpeg(ffmpeg) {
   const result = run(ffmpeg, ["-hide_banner", "-encoders"], { capture: true });
   for (const encoder of [
     "libx264",
@@ -266,6 +276,29 @@ function verifyReleaseBinary(ffmpeg) {
     if (!result.includes(encoder)) {
       throw new Error(`Release FFmpeg is missing the required ${encoder} encoder.`);
     }
+  }
+}
+
+function verifyReleaseFfprobe(ffprobe) {
+  run(ffprobe, ["-hide_banner", "-version"], { capture: true });
+}
+
+function verifySystemDependencies(binary) {
+  const result = run("otool", ["-L", binary], { capture: true });
+  const dependencies = result
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/)[0])
+    .filter(Boolean);
+  const unsupported = dependencies.filter(
+    (dependency) => !dependency.startsWith("/System/Library/") && !dependency.startsWith("/usr/lib/"),
+  );
+
+  if (unsupported.length > 0) {
+    throw new Error([
+      `${binary} depends on libraries that are not provided by macOS:`,
+      ...unsupported.map((dependency) => `  ${dependency}`),
+    ].join("\n"));
   }
 }
 
