@@ -40,6 +40,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare FFmpeg sidecars
+        run: pnpm ffmpeg:prepare
+
       - name: Build frontend
         run: pnpm build
 
