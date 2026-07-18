@@ -4,7 +4,7 @@ All notable changes to Vidra are documented in this file.
 
 ## Unreleased
 
-## 0.1.0-beta.2 - 2026-07-18
+## 0.1.0-beta.3 - 2026-07-18
 
 ### Added
 
@@ -16,6 +16,7 @@ All notable changes to Vidra are documented in this file.
 
 ### Fixed
 
+- Build FFmpeg sidecars exclusively against macOS system libraries so release builds run without Homebrew.
 - Protect every selected input from output path aliases, symbolic links, and hard-link collisions.
 - Clean up active conversion processes and incomplete outputs during application shutdown.
 - Show completed job status without also displaying a stale waiting message.

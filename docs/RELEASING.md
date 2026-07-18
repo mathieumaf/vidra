@@ -30,14 +30,15 @@ The release workflow installs Apple's Developer ID G2 intermediate certificate f
 Create and push a signed tag. A prerelease tag may add a suffix without changing the application bundle version:
 
 ```sh
-git tag -s v0.1.0-beta.2 -m "Vidra 0.1.0 beta 2"
-git push origin v0.1.0-beta.2
+git tag -s v0.1.0-beta.3 -m "Vidra 0.1.0 beta 3"
+git push origin v0.1.0-beta.3
 ```
 
 The release workflow then:
 
 - runs the complete frontend and Rust checks;
 - builds GPL-enabled FFmpeg and FFprobe from pinned, checksum-verified sources;
+- rejects FFmpeg sidecars that depend on libraries outside the macOS system paths;
 - builds, signs, and notarizes the Apple Silicon application and DMG;
 - verifies the final application with `codesign` and Gatekeeper;
 - creates a draft prerelease containing the DMG, its checksum, FFmpeg corresponding sources, and build configuration.
