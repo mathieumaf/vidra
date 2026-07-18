@@ -12,7 +12,7 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
@@ -36,6 +36,12 @@ pub fn run() {
             commands::reveal_output_file,
             commands::save_diagnostic_report
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Vidra");
+        .build(tauri::generate_context!())
+        .expect("error while building Vidra");
+
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            app_handle.state::<JobManager>().shutdown();
+        }
+    });
 }

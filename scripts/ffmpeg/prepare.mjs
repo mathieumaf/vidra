@@ -9,6 +9,12 @@ import { pipeline } from "node:stream/promises";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
+
+if (process.env.VIDRA_FFMPEG_MODE === "release") {
+  await import("./build-release.mjs");
+  process.exit(0);
+}
+
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
 
 const target = `${process.arch === "arm64" ? "aarch64" : process.arch}-apple-darwin`;

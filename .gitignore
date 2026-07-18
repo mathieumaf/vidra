@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 .cache
+release-assets
 *.local
 .DS_Store
 design/preview/

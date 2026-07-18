@@ -96,7 +96,11 @@ pub(super) fn build_command(
 ) -> ApiResult<tauri_plugin_shell::process::Command> {
     validate_settings(&job.request, &job.media)?;
     let input = validate_input(&job.request.input_path)?;
-    let output = validate_output(&job.request.output_path, &input, job.request.container)?;
+    let output = validate_output(
+        &job.request.output_path,
+        std::slice::from_ref(&input),
+        job.request.container,
+    )?;
     let command = app
         .shell()
         .sidecar("ffmpeg")

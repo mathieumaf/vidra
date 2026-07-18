@@ -271,6 +271,36 @@ impl JobManager {
             .unwrap_or(false)
     }
 
+    pub fn shutdown(&self) {
+        let running = match self.lock() {
+            Ok(mut state) => {
+                let mut running = state.active.take().into_iter().collect::<Vec<_>>();
+                running.extend(state.suspended.drain(..));
+                state.pending.clear();
+                state.waiting_order.clear();
+                state.cancelled.clear();
+                running
+            }
+            Err(error) => {
+                eprintln!("Unable to stop the encoding queue during shutdown: {error}");
+                return;
+            }
+        };
+
+        for mut job in running {
+            if let (Some(process_id), Some(child)) = (job.process_id, job.child.take()) {
+                if let Err(error) = process::terminate(process_id, child) {
+                    eprintln!("Unable to stop FFmpeg during shutdown: {error}");
+                }
+            }
+            if let Err(error) = std::fs::remove_file(&job.output_path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("Unable to remove an incomplete output during shutdown: {error}");
+                }
+            }
+        }
+    }
+
     fn lock(&self) -> ApiResult<std::sync::MutexGuard<'_, JobState>> {
         self.state
             .lock()

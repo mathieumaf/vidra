@@ -6,6 +6,10 @@ use crate::{
     },
     jobs::{PendingJob, ReservedJob},
 };
+use std::{
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 fn pending(id: &str) -> PendingJob {
     PendingJob {
@@ -119,4 +123,38 @@ fn allows_the_same_input_with_distinct_outputs() {
         pending_id(manager.reserve_next().unwrap().unwrap()),
         "first"
     );
+}
+
+#[test]
+fn shutdown_removes_incomplete_outputs_and_clears_the_queue() {
+    let manager = JobManager::default();
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let output = std::env::temp_dir().join(format!(
+        "vidra-shutdown-test-{}-{unique}.mp4",
+        std::process::id()
+    ));
+    fs::write(&output, b"partial output").unwrap();
+    manager.append(vec![pending("waiting")]).unwrap();
+    {
+        let mut state = manager.state.lock().unwrap();
+        state.active = Some(ActiveJob {
+            id: "active".to_owned(),
+            output_path: output.to_string_lossy().into_owned(),
+            child: None,
+            process_id: None,
+            paused: false,
+        });
+    }
+
+    manager.shutdown();
+
+    assert!(!output.exists());
+    let state = manager.state.lock().unwrap();
+    assert!(state.active.is_none());
+    assert!(state.suspended.is_empty());
+    assert!(state.pending.is_empty());
+    assert!(state.waiting_order.is_empty());
 }
