@@ -38,7 +38,7 @@ import type {
   View,
 } from "../types/media";
 import { viewMeta } from "./viewMeta";
-import { colorConversionRisk } from "../lib/color";
+import { colorConversionNotice } from "../lib/color";
 import { conversionActivity } from "../lib/conversionActivity";
 import "../styles/tokens.css";
 import "../styles/base.css";
@@ -356,9 +356,11 @@ export default function App() {
       currentSettings(),
     )
   );
-  const readyColorRiskCount = queue.readyItems.filter((item) => (
-    colorConversionRisk(item.media.video, item.settings.videoCodec) !== null
-  )).length;
+  const readyColorNotices = queue.readyItems.flatMap((item) => {
+    const notice = colorConversionNotice(item.media.video, item.settings.videoCodec);
+    return notice ? [notice] : [];
+  });
+  const blockedColorCount = readyColorNotices.filter((notice) => notice.blocking).length;
 
   return (
     <div className={`desktop-shell${queue.isDraggingFiles ? " dragging-files" : ""}`}>
@@ -421,7 +423,9 @@ export default function App() {
                 selectedProfileId={selectedProfileId}
                 isProfileModified={isProfileModified}
                 readyItemCount={queue.readyItems.length}
-                colorRiskCount={readyColorRiskCount}
+                colorNoticeCount={readyColorNotices.length}
+                blockedColorCount={blockedColorCount}
+                isEncodingSupported={blockedColorCount === 0}
                 isReady={isReady}
                 isProbing={queue.isProbing}
                 isActive={isPrimaryActive}
@@ -456,7 +460,7 @@ export default function App() {
             {view === "queue" && (
               <QueueView
                 items={queue.items}
-                isReady={isReady}
+                isReady={isReady && blockedColorCount === 0}
                 isProbing={queue.isProbing}
                 error={queue.error}
                 notice={queue.notice}

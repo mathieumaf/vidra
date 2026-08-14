@@ -43,7 +43,7 @@ jobs:
           rustup component add clippy rustfmt
 
       - name: Install native build tools
-        run: brew install cmake ninja pkgconf nasm
+        run: brew install autoconf automake libtool cmake ninja pkgconf nasm
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile

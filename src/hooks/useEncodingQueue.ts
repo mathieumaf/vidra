@@ -10,6 +10,7 @@ import {
   type AdvancedEncodingSettings,
 } from "../config/advanced";
 import { defaultOutputPath, errorMessage } from "../lib/format";
+import { colorConversionNotice } from "../lib/color";
 import {
   batchOutputPaths,
   createQueueItem,
@@ -279,6 +280,13 @@ export function useEncodingQueue({
 
   async function startEncoding(): Promise<number> {
     if (readyItems.length === 0 || !isReady) return 0;
+    const blocked = readyItems.find((item) => (
+      colorConversionNotice(item.media.video, item.settings.videoCodec)?.blocking
+    ));
+    if (blocked) {
+      setError(`${blocked.media.name} requires Original video because its Dolby Vision structure cannot be safely re-encoded.`);
+      return 0;
+    }
     const shouldStartQueue = activeItems.length === 0;
     setError(null);
     setResult(null);

@@ -21,6 +21,7 @@ const smallMedia: MediaInfo = {
     colorTransfer: "bt709",
     colorPrimaries: "bt709",
     hdrFormat: null,
+    dolbyVision: null,
   },
   audio: [],
   subtitles: [],

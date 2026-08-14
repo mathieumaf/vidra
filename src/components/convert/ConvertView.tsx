@@ -6,7 +6,7 @@ import {
 } from "../../config/advanced";
 import type { EncodingProfile } from "../../config/profiles";
 import { formatDuration, formatEta } from "../../lib/format";
-import { colorConversionRisk, type ColorConversionRisk } from "../../lib/color";
+import { colorConversionNotice, type ColorConversionNotice } from "../../lib/color";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type {
   AudioMode,
@@ -45,7 +45,9 @@ type ConvertViewProps = {
   selectedProfileId: string | null;
   isProfileModified: boolean;
   readyItemCount: number;
-  colorRiskCount: number;
+  colorNoticeCount: number;
+  blockedColorCount: number;
+  isEncodingSupported: boolean;
   isReady: boolean;
   isProbing: boolean;
   isActive: boolean;
@@ -94,7 +96,9 @@ export function ConvertView({
   selectedProfileId,
   isProfileModified,
   readyItemCount,
-  colorRiskCount,
+  colorNoticeCount,
+  blockedColorCount,
+  isEncodingSupported,
   isReady,
   isProbing,
   isActive,
@@ -152,7 +156,7 @@ export function ConvertView({
     );
   }
 
-  const colorRisk = colorConversionRisk(media.video, videoCodec);
+  const colorNotice = colorConversionNotice(media.video, videoCodec);
 
   return (
     <div className="convert-view">
@@ -212,10 +216,11 @@ export function ConvertView({
             onVideoCodecChange={onVideoCodecChange}
             onEncodingSpeedChange={onEncodingSpeedChange}
           />
-          {colorRiskCount > 0 && (
-            <ColorRiskWarning
-              risk={colorRisk}
-              affectedCount={colorRiskCount}
+          {colorNoticeCount > 0 && (
+            <ColorConversionMessage
+              notice={colorNotice}
+              affectedCount={colorNoticeCount}
+              blockedCount={blockedColorCount}
               mediaCount={mediaCount}
             />
           )}
@@ -295,7 +300,12 @@ export function ConvertView({
               </button>
             </div>
           ) : canEdit ? (
-            <button className="primary-button" type="button" onClick={onStartEncoding} disabled={!isReady}>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={onStartEncoding}
+              disabled={!isReady || !isEncodingSupported}
+            >
               {mediaCount > 1 ? `Choose folder and encode ${mediaCount} videos` : "Choose output and encode"} <span>→</span>
             </button>
           ) : result ? (
@@ -316,26 +326,37 @@ export function ConvertView({
   );
 }
 
-function ColorRiskWarning({
-  risk,
+function ColorConversionMessage({
+  notice,
   affectedCount,
+  blockedCount,
   mediaCount,
 }: {
-  risk: ColorConversionRisk | null;
+  notice: ColorConversionNotice | null;
   affectedCount: number;
+  blockedCount: number;
   mediaCount: number;
 }) {
-  const batchWarning = mediaCount > 1 && (affectedCount > 1 || !risk);
+  const batchNotice = mediaCount > 1 && (affectedCount > 1 || !notice);
+  const isBlocking = blockedCount > 0 || notice?.blocking === true;
   return (
-    <div className="color-risk-message" role="status" aria-live="polite">
+    <div
+      className={`color-conversion-message${isBlocking ? " blocking" : ""}`}
+      role={isBlocking ? "alert" : "status"}
+      aria-live="polite"
+    >
       <Icon name="warning" />
       <div>
-        <strong>{batchWarning
-          ? `${affectedCount} ${affectedCount === 1 ? "video may" : "videos may"} have color changes`
-          : risk?.title}</strong>
-        <p>{batchWarning
-          ? "HDR, high-bit-depth, or wide-gamut sources will be re-encoded. Review each video or choose Original video to preserve its video stream."
-          : risk?.message}</p>
+        <strong>{batchNotice
+          ? isBlocking
+            ? `${blockedCount} ${blockedCount === 1 ? "video requires" : "videos require"} Original video`
+            : `${affectedCount} ${affectedCount === 1 ? "video has" : "videos have"} automatic color handling`
+          : notice?.title}</strong>
+        <p>{batchNotice
+          ? isBlocking
+            ? "Edit the affected videos and choose Original video before starting this batch."
+            : "H.264 creates standard SDR, H.265 and AV1 keep HDR, and Original video copies the source unchanged."
+          : notice?.message}</p>
       </div>
     </div>
   );

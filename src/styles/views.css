@@ -50,8 +50,9 @@
 .queue-item-details > p { margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--text-caption); }
 .queue-item-details > .queue-item-tracks { margin-top: 2px; color: #626d66; }
 .queue-item-details > .queue-item-output { margin-top: 2px; color: #4f7a62; }
-.queue-item-details > .queue-color-risk { display: flex; align-items: center; gap: 4px; color: #80652d; }
-.queue-color-risk svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.queue-item-details > .queue-color-notice { display: flex; align-items: center; gap: 4px; color: #80652d; }
+.queue-color-notice.blocking { color: #9b4038; }
+.queue-color-notice svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .queue-item-details .progress-track { margin: 8px 0 0; }
 .queue-item-details > .queue-error { color: #9a4138; }
 .queue-row-actions { display: flex; align-items: center; gap: 2px; }

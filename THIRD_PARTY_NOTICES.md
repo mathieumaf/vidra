@@ -15,7 +15,8 @@ The release build currently links these optional libraries statically:
 - x264, licensed under GPL version 2 or later;
 - x265, licensed under GPL version 2 or later;
 - SVT-AV1, licensed under the BSD 3-Clause License;
-- Opus, licensed under the BSD 3-Clause License.
+- Opus, licensed under the BSD 3-Clause License;
+- zimg, licensed under the Do What The Fuck You Want To Public License version 2.
 
 The default local development bootstrap still uses artifacts from [OSXExperts](https://www.osxexperts.net/). Those artifacts are development-only, are not committed, and must not be used for a public Vidra release.
 

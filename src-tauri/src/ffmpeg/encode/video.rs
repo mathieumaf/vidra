@@ -1,8 +1,8 @@
 use crate::{
     error::{ApiError, ApiResult},
     ffmpeg::{
-        EncodeRequest, EncodingSpeed, OutputContainer, OutputFrameRate, OutputResolution,
-        VideoCodec, VideoStream,
+        EncodeRequest, EncodingSpeed, HdrFormat, OutputContainer, OutputFrameRate,
+        OutputResolution, VideoCodec, VideoStream,
     },
 };
 
@@ -34,24 +34,166 @@ fn hardware_encoder(_codec: VideoCodec) -> ApiResult<&'static str> {
 /// 8 bits on both encoding speeds, since High 10 has almost no hardware decoding
 /// support and that defeats the reason to choose H.264. H.265 and AV1 keep a
 /// 10-bit source at 10 bits, where Main 10 and AV1 Main 10-bit decode widely and
-/// the extra depth avoids banding. Deeper sources are capped at 10 bits, and an
-/// unprobed bit depth is treated as 8-bit.
+/// the extra depth avoids banding. Deeper sources are capped at 10 bits. An HDR
+/// source is kept at 10 bits even when its input bit depth was not reported.
 fn output_pixel_format(
     codec: VideoCodec,
     speed: EncodingSpeed,
     source_bit_depth: Option<u8>,
+    source_is_hdr: bool,
 ) -> Option<&'static str> {
     if codec == VideoCodec::Copy {
         return None;
     }
     let ten_bit = matches!(codec, VideoCodec::H265 | VideoCodec::Av1)
-        && source_bit_depth.is_some_and(|depth| depth > 8);
+        && (source_is_hdr || source_bit_depth.is_some_and(|depth| depth > 8));
     Some(match (speed, ten_bit) {
         (_, false) => "yuv420p",
         (EncodingSpeed::Efficient, true) => "yuv420p10le",
         // VideoToolbox encoders take 10-bit frames as semi-planar p010le.
         (EncodingSpeed::Fast, true) => "p010le",
     })
+}
+
+fn validate_dolby_vision_reencode(
+    codec: VideoCodec,
+    source: Option<&VideoStream>,
+) -> ApiResult<()> {
+    let Some(source) = source.filter(|video| video.hdr_format == Some(HdrFormat::DolbyVision))
+    else {
+        return Ok(());
+    };
+    if codec == VideoCodec::Copy {
+        return Ok(());
+    }
+
+    let compatible_base = source.dolby_vision.as_ref().is_some_and(|info| {
+        matches!(info.base_layer_compatibility_id, Some(1 | 4)) && !info.has_enhancement_layer
+    });
+    if compatible_base {
+        Ok(())
+    } else {
+        Err(ApiError::invalid_input(
+            "This Dolby Vision source cannot be safely re-encoded. Choose Original video to preserve it.",
+        ))
+    }
+}
+
+fn tone_map_filters(source: &VideoStream) -> ApiResult<Vec<String>> {
+    let transfer = meaningful_color(source.color_transfer.as_deref())
+        .filter(|value| matches!(*value, "smpte2084" | "arib-std-b67"))
+        .or_else(|| match source.hdr_format {
+            Some(HdrFormat::Hlg) => Some("arib-std-b67"),
+            Some(HdrFormat::Hdr10 | HdrFormat::Hdr10Plus | HdrFormat::Pq) => {
+                Some("smpte2084")
+            }
+            Some(HdrFormat::DolbyVision) => dolby_vision_base_transfer(source),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            ApiError::invalid_input(
+                "The HDR transfer characteristics are unavailable. Choose Original video to preserve this source.",
+            )
+        })?;
+    let primaries = meaningful_color(source.color_primaries.as_deref()).unwrap_or("bt2020");
+    let matrix = meaningful_color(source.color_space.as_deref()).unwrap_or("bt2020nc");
+    let range = match source.color_range.as_deref() {
+        Some("pc" | "jpeg" | "full") => "full",
+        _ => "limited",
+    };
+
+    Ok(vec![
+        format!(
+            "zscale=transferin={transfer}:primariesin={primaries}:matrixin={matrix}:rangein={range}:transfer=linear:primaries={primaries}:matrix=gbr:npl=100"
+        ),
+        "format=gbrpf32le".to_owned(),
+        "tonemap=mobius:desat=2".to_owned(),
+        "zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited:dither=error_diffusion"
+            .to_owned(),
+        "format=yuv420p".to_owned(),
+    ])
+}
+
+fn color_arguments(codec: VideoCodec, source: Option<&VideoStream>) -> Vec<String> {
+    if codec == VideoCodec::Copy {
+        return Vec::new();
+    }
+    let Some(source) = source else {
+        return Vec::new();
+    };
+    if codec == VideoCodec::H264 && source.hdr_format.is_some() {
+        return color_tag_arguments("bt709", "bt709", "bt709", "tv");
+    }
+
+    let is_hdr = source.hdr_format.is_some();
+    let primaries =
+        meaningful_color(source.color_primaries.as_deref()).or(is_hdr.then_some("bt2020"));
+    let transfer =
+        meaningful_color(source.color_transfer.as_deref()).or_else(|| match source.hdr_format {
+            Some(HdrFormat::Hlg) => Some("arib-std-b67"),
+            Some(HdrFormat::Hdr10 | HdrFormat::Hdr10Plus | HdrFormat::Pq) => Some("smpte2084"),
+            Some(HdrFormat::DolbyVision) => dolby_vision_base_transfer(source),
+            _ => None,
+        });
+    let matrix = meaningful_color(source.color_space.as_deref()).or(is_hdr.then_some("bt2020nc"));
+    let range = meaningful_color(source.color_range.as_deref()).or(is_hdr.then_some("tv"));
+
+    let mut arguments = Vec::new();
+    for (option, value) in [
+        ("-color_primaries", primaries),
+        ("-color_trc", transfer),
+        ("-colorspace", matrix),
+        ("-color_range", range),
+    ] {
+        if let Some(value) = value {
+            arguments.extend([option.to_owned(), value.to_owned()]);
+        }
+    }
+    arguments
+}
+
+fn color_tag_arguments(primaries: &str, transfer: &str, matrix: &str, range: &str) -> Vec<String> {
+    vec![
+        "-color_primaries".to_owned(),
+        primaries.to_owned(),
+        "-color_trc".to_owned(),
+        transfer.to_owned(),
+        "-colorspace".to_owned(),
+        matrix.to_owned(),
+        "-color_range".to_owned(),
+        range.to_owned(),
+    ]
+}
+
+fn color_tag_filter(arguments: &[String]) -> Option<String> {
+    let values = arguments.chunks_exact(2).filter_map(|pair| {
+        let option = match pair[0].as_str() {
+            "-color_primaries" => "color_primaries",
+            "-color_trc" => "color_trc",
+            "-colorspace" => "colorspace",
+            "-color_range" => "range",
+            _ => return None,
+        };
+        Some(format!("{option}={}", pair[1]))
+    });
+    let values = values.collect::<Vec<_>>();
+    (!values.is_empty()).then(|| format!("setparams={}", values.join(":")))
+}
+
+fn meaningful_color(value: Option<&str>) -> Option<&str> {
+    value.filter(|value| !matches!(*value, "unknown" | "unspecified" | "reserved"))
+}
+
+fn dolby_vision_base_transfer(source: &VideoStream) -> Option<&'static str> {
+    match source
+        .dolby_vision
+        .as_ref()
+        .and_then(|info| info.base_layer_compatibility_id)
+    {
+        Some(1) => Some("smpte2084"),
+        Some(4) => Some("arib-std-b67"),
+        _ => None,
+    }
 }
 
 pub(super) fn video_arguments(
@@ -69,6 +211,8 @@ pub(super) fn video_arguments(
     let source_dimensions = source.map(|video| (video.width, video.height));
     let source_frame_rate = source.and_then(|video| video.frame_rate);
     let source_bit_depth = source.and_then(|video| video.bit_depth);
+    let source_is_hdr = source.is_some_and(|video| video.hdr_format.is_some());
+    validate_dolby_vision_reencode(codec, source)?;
     if !(-2..=2).contains(&quality_tuning) {
         return Err(ApiError::invalid_input(
             "Video quality fine tuning must be between -2 and 2.",
@@ -160,18 +304,26 @@ pub(super) fn video_arguments(
         }
     }
 
-    let mut filters = scale_filter(resolution, source_dimensions)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let color_arguments = color_arguments(codec, source);
+    let mut filters = if codec == VideoCodec::H264 && source_is_hdr {
+        tone_map_filters(source.expect("an HDR source was identified"))?
+    } else {
+        Vec::new()
+    };
+    filters.extend(scale_filter(resolution, source_dimensions));
     if let Some(filter) = frame_rate_filter(frame_rate, source_frame_rate)? {
+        filters.push(filter);
+    }
+    if let Some(filter) = color_tag_filter(&color_arguments) {
         filters.push(filter);
     }
     if !filters.is_empty() {
         arguments.extend(["-vf".to_owned(), filters.join(",")]);
     }
-    if let Some(pixel_format) = output_pixel_format(codec, speed, source_bit_depth) {
+    if let Some(pixel_format) = output_pixel_format(codec, speed, source_bit_depth, source_is_hdr) {
         arguments.extend(["-pix_fmt".to_owned(), pixel_format.to_owned()]);
     }
+    arguments.extend(color_arguments);
 
     Ok(arguments)
 }
@@ -232,9 +384,9 @@ mod tests {
     use crate::{
         error::ApiResult,
         ffmpeg::{
-            AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodeRequest, EncodingSpeed,
-            OutputContainer, OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
-            VideoStream,
+            AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, DolbyVisionInfo, EncodeRequest,
+            EncodingSpeed, HdrFormat, OutputContainer, OutputFrameRate, OutputResolution,
+            QualityLevel, VideoCodec, VideoStream,
         },
     };
 
@@ -280,6 +432,7 @@ mod tests {
             color_transfer: None,
             color_primaries: None,
             hdr_format: None,
+            dolby_vision: None,
         }
     }
 
@@ -304,6 +457,19 @@ mod tests {
             pixel_format: Some(pixel_format.to_owned()),
             bit_depth,
             ..source(codec, 3840, 2160, 30.0)
+        }
+    }
+
+    fn hdr_source(format: HdrFormat, transfer: &str) -> VideoStream {
+        VideoStream {
+            pixel_format: Some("yuv420p10le".to_owned()),
+            bit_depth: Some(10),
+            color_range: Some("tv".to_owned()),
+            color_space: Some("bt2020nc".to_owned()),
+            color_transfer: Some(transfer.to_owned()),
+            color_primaries: Some("bt2020".to_owned()),
+            hdr_format: Some(format),
+            ..source("hevc", 3840, 2160, 30.0)
         }
     }
 
@@ -347,8 +513,8 @@ mod tests {
     fn both_encoding_speeds_agree_on_the_h264_pixel_format() {
         for bit_depth in [None, Some(8), Some(10), Some(12)] {
             let efficient =
-                output_pixel_format(VideoCodec::H264, EncodingSpeed::Efficient, bit_depth);
-            let fast = output_pixel_format(VideoCodec::H264, EncodingSpeed::Fast, bit_depth);
+                output_pixel_format(VideoCodec::H264, EncodingSpeed::Efficient, bit_depth, false);
+            let fast = output_pixel_format(VideoCodec::H264, EncodingSpeed::Fast, bit_depth, false);
 
             assert_eq!(efficient, Some("yuv420p"));
             assert_eq!(fast, efficient);
@@ -358,15 +524,15 @@ mod tests {
     #[test]
     fn h265_and_av1_preserve_ten_bit_sources() {
         assert_eq!(
-            output_pixel_format(VideoCodec::H265, EncodingSpeed::Efficient, Some(10)),
+            output_pixel_format(VideoCodec::H265, EncodingSpeed::Efficient, Some(10), false),
             Some("yuv420p10le")
         );
         assert_eq!(
-            output_pixel_format(VideoCodec::Av1, EncodingSpeed::Efficient, Some(10)),
+            output_pixel_format(VideoCodec::Av1, EncodingSpeed::Efficient, Some(10), false),
             Some("yuv420p10le")
         );
         assert_eq!(
-            output_pixel_format(VideoCodec::H265, EncodingSpeed::Fast, Some(10)),
+            output_pixel_format(VideoCodec::H265, EncodingSpeed::Fast, Some(10), false),
             Some("p010le")
         );
 
@@ -387,13 +553,160 @@ mod tests {
     }
 
     #[test]
+    fn h264_tone_maps_hlg_to_tagged_bt709_sdr() {
+        let hlg = hdr_source(HdrFormat::Hlg, "arib-std-b67");
+        let request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+        );
+
+        let arguments = build_video_arguments(&request, Some(&hlg)).unwrap();
+        let filters = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "-vf")
+            .map(|pair| pair[1].as_str())
+            .unwrap();
+
+        assert!(filters.starts_with(
+            "zscale=transferin=arib-std-b67:primariesin=bt2020:matrixin=bt2020nc:rangein=limited:transfer=linear:primaries=bt2020:matrix=gbr:npl=100,format=gbrpf32le,tonemap=mobius:desat=2"
+        ));
+        assert!(filters.contains(
+            "zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited:dither=error_diffusion,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"
+        ));
+        for pair in [
+            ["-color_primaries", "bt709"],
+            ["-color_trc", "bt709"],
+            ["-colorspace", "bt709"],
+            ["-color_range", "tv"],
+        ] {
+            assert!(arguments.windows(2).any(|arguments| arguments == pair));
+        }
+        assert_eq!(pixel_format_argument(&arguments), Some("yuv420p"));
+    }
+
+    #[test]
+    fn h265_and_av1_keep_hdr_tags_and_ten_bit_output() {
+        let mut hdr10 = hdr_source(HdrFormat::Hdr10, "smpte2084");
+        hdr10.bit_depth = None;
+        hdr10.pixel_format = None;
+        let mut request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H265,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+        );
+
+        for codec in [VideoCodec::H265, VideoCodec::Av1] {
+            request.video_codec = codec;
+            let arguments = build_video_arguments(&request, Some(&hdr10)).unwrap();
+
+            assert_eq!(pixel_format_argument(&arguments), Some("yuv420p10le"));
+            assert!(!arguments
+                .iter()
+                .any(|argument| argument.contains("tonemap=")));
+            for pair in [
+                ["-color_primaries", "bt2020"],
+                ["-color_trc", "smpte2084"],
+                ["-colorspace", "bt2020nc"],
+                ["-color_range", "tv"],
+            ] {
+                assert!(arguments.windows(2).any(|arguments| arguments == pair));
+            }
+            assert!(arguments.iter().any(|argument| argument.contains(
+                "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=tv"
+            )));
+        }
+    }
+
+    #[test]
+    fn reencoding_sdr_keeps_known_color_tags() {
+        let mut sdr = source("h264", 1920, 1080, 30.0);
+        sdr.color_range = Some("tv".to_owned());
+        sdr.color_space = Some("bt709".to_owned());
+        sdr.color_transfer = Some("bt709".to_owned());
+        sdr.color_primaries = Some("bt709".to_owned());
+        let request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+        );
+
+        let arguments = build_video_arguments(&request, Some(&sdr)).unwrap();
+
+        for pair in [
+            ["-color_primaries", "bt709"],
+            ["-color_trc", "bt709"],
+            ["-colorspace", "bt709"],
+            ["-color_range", "tv"],
+        ] {
+            assert!(arguments.windows(2).any(|arguments| arguments == pair));
+        }
+        assert!(arguments.iter().any(|argument| argument.contains(
+            "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"
+        )));
+    }
+
+    #[test]
+    fn dolby_vision_requires_a_single_compatible_base_layer_for_reencoding() {
+        let mut dolby_vision = hdr_source(HdrFormat::DolbyVision, "arib-std-b67");
+        dolby_vision.dolby_vision = Some(DolbyVisionInfo {
+            profile: Some(8),
+            base_layer_compatibility_id: Some(4),
+            has_enhancement_layer: false,
+        });
+        let mut request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+        );
+
+        assert!(build_video_arguments(&request, Some(&dolby_vision)).is_ok());
+
+        dolby_vision.color_transfer = None;
+        let inferred = build_video_arguments(&request, Some(&dolby_vision)).unwrap();
+        assert!(inferred
+            .iter()
+            .any(|argument| argument.contains("zscale=transferin=arib-std-b67")));
+
+        dolby_vision.color_transfer = Some("arib-std-b67".to_owned());
+        dolby_vision.dolby_vision = Some(DolbyVisionInfo {
+            profile: Some(8),
+            base_layer_compatibility_id: Some(2),
+            has_enhancement_layer: false,
+        });
+        assert!(build_video_arguments(&request, Some(&dolby_vision)).is_err());
+
+        dolby_vision.dolby_vision = Some(DolbyVisionInfo {
+            profile: Some(5),
+            base_layer_compatibility_id: Some(0),
+            has_enhancement_layer: false,
+        });
+        assert!(build_video_arguments(&request, Some(&dolby_vision)).is_err());
+
+        request.video_codec = VideoCodec::Copy;
+        assert!(build_video_arguments(&request, Some(&dolby_vision)).is_ok());
+
+        request.video_codec = VideoCodec::H265;
+        dolby_vision.dolby_vision = Some(DolbyVisionInfo {
+            profile: Some(7),
+            base_layer_compatibility_id: Some(1),
+            has_enhancement_layer: true,
+        });
+        assert!(build_video_arguments(&request, Some(&dolby_vision)).is_err());
+    }
+
+    #[test]
     fn sources_deeper_than_ten_bit_are_capped_at_ten_bit() {
         assert_eq!(
-            output_pixel_format(VideoCodec::H265, EncodingSpeed::Efficient, Some(12)),
+            output_pixel_format(VideoCodec::H265, EncodingSpeed::Efficient, Some(12), false),
             Some("yuv420p10le")
         );
         assert_eq!(
-            output_pixel_format(VideoCodec::Av1, EncodingSpeed::Efficient, Some(16)),
+            output_pixel_format(VideoCodec::Av1, EncodingSpeed::Efficient, Some(16), false),
             Some("yuv420p10le")
         );
     }
@@ -403,7 +716,7 @@ mod tests {
         for codec in [VideoCodec::H264, VideoCodec::H265, VideoCodec::Av1] {
             for bit_depth in [None, Some(8)] {
                 assert_eq!(
-                    output_pixel_format(codec, EncodingSpeed::Efficient, bit_depth),
+                    output_pixel_format(codec, EncodingSpeed::Efficient, bit_depth, false),
                     Some("yuv420p")
                 );
             }
@@ -430,7 +743,7 @@ mod tests {
     #[test]
     fn copying_the_original_video_never_forces_a_pixel_format() {
         assert_eq!(
-            output_pixel_format(VideoCodec::Copy, EncodingSpeed::Efficient, Some(10)),
+            output_pixel_format(VideoCodec::Copy, EncodingSpeed::Efficient, Some(10), false),
             None
         );
 

@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-const BUILD_RECIPE_VERSION = 3;
+const BUILD_RECIPE_VERSION = 5;
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
@@ -72,7 +72,7 @@ await Promise.all([
   mkdir(assetDirectory, { recursive: true }),
 ]);
 
-for (const command of ["curl", "tar", "make", "cmake", "pkg-config", "codesign", "strip", "ditto", "otool"]) {
+for (const command of ["curl", "tar", "make", "cmake", "pkg-config", "autoreconf", "codesign", "strip", "ditto", "otool"]) {
   requireCommand(command);
 }
 
@@ -102,6 +102,7 @@ if (
   buildOpus(sources.opus);
   buildX265(sources.x265);
   buildSvtAv1(sources.svtAv1);
+  buildZimg(sources.zimg);
   buildFfmpeg(sources.ffmpeg);
   await writeFile(markerPath, `${JSON.stringify({ fingerprint: recipeFingerprint }, null, 2)}\n`);
 } else {
@@ -156,18 +157,44 @@ function buildOpus(source) {
 
 function buildX265(source) {
   const build = join(buildDirectory, "x265");
-  run("cmake", [
-    "-S", join(source, "source"),
-    "-B", build,
-    `-DCMAKE_INSTALL_PREFIX=${prefixDirectory}`,
+  const tenBitBuild = join(build, "10bit");
+  const eightBitBuild = join(build, "8bit");
+  const commonOptions = [
     `-DCMAKE_OSX_DEPLOYMENT_TARGET=${deploymentTarget}`,
     "-DCMAKE_BUILD_TYPE=Release",
     "-DENABLE_SHARED=OFF",
     "-DENABLE_CLI=OFF",
     "-DENABLE_LIBNUMA=OFF",
+  ];
+  run("cmake", [
+    "-S", join(source, "source"),
+    "-B", tenBitBuild,
+    ...commonOptions,
+    "-DHIGH_BIT_DEPTH=ON",
+    "-DEXPORT_C_API=OFF",
   ]);
-  run("cmake", ["--build", build, "--parallel", jobs]);
-  run("cmake", ["--install", build]);
+  run("cmake", ["--build", tenBitBuild, "--parallel", jobs]);
+
+  run("mkdir", ["-p", eightBitBuild]);
+  run("ditto", [join(tenBitBuild, "libx265.a"), join(eightBitBuild, "libx265_main10.a")]);
+  run("cmake", [
+    "-S", join(source, "source"),
+    "-B", eightBitBuild,
+    `-DCMAKE_INSTALL_PREFIX=${prefixDirectory}`,
+    ...commonOptions,
+    "-DEXTRA_LIB=x265_main10.a",
+    "-DEXTRA_LINK_FLAGS=-L.",
+    "-DLINKED_10BIT=ON",
+  ]);
+  run("cmake", ["--build", eightBitBuild, "--parallel", jobs]);
+  run("mv", [join(eightBitBuild, "libx265.a"), join(eightBitBuild, "libx265_main.a")]);
+  run("libtool", [
+    "-static",
+    "-o", join(eightBitBuild, "libx265.a"),
+    join(eightBitBuild, "libx265_main.a"),
+    join(eightBitBuild, "libx265_main10.a"),
+  ]);
+  run("cmake", ["--install", eightBitBuild]);
 }
 
 function buildSvtAv1(source) {
@@ -184,6 +211,19 @@ function buildSvtAv1(source) {
   ]);
   run("cmake", ["--build", build, "--parallel", jobs]);
   run("cmake", ["--install", build]);
+}
+
+function buildZimg(source) {
+  const build = join(buildDirectory, "zimg");
+  copySourceTree(source, build);
+  run("sh", ["autogen.sh"], { cwd: build });
+  run(join(build, "configure"), [
+    `--prefix=${prefixDirectory}`,
+    "--disable-shared",
+    "--enable-static",
+  ], { cwd: build });
+  run("make", ["-j", jobs], { cwd: build });
+  run("make", ["install"], { cwd: build });
 }
 
 function buildFfmpeg(source) {
@@ -216,6 +256,7 @@ function ffmpegConfiguration() {
     "--enable-libx265",
     "--enable-libsvtav1",
     "--enable-libopus",
+    "--enable-libzimg",
     "--enable-pthreads",
     "--enable-bzlib",
     "--enable-iconv",
@@ -263,7 +304,7 @@ function copySourceTree(source, destination) {
 }
 
 function verifyReleaseFfmpeg(ffmpeg) {
-  const result = run(ffmpeg, ["-hide_banner", "-encoders"], { capture: true });
+  const encoders = run(ffmpeg, ["-hide_banner", "-encoders"], { capture: true });
   for (const encoder of [
     "libx264",
     "libx265",
@@ -273,8 +314,20 @@ function verifyReleaseFfmpeg(ffmpeg) {
     "aac",
     "libopus",
   ]) {
-    if (!result.includes(encoder)) {
+    if (!encoders.includes(encoder)) {
       throw new Error(`Release FFmpeg is missing the required ${encoder} encoder.`);
+    }
+  }
+  for (const encoder of ["libx265", "libsvtav1"]) {
+    const help = run(ffmpeg, ["-hide_banner", "-h", `encoder=${encoder}`], { capture: true });
+    if (!help.includes("yuv420p10le")) {
+      throw new Error(`Release FFmpeg ${encoder} is missing required 10-bit input support.`);
+    }
+  }
+  const filters = run(ffmpeg, ["-hide_banner", "-filters"], { capture: true });
+  for (const filter of ["tonemap", "zscale"]) {
+    if (!filters.includes(filter)) {
+      throw new Error(`Release FFmpeg is missing the required ${filter} filter.`);
     }
   }
 }

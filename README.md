@@ -12,7 +12,7 @@ The project currently targets macOS on Apple Silicon. Windows, Linux, and additi
 Current capabilities:
 
 - local media inspection with FFprobe;
-- HDR, color-space, color-range, and bit-depth inspection with re-encoding risk warnings;
+- HDR, color-space, color-range, and bit-depth inspection with automatic HDR-to-SDR tone mapping or HDR preservation;
 - multi-file selection and native drag and drop;
 - MP4 and MKV output with H.264, H.265, or AV1 video;
 - AV1 software encoding in either container, with an explicit `av01` tag for MP4;
@@ -64,6 +64,8 @@ pnpm check
 ```
 
 Public macOS builds use a separate, pinned FFmpeg source build and Apple signing and notarization. See [docs/RELEASING.md](docs/RELEASING.md) for the release process.
+
+Vidra's codec-specific HDR behavior is documented in [docs/HDR_POLICY.md](docs/HDR_POLICY.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
