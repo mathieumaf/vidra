@@ -14,8 +14,8 @@ Current capabilities:
 - local media inspection with FFprobe;
 - HDR, color-space, color-range, and bit-depth inspection with re-encoding risk warnings;
 - multi-file selection and native drag and drop;
-- MP4 and MKV output with H.264 or H.265 video;
-- AV1 software encoding in MKV;
+- MP4 and MKV output with H.264, H.265, or AV1 video;
+- AV1 software encoding in either container, with an explicit `av01` tag for MP4;
 - orientation-aware output resolution limits from 360p to 4K without upscaling;
 - an optional advanced mode for frame rate, fine quality, audio, track, and source-information controls;
 - built-in and personal encoding profiles stored locally on the device;

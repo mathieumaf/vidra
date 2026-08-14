@@ -39,11 +39,6 @@ pub(super) fn video_arguments(
     let source_codec = source.map(|video| video.codec.as_str());
     let source_dimensions = source.map(|video| (video.width, video.height));
     let source_frame_rate = source.and_then(|video| video.frame_rate);
-    if codec == VideoCodec::Av1 && container != OutputContainer::Mkv {
-        return Err(ApiError::invalid_input(
-            "AV1 encoding is available with MKV output only.",
-        ));
-    }
     if !(-2..=2).contains(&quality_tuning) {
         return Err(ApiError::invalid_input(
             "Video quality fine tuning must be between -2 and 2.",
@@ -130,11 +125,8 @@ pub(super) fn video_arguments(
 
     if container == OutputContainer::Mp4 {
         arguments.extend(["-movflags".to_owned(), "+faststart".to_owned()]);
-        if codec == VideoCodec::H265
-            || (codec == VideoCodec::Copy
-                && source_codec.is_some_and(|value| value.eq_ignore_ascii_case("hevc")))
-        {
-            arguments.extend(["-tag:v".to_owned(), "hvc1".to_owned()]);
+        if let Some(tag) = mp4_video_tag(codec, source_codec) {
+            arguments.extend(["-tag:v".to_owned(), tag.to_owned()]);
         }
     }
 
@@ -149,6 +141,20 @@ pub(super) fn video_arguments(
     }
 
     Ok(arguments)
+}
+
+fn mp4_video_tag(codec: VideoCodec, source_codec: Option<&str>) -> Option<&'static str> {
+    let stream_codec = match codec {
+        VideoCodec::H264 => return None,
+        VideoCodec::H265 => "hevc",
+        VideoCodec::Av1 => "av1",
+        VideoCodec::Copy => source_codec?,
+    };
+    match stream_codec.to_ascii_lowercase().as_str() {
+        "hevc" => Some("hvc1"),
+        "av1" => Some("av01"),
+        _ => None,
+    }
 }
 
 fn frame_rate_filter(
@@ -319,17 +325,60 @@ mod tests {
     }
 
     #[test]
-    fn rejects_av1_in_mp4_and_fast_av1() {
-        assert!(original_arguments(
+    fn mp4_av1_uses_the_av01_sample_entry_and_faststart() {
+        let arguments = original_arguments(
             OutputContainer::Mp4,
             VideoCodec::Av1,
             EncodingSpeed::Efficient,
             QualityLevel::Balanced,
             Some("h264"),
         )
-        .is_err());
+        .unwrap();
+
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c:v", "libsvtav1"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-tag:v", "av01"]));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-movflags", "+faststart"]));
+    }
+
+    #[test]
+    fn mp4_video_copy_keeps_the_source_sample_entry() {
+        let av1 = original_arguments(
+            OutputContainer::Mp4,
+            VideoCodec::Copy,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            Some("av1"),
+        )
+        .unwrap();
+        assert!(av1.windows(2).any(|pair| pair == ["-tag:v", "av01"]));
+
+        let h264 = original_arguments(
+            OutputContainer::Mp4,
+            VideoCodec::Copy,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            Some("h264"),
+        )
+        .unwrap();
+        assert!(!h264.iter().any(|argument| argument == "-tag:v"));
+    }
+
+    #[test]
+    fn rejects_fast_av1_in_every_container() {
         assert!(original_arguments(
             OutputContainer::Mkv,
+            VideoCodec::Av1,
+            EncodingSpeed::Fast,
+            QualityLevel::Balanced,
+            Some("h264"),
+        )
+        .is_err());
+        assert!(original_arguments(
+            OutputContainer::Mp4,
             VideoCodec::Av1,
             EncodingSpeed::Fast,
             QualityLevel::Balanced,

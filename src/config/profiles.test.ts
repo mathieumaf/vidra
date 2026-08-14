@@ -49,6 +49,25 @@ describe("encoding profiles", () => {
     }))).toEqual([]);
   });
 
+  it("keeps AV1 in MP4 and still requires MKV for Opus audio", () => {
+    const av1Mp4 = compatibleProfileSettings({
+      ...BUILT_IN_PROFILES[0].settings,
+      container: "mp4" as const,
+      videoCodec: "av1" as const,
+      encodingSpeed: "fast" as const,
+    }, smallMedia);
+
+    expect(av1Mp4).toMatchObject({ container: "mp4", videoCodec: "av1", encodingSpeed: "efficient" });
+
+    const opusMp4 = compatibleProfileSettings({
+      ...BUILT_IN_PROFILES[0].settings,
+      container: "mp4" as const,
+      audioMode: "opus" as const,
+    }, smallMedia);
+
+    expect(opusMp4).toMatchObject({ container: "mkv", audioMode: "opus" });
+  });
+
   it("never upscales or raises the frame rate when applying a profile", () => {
     const settings = {
       ...BUILT_IN_PROFILES[0].settings,

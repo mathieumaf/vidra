@@ -4,6 +4,10 @@ All notable changes to Vidra are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Allow AV1 video in MP4 output, tagged as `av01` alongside the existing faststart behavior.
+
 ## 0.1.0-beta.3 - 2026-07-18
 
 ### Added

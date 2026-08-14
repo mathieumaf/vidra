@@ -97,7 +97,7 @@ export function compatibleProfileSettings(
   media: MediaInfo | null,
 ): EncodingSettings {
   let next = { ...settings };
-  if (next.videoCodec === "av1" || next.audioMode === "opus") {
+  if (next.audioMode === "opus") {
     next.container = "mkv";
   }
   if (next.videoCodec === "av1" || next.videoCodec === "copy") {
