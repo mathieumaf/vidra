@@ -58,9 +58,16 @@ export type VideoStream = {
   colorTransfer: string | null;
   colorPrimaries: string | null;
   hdrFormat: HdrFormat | null;
+  dolbyVision: DolbyVisionInfo | null;
 };
 
 export type HdrFormat = "dolby-vision" | "hdr10-plus" | "hdr10" | "hlg" | "pq" | "hdr";
+
+export type DolbyVisionInfo = {
+  profile: number | null;
+  baseLayerCompatibilityId: number | null;
+  hasEnhancementLayer: boolean;
+};
 
 export type AudioStream = {
   index: number;

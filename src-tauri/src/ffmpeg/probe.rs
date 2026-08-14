@@ -1,4 +1,6 @@
-use super::{validate_input, AudioStream, HdrFormat, MediaInfo, SubtitleStream, VideoStream};
+use super::{
+    validate_input, AudioStream, DolbyVisionInfo, HdrFormat, MediaInfo, SubtitleStream, VideoStream,
+};
 use crate::error::{ApiError, ApiResult};
 use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
@@ -65,6 +67,9 @@ struct ProbeDisposition {
 struct ProbeSideData {
     rotation: Option<i32>,
     side_data_type: Option<String>,
+    dv_profile: Option<u8>,
+    dv_bl_signal_compatibility_id: Option<u8>,
+    el_present_flag: Option<u8>,
 }
 
 fn parse_frame_rate(value: Option<&str>) -> Option<f64> {
@@ -193,6 +198,20 @@ fn hdr_format(stream: &ProbeStream) -> Option<HdrFormat> {
     }
 }
 
+fn dolby_vision_info(stream: &ProbeStream) -> Option<DolbyVisionInfo> {
+    let record = stream.side_data_list.iter().find(|data| {
+        data.side_data_type.as_deref().is_some_and(|kind| {
+            let kind = kind.to_ascii_lowercase();
+            kind.contains("dovi") || kind.contains("dolby vision")
+        })
+    })?;
+    Some(DolbyVisionInfo {
+        profile: record.dv_profile,
+        base_layer_compatibility_id: record.dv_bl_signal_compatibility_id,
+        has_enhancement_layer: record.el_present_flag.unwrap_or_default() != 0,
+    })
+}
+
 pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
     let input = validate_input(path)?;
     let input_argument = input.as_os_str();
@@ -248,6 +267,7 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
                 color_transfer: stream.color_transfer.clone(),
                 color_primaries: stream.color_primaries.clone(),
                 hdr_format: hdr_format(stream),
+                dolby_vision: dolby_vision_info(stream),
             }
         });
 
@@ -320,8 +340,9 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
 #[cfg(test)]
 mod tests {
     use super::{
-        display_dimensions, hdr_format, parse_frame_rate, parse_media_info, pixel_format_bit_depth,
-        video_bit_depth, HdrFormat, ProbeDisposition, ProbeSideData, ProbeStream,
+        display_dimensions, dolby_vision_info, hdr_format, parse_frame_rate, parse_media_info,
+        pixel_format_bit_depth, video_bit_depth, HdrFormat, ProbeDisposition, ProbeSideData,
+        ProbeStream,
     };
     use std::{collections::HashMap, path::Path};
 
@@ -353,8 +374,19 @@ mod tests {
         stream.side_data_list.push(ProbeSideData {
             rotation: None,
             side_data_type: Some("DOVI configuration record".to_owned()),
+            dv_profile: Some(8),
+            dv_bl_signal_compatibility_id: Some(4),
+            el_present_flag: Some(0),
         });
         assert_eq!(hdr_format(&stream), Some(HdrFormat::DolbyVision));
+        assert_eq!(dolby_vision_info(&stream).unwrap().profile, Some(8));
+        assert_eq!(
+            dolby_vision_info(&stream)
+                .unwrap()
+                .base_layer_compatibility_id,
+            Some(4)
+        );
+        assert!(!dolby_vision_info(&stream).unwrap().has_enhancement_layer);
     }
 
     #[test]
@@ -363,6 +395,9 @@ mod tests {
         stream.side_data_list.push(ProbeSideData {
             rotation: Some(-90),
             side_data_type: Some("Display Matrix".to_owned()),
+            dv_profile: None,
+            dv_bl_signal_compatibility_id: None,
+            el_present_flag: None,
         });
 
         assert_eq!(display_dimensions(&stream), (1080, 1920));

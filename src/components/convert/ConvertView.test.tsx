@@ -24,6 +24,7 @@ const media: MediaInfo = {
     colorTransfer: "bt709",
     colorPrimaries: "bt709",
     hdrFormat: null,
+    dolbyVision: null,
   },
   audio: [],
   subtitles: [],
@@ -52,7 +53,9 @@ describe("ConvertView", () => {
         selectedProfileId={BUILT_IN_PROFILES[0].id}
         isProfileModified={false}
         readyItemCount={0}
-        colorRiskCount={0}
+        colorNoticeCount={0}
+        blockedColorCount={0}
+        isEncodingSupported
         isReady
         isProbing={false}
         isActive={false}

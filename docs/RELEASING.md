@@ -37,13 +37,13 @@ git push origin v0.1.0-beta.3
 The release workflow then:
 
 - runs the complete frontend and Rust checks;
-- builds GPL-enabled FFmpeg and FFprobe from pinned, checksum-verified sources;
+- builds GPL-enabled FFmpeg and FFprobe, including the zimg color-conversion library, from pinned, checksum-verified sources;
 - rejects FFmpeg sidecars that depend on libraries outside the macOS system paths;
 - builds, signs, and notarizes the Apple Silicon application and DMG;
 - verifies the final application with `codesign` and Gatekeeper;
 - creates a draft prerelease containing the DMG, its checksum, FFmpeg corresponding sources, and build configuration.
 
-Download the draft artifacts and test installation, launch, media inspection, H.264/H.265/AV1 encoding, cancellation, and output playback on a second Apple Silicon Mac. Publish the draft only after those checks pass.
+Download the draft artifacts and test installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback on a second Apple Silicon Mac. Publish the draft only after those checks pass.
 
 ## Rollback
 

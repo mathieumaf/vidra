@@ -7,6 +7,7 @@ All notable changes to Vidra are documented in this file.
 ### Changed
 
 - Allow AV1 video in MP4 output, tagged as `av01` alongside the existing faststart behavior.
+- Automatically tone map HDR sources to BT.709 SDR for H.264, preserve 10-bit HDR and color tags for H.265 and AV1, and require stream copy for unsupported Dolby Vision structures.
 
 ### Fixed
 

@@ -40,6 +40,15 @@ pub struct VideoStream {
     pub color_transfer: Option<String>,
     pub color_primaries: Option<String>,
     pub hdr_format: Option<HdrFormat>,
+    pub dolby_vision: Option<DolbyVisionInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DolbyVisionInfo {
+    pub profile: Option<u8>,
+    pub base_layer_compatibility_id: Option<u8>,
+    pub has_enhancement_layer: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]

@@ -201,10 +201,12 @@
 .progress-meta { color: var(--muted); font-size: var(--text-caption); }
 
 .success-message, .notice-message, .error-message { border-radius: 10px; font-size: var(--text-small); }
-.color-risk-message { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border: 1px solid #ead8ad; border-radius: 10px; color: #725d32; background: #faf5e9; font-size: var(--text-small); }
-.color-risk-message > svg { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 1px; }
-.color-risk-message div { min-width: 0; }
-.color-risk-message p { margin: 2px 0 0; color: #806f49; font-size: var(--text-caption); line-height: 1.35; }
+.color-conversion-message { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border: 1px solid #ead8ad; border-radius: 10px; color: #725d32; background: #faf5e9; font-size: var(--text-small); }
+.color-conversion-message.blocking { border-color: #e5c3bf; color: #9b4038; background: #faecea; }
+.color-conversion-message > svg { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 1px; }
+.color-conversion-message div { min-width: 0; }
+.color-conversion-message p { margin: 2px 0 0; color: #806f49; font-size: var(--text-caption); line-height: 1.35; }
+.color-conversion-message.blocking p { color: #9b4038; }
 .success-message { display: flex; gap: 9px; align-items: flex-start; padding: 10px 12px; color: #155d3d; background: #edf8f1; }
 .success-message > span { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #35a66f; }
 .success-message div { min-width: 0; }

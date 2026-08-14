@@ -206,6 +206,7 @@ mod tests {
                     color_transfer: None,
                     color_primaries: None,
                     hdr_format: None,
+                    dolby_vision: None,
                 }),
                 audio,
                 subtitles: vec![],

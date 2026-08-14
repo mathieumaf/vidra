@@ -4,7 +4,7 @@ import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
 import { outputFrameRateLabel } from "../../config/advanced";
 import { formatEta, outputFileName } from "../../lib/format";
-import { colorConversionRisk } from "../../lib/color";
+import { colorConversionNotice } from "../../lib/color";
 import { queueTrackSummary } from "../../lib/tracks";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
@@ -154,7 +154,7 @@ export function QueueView({
             ? ""
             : ` · ${outputFrameRateLabel(item.settings.outputFrameRate)}`;
           const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)}${frameRateSummary} · ${audioSummary}`;
-          const colorRisk = colorConversionRisk(item.media.video, item.settings.videoCodec);
+          const colorNotice = colorConversionNotice(item.media.video, item.settings.videoCodec);
           const destinationName = item.outputPath && DESTINATION_STATUSES.has(item.status)
             ? outputFileName(item.outputPath)
             : null;
@@ -180,8 +180,10 @@ export function QueueView({
                     {destinationName}
                   </p>
                 )}
-                {colorRisk && item.status !== "completed" && (
-                  <p className="queue-color-risk"><Icon name="warning" />{colorRisk.title}</p>
+                {colorNotice && item.status !== "completed" && (
+                  <p className={`queue-color-notice${colorNotice.blocking ? " blocking" : ""}`}>
+                    <Icon name="warning" />{colorNotice.title}
+                  </p>
                 )}
                 {isCurrent && (
                   <p>
