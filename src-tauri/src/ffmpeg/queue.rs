@@ -1,6 +1,6 @@
 use super::{
     encode, probe, progress::ProgressParser, validate_input, validate_output, EncodeFinished,
-    EncodePauseChanged, EncodeRequest, EncodeStarted, QueuedEncode,
+    EncodePauseChanged, EncodeRequest, EncodeStarted, ExistingOutput, QueuedEncode,
 };
 use crate::{
     diagnostics::{failure_report, BoundedLog, DiagnosticReport},
@@ -32,7 +32,12 @@ pub async fn enqueue(
     let mut prepared = Vec::with_capacity(requests.len());
 
     for (mut request, input) in requests.into_iter().zip(inputs.iter()) {
-        let output = validate_output(&request.output_path, &inputs, request.container)?;
+        let output = validate_output(
+            &request.output_path,
+            &inputs,
+            request.container,
+            ExistingOutput::for_request(&request),
+        )?;
         if !outputs.insert(output.clone()) {
             return Err(ApiError::invalid_input(
                 "Two queued videos cannot use the same output path.",

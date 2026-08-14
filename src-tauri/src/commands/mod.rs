@@ -82,6 +82,11 @@ pub fn reveal_output_file(path: String) -> ApiResult<()> {
 }
 
 #[tauri::command]
+pub fn list_destination_files(directory: String) -> ApiResult<Vec<String>> {
+    output::destination_files(&directory)
+}
+
+#[tauri::command]
 pub fn save_diagnostic_report(path: String, report: String) -> ApiResult<()> {
     diagnostics::save_report(&path, &report)
 }

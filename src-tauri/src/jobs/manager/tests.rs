@@ -33,6 +33,7 @@ fn pending(id: &str) -> PendingJob {
             preserve_subtitles: true,
             preserve_metadata: true,
             preserve_chapters: true,
+            replace_existing: false,
         },
         media: MediaInfo {
             path: format!("/{id}.mov"),

@@ -263,6 +263,7 @@ mod tests {
             preserve_subtitles: true,
             preserve_metadata: true,
             preserve_chapters: true,
+            replace_existing: false,
         }
     }
 

@@ -435,6 +435,7 @@ export default function App() {
               isReady={isReady}
               isProbing={queue.isProbing}
               error={queue.error}
+              notice={queue.notice}
               controlItem={queue.queueControlItem}
               onAddVideos={() => void addVideos("queue")}
               onStart={() => void startEncoding()}

@@ -34,6 +34,7 @@ pub fn run() {
             commands::clear_conversion_history,
             commands::reveal_history_output,
             commands::reveal_output_file,
+            commands::list_destination_files,
             commands::save_diagnostic_report
         ])
         .build(tauri::generate_context!())

@@ -1,9 +1,37 @@
 use crate::error::{ApiError, ApiResult};
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 pub fn reveal(path: &str) -> ApiResult<()> {
     let output = validate(path)?;
     reveal_on_platform(&output)
+}
+
+pub fn destination_files(directory: &str) -> ApiResult<Vec<String>> {
+    let folder = Path::new(directory);
+    if !folder.is_absolute() {
+        return Err(ApiError::invalid_input(
+            "The destination folder path must be absolute.",
+        ));
+    }
+    if !folder.is_dir() {
+        return Err(ApiError::invalid_input(
+            "The destination folder does not exist or is not accessible.",
+        ));
+    }
+
+    let entries = fs::read_dir(folder).map_err(|error| {
+        ApiError::new(
+            "destination_read_error",
+            format!("The destination folder could not be read: {error}"),
+        )
+    })?;
+    Ok(entries
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect())
 }
 
 fn validate(path: &str) -> ApiResult<PathBuf> {
@@ -47,7 +75,7 @@ fn reveal_on_platform(_path: &Path) -> ApiResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate;
+    use super::{destination_files, validate};
 
     #[test]
     fn reveal_requires_an_absolute_path() {
@@ -66,5 +94,39 @@ mod tests {
         let error = validate(path.to_string_lossy().as_ref()).unwrap_err();
 
         assert_eq!(error.code, "output_not_found");
+    }
+
+    #[test]
+    fn destination_files_lists_existing_names() {
+        let directory = std::env::temp_dir().join(format!(
+            "vidra-destination-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the system clock should be after the Unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(directory.join("nested"))
+            .expect("the test directory should be created");
+        std::fs::write(directory.join("holiday-vidra.mp4"), b"earlier conversion")
+            .expect("the earlier output should be written");
+
+        let mut names = destination_files(directory.to_string_lossy().as_ref())
+            .expect("an existing folder should be listed");
+        names.sort();
+
+        assert_eq!(names, vec!["holiday-vidra.mp4", "nested"]);
+        std::fs::remove_dir_all(directory).expect("the test directory should be removed");
+    }
+
+    #[test]
+    fn destination_files_requires_an_existing_folder() {
+        let error = destination_files("destination").unwrap_err();
+        assert_eq!(error.code, "invalid_input");
+
+        let missing =
+            std::env::temp_dir().join(format!("vidra-missing-destination-{}", std::process::id()));
+        let error = destination_files(missing.to_string_lossy().as_ref()).unwrap_err();
+        assert_eq!(error.code, "invalid_input");
     }
 }

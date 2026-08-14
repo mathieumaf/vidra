@@ -8,4 +8,4 @@ mod types;
 
 pub use types::*;
 
-use paths::{validate_input, validate_output};
+use paths::{validate_input, validate_output, ExistingOutput};
