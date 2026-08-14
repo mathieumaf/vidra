@@ -51,7 +51,7 @@
       "endpoints": [
         "https://github.com/mathieumaf/vidra/releases/download/updater-manifest/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCQzUyQzBCNzQ2NkVBMDYKUldRRzZtWjBDeXpGTzVES3A3U3A4TkFqR2ZNT2MxM2dUMXFIVzBSZ2ZiTFlHNEQzSG9qNmRHc1YK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3QTE0NzFFREJGRjczOEEKUldTS2MvL2JIa2VobHp1TnVLYTVpeGZtNFNiblIzM2VuU0ZYNlFFeTdNdy9QS05xcURKdU1UZ3gK"
     }
   }
 }
