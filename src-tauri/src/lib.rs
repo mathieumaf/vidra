@@ -5,6 +5,7 @@ mod ffmpeg;
 mod history;
 mod jobs;
 mod output;
+mod power;
 
 use history::HistoryManager;
 use jobs::JobManager;

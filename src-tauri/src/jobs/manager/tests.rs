@@ -127,6 +127,51 @@ fn allows_the_same_input_with_distinct_outputs() {
 }
 
 #[test]
+fn sleep_is_prevented_only_while_a_job_is_active() {
+    let manager = JobManager::default();
+    manager.append(vec![pending("one")]).unwrap();
+    assert!(!manager.sleep_preventer.is_active());
+
+    assert_eq!(pending_id(manager.reserve_next().unwrap().unwrap()), "one");
+    assert!(manager.sleep_preventer.is_active());
+
+    manager.finish_active("one").unwrap();
+    assert!(!manager.sleep_preventer.is_active());
+}
+
+#[cfg(unix)]
+#[test]
+fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
+    use std::process::Command;
+
+    let manager = JobManager::default();
+    let mut process = Command::new("sleep").arg("30").spawn().unwrap();
+    let process_id = process.id();
+    manager.sleep_preventer.activate().unwrap();
+    {
+        let mut state = manager.state.lock().unwrap();
+        state.active = Some(ActiveJob {
+            id: "active".to_owned(),
+            output_path: "/active.mp4".to_owned(),
+            child: None,
+            process_id: Some(process_id),
+            paused: false,
+        });
+    }
+
+    manager.set_paused("active", true).unwrap();
+    assert!(!manager.sleep_preventer.is_active());
+
+    manager.set_paused("active", false).unwrap();
+    assert!(manager.sleep_preventer.is_active());
+
+    manager.finish_active("active").unwrap();
+    assert!(!manager.sleep_preventer.is_active());
+    process.kill().unwrap();
+    process.wait().unwrap();
+}
+
+#[test]
 fn shutdown_removes_incomplete_outputs_and_clears_the_queue() {
     let manager = JobManager::default();
     let unique = SystemTime::now()
@@ -149,10 +194,13 @@ fn shutdown_removes_incomplete_outputs_and_clears_the_queue() {
             paused: false,
         });
     }
+    manager.sleep_preventer.activate().unwrap();
+    assert!(manager.sleep_preventer.is_active());
 
     manager.shutdown();
 
     assert!(!output.exists());
+    assert!(!manager.sleep_preventer.is_active());
     let state = manager.state.lock().unwrap();
     assert!(state.active.is_none());
     assert!(state.suspended.is_empty());

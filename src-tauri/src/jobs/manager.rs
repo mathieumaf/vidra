@@ -1,5 +1,8 @@
 use super::{process, ActiveJob, CancelledJob, PendingJob, ReservedJob};
-use crate::error::{ApiError, ApiResult};
+use crate::{
+    error::{ApiError, ApiResult},
+    power::SleepPreventer,
+};
 use std::{
     collections::{HashSet, VecDeque},
     sync::{
@@ -18,10 +21,20 @@ struct JobState {
     cancelled: HashSet<String>,
 }
 
-#[derive(Default)]
 pub struct JobManager {
     state: Mutex<JobState>,
     next_id: AtomicU64,
+    sleep_preventer: SleepPreventer,
+}
+
+impl Default for JobManager {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(JobState::default()),
+            next_id: AtomicU64::new(0),
+            sleep_preventer: SleepPreventer::default(),
+        }
+    }
 }
 
 impl JobManager {
@@ -68,6 +81,7 @@ impl JobManager {
         };
 
         if let Some(index) = state.pending.iter().position(|job| job.id == job_id) {
+            self.sleep_preventer.activate()?;
             let job = state
                 .pending
                 .remove(index)
@@ -87,7 +101,11 @@ impl JobManager {
             let process_id = state.suspended[index].process_id.ok_or_else(|| {
                 ApiError::new("job_state_error", "The encoding process is unavailable.")
             })?;
-            process::set_paused(process_id, false)?;
+            self.sleep_preventer.activate()?;
+            if let Err(error) = process::set_paused(process_id, false) {
+                self.sleep_preventer.deactivate();
+                return Err(error);
+            }
 
             let mut resumed = state
                 .suspended
@@ -133,6 +151,7 @@ impl JobManager {
         let mut state = self.lock()?;
         if state.active.as_ref().map(|job| job.id.as_str()) == Some(job_id) {
             state.active.take();
+            self.sleep_preventer.deactivate();
         } else if let Some(index) = state.suspended.iter().position(|job| job.id == job_id) {
             state.suspended.remove(index);
             state.waiting_order.retain(|id| id != job_id);
@@ -159,6 +178,7 @@ impl JobManager {
             active.paused = true;
             state.suspended.push_back(active);
             state.waiting_order.push_front(job_id.to_owned());
+            self.sleep_preventer.deactivate();
             return Ok(());
         }
 
@@ -183,7 +203,11 @@ impl JobManager {
         let process_id = state.suspended[index].process_id.ok_or_else(|| {
             ApiError::new("job_state_error", "The encoding process is unavailable.")
         })?;
-        process::set_paused(process_id, false)?;
+        self.sleep_preventer.activate()?;
+        if let Err(error) = process::set_paused(process_id, false) {
+            self.sleep_preventer.deactivate();
+            return Err(error);
+        }
 
         let mut resumed = state
             .suspended
@@ -283,6 +307,7 @@ impl JobManager {
             }
             Err(error) => {
                 eprintln!("Unable to stop the encoding queue during shutdown: {error}");
+                self.sleep_preventer.deactivate();
                 return;
             }
         };
@@ -299,6 +324,7 @@ impl JobManager {
                 }
             }
         }
+        self.sleep_preventer.deactivate();
     }
 
     fn lock(&self) -> ApiResult<std::sync::MutexGuard<'_, JobState>> {
