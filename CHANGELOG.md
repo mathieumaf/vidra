@@ -12,6 +12,8 @@ All notable changes to Vidra are documented in this file.
 
 - Keep H.264 output at 8-bit 4:2:0 on both encoding speeds so converted files stay hardware decodable, and normalize output chroma to 4:2:0 while H.265 and AV1 keep a 10-bit source at 10 bits.
 - Number batch output names, and show them in the queue, instead of silently replacing files that already exist in the destination folder.
+- Replace the blank window a failed interface used to leave with a recoverable failure state that keeps the queue, says whether a conversion is still running, and offers a copyable diagnostic report.
+- Report uncaught interface errors and unhandled promise rejections in the window instead of losing them in the webview console.
 
 ## 0.1.0-beta.3 - 2026-07-18
 

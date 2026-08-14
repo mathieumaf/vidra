@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { ConvertView } from "../components/convert/ConvertView";
+import { AppErrorBoundary } from "../components/error/AppErrorBoundary";
+import { FailureState } from "../components/error/FailureState";
+import { RuntimeFailureNotice } from "../components/error/RuntimeFailureNotice";
 import { DragRegion } from "../components/layout/DragRegion";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Toolbar } from "../components/layout/Toolbar";
@@ -22,6 +25,7 @@ import { useEncodingQueue } from "../hooks/useEncodingQueue";
 import { useConversionHistory } from "../hooks/useConversionHistory";
 import { useEncodingProfiles } from "../hooks/useEncodingProfiles";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
+import { useRuntimeFailure } from "../hooks/useRuntimeFailure";
 import type {
   AudioMode,
   AudioTrackMode,
@@ -35,11 +39,13 @@ import type {
 } from "../types/media";
 import { viewMeta } from "./viewMeta";
 import { colorConversionRisk } from "../lib/color";
+import { conversionActivity } from "../lib/conversionActivity";
 import "../styles/tokens.css";
 import "../styles/base.css";
 import "../styles/shell.css";
 import "../styles/conversion.css";
 import "../styles/views.css";
+import "../styles/failure.css";
 
 export default function App() {
   const profileStore = useEncodingProfiles();
@@ -73,6 +79,7 @@ export default function App() {
     advancedSettings,
   });
   const history = useConversionHistory();
+  const runtimeFailure = useRuntimeFailure();
   const [title, subtitle] = viewMeta(view, queue.items, history.items.length);
 
   useEffect(() => {
@@ -375,109 +382,131 @@ export default function App() {
           onAddSources={() => void addVideos("convert")}
         />
 
-        <div className="content-area">
-          {view === "convert" && (
-            <ConvertView
-              media={primaryItem?.media ?? null}
-              mediaCount={canEditPrimary ? queue.readyItems.length : 1}
-              status={status}
-              qualityIndex={qualityIndex}
-              outputContainer={outputContainer}
-              videoCodec={videoCodec}
-              encodingSpeed={encodingSpeed}
-              audioMode={audioMode}
-              outputResolution={outputResolution}
-              isAdvancedMode={isAdvancedMode}
-              advancedSettings={advancedSettings}
-              trackSelection={primaryItem?.trackSelection ?? {
-                audioStreamIndexes: [],
-                subtitleStreamIndexes: [],
-              }}
-              profiles={profileStore.profiles}
-              selectedProfileId={selectedProfileId}
-              isProfileModified={isProfileModified}
-              readyItemCount={queue.readyItems.length}
-              colorRiskCount={readyColorRiskCount}
-              isReady={isReady}
-              isProbing={queue.isProbing}
-              isActive={isPrimaryActive}
-              canEdit={canEditPrimary}
-              canResume={!queue.encodingItem && queue.queueControlItem?.clientId === primaryItem?.clientId}
-              isPaused={primaryItem?.status === "paused"}
-              progress={queue.currentProgress}
-              result={primaryItem?.jobId === queue.result?.jobId ? queue.result : null}
-              error={queue.error}
-              onSelectVideo={() => void addVideos("convert")}
-              onQualityChange={changeQuality}
-              onOutputContainerChange={changeOutputContainer}
-              onVideoCodecChange={changeVideoCodec}
-              onEncodingSpeedChange={changeEncodingSpeed}
-              onAudioModeChange={changeAudioMode}
-              onOutputResolutionChange={changeOutputResolution}
-              onAdvancedModeChange={setIsAdvancedMode}
-              onAdvancedSettingsChange={changeAdvancedSettings}
-              onAudioTrackSelectionChange={changeAudioTrackSelection}
-              onSubtitleTrackSelectionChange={changeSubtitleTrackSelection}
-              onProfileSelect={selectProfile}
-              onProfileCreate={createProfile}
-              onProfileUpdate={updateSelectedProfile}
-              onProfileRename={renameSelectedProfile}
-              onProfileDelete={deleteSelectedProfile}
-              onApplyProfileToAll={applySettingsToAllReady}
-              onStartEncoding={() => void startEncoding()}
-              onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
-              onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}
-            />
+        <AppErrorBoundary
+          resetKey={view}
+          renderFallback={(failure) => (
+            <div className="content-area">
+              <div className="failure-panel">
+                <FailureState
+                  title={`${title} could not be displayed`}
+                  description="The rest of Vidra keeps working. Trying again rebuilds this view without touching the queue, and you can switch to another view in the meantime."
+                  message={failure.message}
+                  activity={conversionActivity(queue.items)}
+                  diagnostic={failure.diagnostic}
+                  onRetry={failure.retry}
+                />
+              </div>
+            </div>
           )}
-          {view === "queue" && (
-            <QueueView
-              items={queue.items}
-              isReady={isReady}
-              isProbing={queue.isProbing}
-              error={queue.error}
-              notice={queue.notice}
-              controlItem={queue.queueControlItem}
-              onAddVideos={() => void addVideos("queue")}
-              onStart={() => void startEncoding()}
-              onRevealOutput={queue.revealOutput}
-              onRemoveOrCancel={queue.removeOrCancel}
-              onToggleQueue={queue.toggleQueue}
-              onMove={queue.moveItem}
-              onEdit={editItem}
-              onGoToConvert={() => setView("convert")}
-            />
-          )}
-          {view === "history" && (
-            <HistoryView
-              items={history.items}
-              isLoading={history.isLoading}
-              error={history.error}
-              onGoToConvert={() => setView("convert")}
-              onReveal={history.reveal}
-              onDelete={history.remove}
-              onClear={history.clear}
-            />
-          )}
-          {view === "settings" && (
-            <SettingsView
-              status={status}
-              isReady={isReady}
-              profiles={profileStore.profiles}
-              defaultProfileId={profileStore.defaultProfileId}
-              lastUsedProfileId={profileStore.lastUsedProfileId}
-              onDuplicateProfile={(profileId) => { profileStore.duplicateProfile(profileId); }}
-              onRenameProfile={profileStore.renameProfile}
-              onDeleteProfile={deleteProfile}
-              onDefaultProfileChange={changeDefaultProfile}
-            />
-          )}
-        </div>
+        >
+          <div className="content-area">
+            {view === "convert" && (
+              <ConvertView
+                media={primaryItem?.media ?? null}
+                mediaCount={canEditPrimary ? queue.readyItems.length : 1}
+                status={status}
+                qualityIndex={qualityIndex}
+                outputContainer={outputContainer}
+                videoCodec={videoCodec}
+                encodingSpeed={encodingSpeed}
+                audioMode={audioMode}
+                outputResolution={outputResolution}
+                isAdvancedMode={isAdvancedMode}
+                advancedSettings={advancedSettings}
+                trackSelection={primaryItem?.trackSelection ?? {
+                  audioStreamIndexes: [],
+                  subtitleStreamIndexes: [],
+                }}
+                profiles={profileStore.profiles}
+                selectedProfileId={selectedProfileId}
+                isProfileModified={isProfileModified}
+                readyItemCount={queue.readyItems.length}
+                colorRiskCount={readyColorRiskCount}
+                isReady={isReady}
+                isProbing={queue.isProbing}
+                isActive={isPrimaryActive}
+                canEdit={canEditPrimary}
+                canResume={!queue.encodingItem && queue.queueControlItem?.clientId === primaryItem?.clientId}
+                isPaused={primaryItem?.status === "paused"}
+                progress={queue.currentProgress}
+                result={primaryItem?.jobId === queue.result?.jobId ? queue.result : null}
+                error={queue.error}
+                onSelectVideo={() => void addVideos("convert")}
+                onQualityChange={changeQuality}
+                onOutputContainerChange={changeOutputContainer}
+                onVideoCodecChange={changeVideoCodec}
+                onEncodingSpeedChange={changeEncodingSpeed}
+                onAudioModeChange={changeAudioMode}
+                onOutputResolutionChange={changeOutputResolution}
+                onAdvancedModeChange={setIsAdvancedMode}
+                onAdvancedSettingsChange={changeAdvancedSettings}
+                onAudioTrackSelectionChange={changeAudioTrackSelection}
+                onSubtitleTrackSelectionChange={changeSubtitleTrackSelection}
+                onProfileSelect={selectProfile}
+                onProfileCreate={createProfile}
+                onProfileUpdate={updateSelectedProfile}
+                onProfileRename={renameSelectedProfile}
+                onProfileDelete={deleteSelectedProfile}
+                onApplyProfileToAll={applySettingsToAllReady}
+                onStartEncoding={() => void startEncoding()}
+                onTogglePause={() => primaryItem && void queue.togglePause(primaryItem)}
+                onCancelEncoding={() => primaryItem && void queue.removeOrCancel(primaryItem)}
+              />
+            )}
+            {view === "queue" && (
+              <QueueView
+                items={queue.items}
+                isReady={isReady}
+                isProbing={queue.isProbing}
+                error={queue.error}
+                notice={queue.notice}
+                controlItem={queue.queueControlItem}
+                onAddVideos={() => void addVideos("queue")}
+                onStart={() => void startEncoding()}
+                onRevealOutput={queue.revealOutput}
+                onRemoveOrCancel={queue.removeOrCancel}
+                onToggleQueue={queue.toggleQueue}
+                onMove={queue.moveItem}
+                onEdit={editItem}
+                onGoToConvert={() => setView("convert")}
+              />
+            )}
+            {view === "history" && (
+              <HistoryView
+                items={history.items}
+                isLoading={history.isLoading}
+                error={history.error}
+                onGoToConvert={() => setView("convert")}
+                onReveal={history.reveal}
+                onDelete={history.remove}
+                onClear={history.clear}
+              />
+            )}
+            {view === "settings" && (
+              <SettingsView
+                status={status}
+                isReady={isReady}
+                profiles={profileStore.profiles}
+                defaultProfileId={profileStore.defaultProfileId}
+                lastUsedProfileId={profileStore.lastUsedProfileId}
+                onDuplicateProfile={(profileId) => { profileStore.duplicateProfile(profileId); }}
+                onRenameProfile={profileStore.renameProfile}
+                onDeleteProfile={deleteProfile}
+                onDefaultProfileChange={changeDefaultProfile}
+              />
+            )}
+          </div>
+        </AppErrorBoundary>
       </section>
 
       {queue.isDraggingFiles && (
         <div className="file-drop-overlay" aria-hidden="true">
           <div><Icon name="plus" /><strong>Add videos to the batch</strong></div>
         </div>
+      )}
+
+      {runtimeFailure.failure && (
+        <RuntimeFailureNotice failure={runtimeFailure.failure} onDismiss={runtimeFailure.dismiss} />
       )}
     </div>
   );

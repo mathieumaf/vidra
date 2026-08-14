@@ -18,6 +18,7 @@ import {
   normalizedTrackSelection,
   TERMINAL_JOB_STATUSES,
 } from "../lib/queue";
+import { rememberedQueueItems, rememberQueueItems } from "../lib/queueSession";
 import {
   cancelEncode,
   enqueueEncodes,
@@ -77,7 +78,9 @@ export function useEncodingQueue({
   outputResolution,
   advancedSettings,
 }: EncodingQueueOptions) {
-  const [items, setItems] = useState<EncodeQueueItem[]>([]);
+  // Restored so recovering from an interface failure keeps the queue in view
+  // while the conversions themselves keep running in the background.
+  const [items, setItems] = useState<EncodeQueueItem[]>(rememberedQueueItems);
   const [isProbing, setIsProbing] = useState(false);
   const [result, setResult] = useState<EncodeFinished | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +116,10 @@ export function useEncodingQueue({
     outputResolution,
     advancedSettings,
   ]);
+
+  useEffect(() => {
+    rememberQueueItems(items);
+  }, [items]);
 
   useEffect(() => {
     const subscriptions = Promise.all([
