@@ -1,3 +1,4 @@
+mod application_update;
 mod commands;
 mod diagnostics;
 mod error;
@@ -17,6 +18,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .default_version_comparator(application_update::is_newer_release)
+                .build(),
+        )
         .setup(|app| {
             let history_path = app.path().app_data_dir()?.join("conversion-history.json");
             app.manage(HistoryManager::new(history_path));
@@ -37,7 +43,8 @@ pub fn run() {
             commands::reveal_history_output,
             commands::reveal_output_file,
             commands::list_destination_files,
-            commands::save_diagnostic_report
+            commands::save_diagnostic_report,
+            application_update::install_application_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building Vidra");

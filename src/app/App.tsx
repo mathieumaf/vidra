@@ -3,6 +3,7 @@ import { ConvertView } from "../components/convert/ConvertView";
 import { AppErrorBoundary } from "../components/error/AppErrorBoundary";
 import { FailureState } from "../components/error/FailureState";
 import { RuntimeFailureNotice } from "../components/error/RuntimeFailureNotice";
+import { UpdateAvailableNotice } from "../components/update/UpdateAvailableNotice";
 import { DragRegion } from "../components/layout/DragRegion";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Toolbar } from "../components/layout/Toolbar";
@@ -25,6 +26,7 @@ import { useEncodingQueue } from "../hooks/useEncodingQueue";
 import { useConversionHistory } from "../hooks/useConversionHistory";
 import { useEncodingProfiles } from "../hooks/useEncodingProfiles";
 import { useApplicationInfo } from "../hooks/useApplicationInfo";
+import { useApplicationUpdater } from "../hooks/useApplicationUpdater";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
 import { useRuntimeFailure } from "../hooks/useRuntimeFailure";
 import type {
@@ -40,16 +42,19 @@ import type {
 } from "../types/media";
 import { viewMeta } from "./viewMeta";
 import { colorConversionNotice } from "../lib/color";
-import { conversionActivity } from "../lib/conversionActivity";
+import { conversionActivity, isConversionInProgress } from "../lib/conversionActivity";
 import "../styles/tokens.css";
 import "../styles/base.css";
 import "../styles/shell.css";
 import "../styles/conversion.css";
 import "../styles/views.css";
 import "../styles/failure.css";
+import "../styles/update.css";
 
 export default function App() {
   const applicationInfo = useApplicationInfo();
+  const applicationUpdater = useApplicationUpdater();
+  const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null);
   const profileStore = useEncodingProfiles();
   const initialProfile = profileStore.effectiveDefaultProfile;
   const initialSettings = initialProfile.settings;
@@ -82,6 +87,7 @@ export default function App() {
   });
   const history = useConversionHistory();
   const runtimeFailure = useRuntimeFailure();
+  const activity = conversionActivity(queue.items);
   const [title, subtitle] = viewMeta(view, queue.items, history.items.length);
 
   useEffect(() => {
@@ -395,7 +401,7 @@ export default function App() {
                   title={`${title} could not be displayed`}
                   description="The rest of Vidra keeps working. Trying again rebuilds this view without touching the queue, and you can switch to another view in the meantime."
                   message={failure.message}
-                  activity={conversionActivity(queue.items)}
+                  activity={activity}
                   diagnostic={failure.diagnostic}
                   onRetry={failure.retry}
                 />
@@ -495,6 +501,8 @@ export default function App() {
                 appVersion={applicationInfo.version}
                 releaseTag={applicationInfo.releaseTag}
                 applicationError={applicationInfo.error}
+                updaterState={applicationUpdater.state}
+                isUpdateBlocked={isConversionInProgress(activity)}
                 profiles={profileStore.profiles}
                 defaultProfileId={profileStore.defaultProfileId}
                 lastUsedProfileId={profileStore.lastUsedProfileId}
@@ -504,6 +512,8 @@ export default function App() {
                 onDefaultProfileChange={changeDefaultProfile}
                 onOpenSource={() => { void applicationInfo.openSource(); }}
                 onOpenRelease={() => { void applicationInfo.openRelease(); }}
+                onCheckForUpdates={() => { void applicationUpdater.checkForUpdates(); }}
+                onInstallUpdate={() => { void applicationUpdater.installUpdate(); }}
               />
             )}
           </div>
@@ -519,6 +529,17 @@ export default function App() {
       {runtimeFailure.failure && (
         <RuntimeFailureNotice failure={runtimeFailure.failure} onDismiss={runtimeFailure.dismiss} />
       )}
+
+      {applicationUpdater.state.phase === "available"
+        && applicationUpdater.state.update
+        && applicationUpdater.state.update.version !== dismissedUpdateVersion
+        && view !== "settings" && (
+          <UpdateAvailableNotice
+            update={applicationUpdater.state.update}
+            onDismiss={() => setDismissedUpdateVersion(applicationUpdater.state.update?.version ?? null)}
+            onViewUpdate={() => setView("settings")}
+          />
+        )}
     </div>
   );
 }

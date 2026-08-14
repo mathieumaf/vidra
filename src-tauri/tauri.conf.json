@@ -32,6 +32,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "externalBin": [
       "binaries/ffmpeg",
@@ -44,5 +45,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/mathieumaf/vidra/releases/download/updater-manifest/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCQzUyQzBCNzQ2NkVBMDYKUldRRzZtWjBDeXpGTzVES3A3U3A4TkFqR2ZNT2MxM2dUMXFIVzBSZ2ZiTFlHNEQzSG9qNmRHc1YK"
+    }
   }
 }

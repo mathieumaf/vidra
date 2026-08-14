@@ -139,6 +139,69 @@ fn sleep_is_prevented_only_while_a_job_is_active() {
     assert!(!manager.sleep_preventer.is_active());
 }
 
+#[test]
+fn update_requires_an_empty_conversion_queue() {
+    let manager = JobManager::default();
+    manager.append(vec![pending("waiting")]).unwrap();
+
+    let error = match manager.begin_update() {
+        Ok(_) => panic!("an update must not start while a conversion is queued"),
+        Err(error) => error,
+    };
+
+    assert_eq!(error.code, "conversion_in_progress");
+}
+
+#[test]
+fn update_rejects_running_and_paused_conversions() {
+    for paused in [false, true] {
+        let manager = JobManager::default();
+        let job = ActiveJob {
+            id: "active".to_owned(),
+            output_path: "/active.mp4".to_owned(),
+            child: None,
+            process_id: None,
+            paused,
+        };
+        let mut state = manager.state.lock().unwrap();
+        if paused {
+            state.suspended.push_back(job);
+        } else {
+            state.active = Some(job);
+        }
+        drop(state);
+
+        let error = match manager.begin_update() {
+            Ok(_) => panic!("an update must not start during a conversion"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "conversion_in_progress");
+    }
+}
+
+#[test]
+fn update_guard_blocks_new_and_starting_conversions() {
+    let manager = JobManager::default();
+    let guard = manager.begin_update().unwrap();
+
+    assert_eq!(
+        manager.append(vec![pending("waiting")]).unwrap_err().code,
+        "update_in_progress"
+    );
+    let error = match manager.reserve_next() {
+        Ok(_) => panic!("a conversion must not start during an update"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, "update_in_progress");
+
+    drop(guard);
+    manager.append(vec![pending("waiting")]).unwrap();
+    assert_eq!(
+        pending_id(manager.reserve_next().unwrap().unwrap()),
+        "waiting"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
