@@ -24,6 +24,7 @@ Current capabilities:
 - source-aware audio bitrate caps for required transcoding;
 - MKV subtitle, chapter, and metadata preservation;
 - a sequential batch queue with reordering, pending-job removal, pause and resume, and current-job cancellation;
+- numbered batch output names that never replace files already present in the destination folder;
 - new videos can be prepared and appended while another job is running;
 - per-job progress with ETA and persistent local conversion history;
 - structured, path-redacted FFmpeg diagnostic reports that can be copied or saved after failures;

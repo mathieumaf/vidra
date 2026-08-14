@@ -11,6 +11,7 @@ All notable changes to Vidra are documented in this file.
 ### Fixed
 
 - Keep H.264 output at 8-bit 4:2:0 on both encoding speeds so converted files stay hardware decodable, and normalize output chroma to 4:2:0 while H.265 and AV1 keep a 10-bit source at 10 bits.
+- Number batch output names, and show them in the queue, instead of silently replacing files that already exist in the destination folder.
 
 ## 0.1.0-beta.3 - 2026-07-18
 
