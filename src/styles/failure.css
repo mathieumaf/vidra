@@ -1,0 +1,72 @@
+.failure-window {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--canvas);
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Centered with auto margins so a tall report stays reachable while scrolling. */
+.failure-window-body, .failure-panel {
+  min-height: 0;
+  display: flex;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd3cd transparent;
+}
+.failure-window-body { padding: var(--space-6); }
+.failure-panel { height: 100%; padding: var(--space-1); }
+
+.failure-state {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto;
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgba(34, 54, 43, 0.03);
+  text-align: center;
+}
+.failure-mark { width: 44px; height: 44px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 13px; color: #a6463d; background: #faecea; }
+.failure-mark svg { width: var(--icon-large); height: var(--icon-large); stroke-width: var(--icon-stroke); }
+.failure-state h2 { margin: var(--space-4) 0 0; font-size: var(--text-title); letter-spacing: -0.02em; }
+.failure-state p { max-width: 460px; margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-small); line-height: var(--leading-normal); }
+.failure-state .failure-message { padding: var(--space-1) var(--space-2); border-radius: var(--radius-small); color: #7d4a45; background: #fbf1f0; font-family: var(--font-mono); font-size: var(--text-caption); overflow-wrap: anywhere; }
+.failure-state .failure-activity { color: #4c5750; font-weight: var(--weight-medium); }
+.failure-state .failure-activity.running { color: var(--green); }
+.failure-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; margin-top: var(--space-5); }
+.failure-actions .primary-button { gap: var(--space-2); }
+.failure-state .diagnostic-details { width: 100%; margin-top: var(--space-4); text-align: left; }
+
+.runtime-failure-notice {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 90;
+  width: min(420px, calc(100vw - var(--space-8)));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid #ead0cc;
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  box-shadow: 0 12px 35px rgba(33, 73, 51, 0.14);
+  scrollbar-width: thin;
+  scrollbar-color: #cbd3cd transparent;
+}
+.runtime-failure-heading { display: flex; align-items: flex-start; gap: var(--space-3); }
+.runtime-failure-heading > div:nth-child(2) { min-width: 0; flex: 1; }
+.runtime-failure-heading strong { font-size: var(--text-body); }
+.runtime-failure-heading p { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--text-small); line-height: var(--leading-normal); overflow-wrap: anywhere; }
+.runtime-failure-notice .failure-mark { width: 30px; height: 30px; border-radius: 9px; }
+.runtime-failure-notice .failure-mark svg { width: var(--icon-small); height: var(--icon-small); }
+.runtime-failure-notice .runtime-failure-count { color: #7d746f; font-size: var(--text-caption); }
+.runtime-failure-dismiss { width: 28px; height: 28px; display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 7px; color: #69736d; background: transparent; cursor: pointer; }
+.runtime-failure-dismiss:hover { color: var(--ink); background: #eef2ef; }
+.runtime-failure-dismiss svg { width: var(--icon-small); height: var(--icon-small); }
+.runtime-failure-copy { margin: var(--space-3) 0 0; color: var(--muted); font-size: var(--text-caption); line-height: var(--leading-normal); }
