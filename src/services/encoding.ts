@@ -29,6 +29,7 @@ export type EncodeRequest = {
   preserveSubtitles: boolean;
   preserveMetadata: boolean;
   preserveChapters: boolean;
+  replaceExisting: boolean;
 };
 
 export function getFfmpegStatus(): Promise<FfmpegStatus> {

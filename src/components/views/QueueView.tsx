@@ -3,7 +3,7 @@ import { qualityLevel } from "../../config/quality";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
 import { outputFrameRateLabel } from "../../config/advanced";
-import { formatEta } from "../../lib/format";
+import { formatEta, outputFileName } from "../../lib/format";
 import { colorConversionRisk } from "../../lib/color";
 import { queueTrackSummary } from "../../lib/tracks";
 import { Icon } from "../ui/Icon";
@@ -15,6 +15,7 @@ type QueueViewProps = {
   isReady: boolean;
   isProbing: boolean;
   error: string | null;
+  notice: string | null;
   controlItem: EncodeQueueItem | null;
   onAddVideos: () => void;
   onStart: () => void;
@@ -25,6 +26,8 @@ type QueueViewProps = {
   onEdit: (item: EncodeQueueItem) => void;
   onGoToConvert: () => void;
 };
+
+const DESTINATION_STATUSES = new Set(["queued", "encoding", "paused", "completed"]);
 
 const statusLabels: Record<EncodeQueueItem["status"], string> = {
   ready: "Ready",
@@ -41,6 +44,7 @@ export function QueueView({
   isReady,
   isProbing,
   error,
+  notice,
   controlItem,
   onAddVideos,
   onStart,
@@ -125,6 +129,8 @@ export function QueueView({
         </section>
       )}
 
+      {notice && <div className="notice-message queue-message">{notice}</div>}
+
       {error && <div className="error-message queue-message" role="alert">{error}</div>}
 
       <div className="queue-list">
@@ -149,6 +155,9 @@ export function QueueView({
             : ` · ${outputFrameRateLabel(item.settings.outputFrameRate)}`;
           const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)}${frameRateSummary} · ${audioSummary}`;
           const colorRisk = colorConversionRisk(item.media.video, item.settings.videoCodec);
+          const destinationName = item.outputPath && DESTINATION_STATUSES.has(item.status)
+            ? outputFileName(item.outputPath)
+            : null;
 
           return (
             <section className={`queue-row ${item.status}`} key={item.clientId}>
@@ -165,6 +174,12 @@ export function QueueView({
                   {settingsSummary}
                 </p>
                 <p className="queue-item-tracks">{queueTrackSummary(item)}</p>
+                {destinationName && (
+                  <p className="queue-item-output" title={item.outputPath ?? undefined}>
+                    {item.status === "completed" ? "Saved as " : "Saving as "}
+                    {destinationName}
+                  </p>
+                )}
                 {colorRisk && item.status !== "completed" && (
                   <p className="queue-color-risk"><Icon name="warning" />{colorRisk.title}</p>
                 )}

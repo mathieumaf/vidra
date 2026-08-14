@@ -66,30 +66,36 @@ export function normalizedTrackSelection(
   };
 }
 
+export type BatchOutputPlan = {
+  paths: string[];
+  renamedCount: number;
+};
+
 export async function batchOutputPaths(
   items: EncodeQueueItem[],
   directory: string,
   reservedPaths: string[] = [],
-): Promise<string[]> {
+  destinationFiles: string[] = [],
+): Promise<BatchOutputPlan> {
   const usedPaths = new Set(reservedPaths.map((path) => path.toLowerCase()));
+  const usedNames = new Set(destinationFiles.map((name) => name.toLowerCase()));
   const paths: string[] = [];
+  let renamedCount = 0;
 
   for (const item of items) {
     let suffix = 1;
-    let outputPath = await join(
-      directory,
-      defaultOutputName(item.media.name, item.settings.container, suffix),
-    );
-    while (usedPaths.has(outputPath.toLowerCase())) {
+    let name = defaultOutputName(item.media.name, item.settings.container, suffix);
+    let outputPath = await join(directory, name);
+    while (usedNames.has(name.toLowerCase()) || usedPaths.has(outputPath.toLowerCase())) {
       suffix += 1;
-      outputPath = await join(
-        directory,
-        defaultOutputName(item.media.name, item.settings.container, suffix),
-      );
+      name = defaultOutputName(item.media.name, item.settings.container, suffix);
+      outputPath = await join(directory, name);
     }
+    if (suffix > 1) renamedCount += 1;
+    usedNames.add(name.toLowerCase());
     usedPaths.add(outputPath.toLowerCase());
     paths.push(outputPath);
   }
 
-  return paths;
+  return { paths, renamedCount };
 }

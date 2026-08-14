@@ -26,7 +26,7 @@ import {
   setEncodePaused,
   startEncodeQueue,
 } from "../services/encoding";
-import { revealOutputFile } from "../services/files";
+import { listDestinationFiles, revealOutputFile } from "../services/files";
 import type {
   AudioMode,
   EncodingSpeed,
@@ -81,6 +81,7 @@ export function useEncodingQueue({
   const [isProbing, setIsProbing] = useState(false);
   const [result, setResult] = useState<EncodeFinished | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const defaultSettingsRef = useRef<EncodingSettings>({
@@ -274,7 +275,9 @@ export function useEncodingQueue({
     const shouldStartQueue = activeItems.length === 0;
     setError(null);
     setResult(null);
+    setNotice(null);
     let outputPaths: string[];
+    let replaceExisting = false;
 
     if (readyItems.length === 1) {
       const item = readyItems[0];
@@ -295,6 +298,7 @@ export function useEncodingQueue({
       });
       if (!outputPath) return 0;
       outputPaths = [outputPath];
+      replaceExisting = true;
     } else {
       const directory = await open({
         multiple: false,
@@ -302,11 +306,25 @@ export function useEncodingQueue({
         title: `Choose a folder for ${readyItems.length} encoded videos`,
       });
       if (!directory || Array.isArray(directory)) return 0;
-      outputPaths = await batchOutputPaths(
-        readyItems,
-        directory,
-        items.flatMap((item) => item.outputPath ? [item.outputPath] : []),
-      );
+      try {
+        const destinationFiles = await listDestinationFiles(directory);
+        const plan = await batchOutputPaths(
+          readyItems,
+          directory,
+          items.flatMap((item) => item.outputPath ? [item.outputPath] : []),
+          destinationFiles,
+        );
+        outputPaths = plan.paths;
+        if (plan.renamedCount > 0) {
+          const names = plan.renamedCount === 1 ? "name" : "names";
+          setNotice(
+            `Added a number to ${plan.renamedCount} output ${names} so nothing in the destination folder is replaced.`,
+          );
+        }
+      } catch (destinationError) {
+        setError(errorMessage(destinationError));
+        return 0;
+      }
     }
 
     try {
@@ -329,6 +347,7 @@ export function useEncodingQueue({
         preserveSubtitles: item.settings.preserveSubtitles,
         preserveMetadata: item.settings.preserveMetadata,
         preserveChapters: item.settings.preserveChapters,
+        replaceExisting,
       })));
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),
@@ -507,6 +526,7 @@ export function useEncodingQueue({
     setSelectedClientId(null);
     setResult(null);
     setError(null);
+    setNotice(null);
   }
 
   return {
@@ -523,6 +543,7 @@ export function useEncodingQueue({
     isDraggingFiles,
     result,
     error,
+    notice,
     selectVideos,
     startEncoding,
     revealOutput,

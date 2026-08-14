@@ -56,6 +56,11 @@ export function defaultOutputPath(
   return `${base}-vidra${duplicateSuffix}.${container}`;
 }
 
+export function outputFileName(path: string): string {
+  const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
+}
+
 export function defaultOutputName(inputName: string, container: OutputContainer, suffix = 1): string {
   const extensionIndex = inputName.lastIndexOf(".");
   const base = extensionIndex > 0 ? inputName.slice(0, extensionIndex) : inputName;
