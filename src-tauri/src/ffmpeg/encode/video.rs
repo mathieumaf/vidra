@@ -25,6 +25,35 @@ fn hardware_encoder(_codec: VideoCodec) -> ApiResult<&'static str> {
     ))
 }
 
+/// Vidra writes an explicit output pixel format so that the profile of a
+/// converted file follows the selected codec instead of FFmpeg's negotiation
+/// with the source.
+///
+/// Chroma is always normalized to 4:2:0, because 4:2:2 and 4:4:4 output lands in
+/// professional profiles that consumer hardware decoders reject. H.264 stays at
+/// 8 bits on both encoding speeds, since High 10 has almost no hardware decoding
+/// support and that defeats the reason to choose H.264. H.265 and AV1 keep a
+/// 10-bit source at 10 bits, where Main 10 and AV1 Main 10-bit decode widely and
+/// the extra depth avoids banding. Deeper sources are capped at 10 bits, and an
+/// unprobed bit depth is treated as 8-bit.
+fn output_pixel_format(
+    codec: VideoCodec,
+    speed: EncodingSpeed,
+    source_bit_depth: Option<u8>,
+) -> Option<&'static str> {
+    if codec == VideoCodec::Copy {
+        return None;
+    }
+    let ten_bit = matches!(codec, VideoCodec::H265 | VideoCodec::Av1)
+        && source_bit_depth.is_some_and(|depth| depth > 8);
+    Some(match (speed, ten_bit) {
+        (_, false) => "yuv420p",
+        (EncodingSpeed::Efficient, true) => "yuv420p10le",
+        // VideoToolbox encoders take 10-bit frames as semi-planar p010le.
+        (EncodingSpeed::Fast, true) => "p010le",
+    })
+}
+
 pub(super) fn video_arguments(
     request: &EncodeRequest,
     source: Option<&VideoStream>,
@@ -39,6 +68,7 @@ pub(super) fn video_arguments(
     let source_codec = source.map(|video| video.codec.as_str());
     let source_dimensions = source.map(|video| (video.width, video.height));
     let source_frame_rate = source.and_then(|video| video.frame_rate);
+    let source_bit_depth = source.and_then(|video| video.bit_depth);
     if !(-2..=2).contains(&quality_tuning) {
         return Err(ApiError::invalid_input(
             "Video quality fine tuning must be between -2 and 2.",
@@ -139,6 +169,9 @@ pub(super) fn video_arguments(
     if !filters.is_empty() {
         arguments.extend(["-vf".to_owned(), filters.join(",")]);
     }
+    if let Some(pixel_format) = output_pixel_format(codec, speed, source_bit_depth) {
+        arguments.extend(["-pix_fmt".to_owned(), pixel_format.to_owned()]);
+    }
 
     Ok(arguments)
 }
@@ -195,7 +228,7 @@ fn scale_filter(
 
 #[cfg(test)]
 mod tests {
-    use super::video_arguments as build_video_arguments;
+    use super::{output_pixel_format, video_arguments as build_video_arguments};
     use crate::{
         error::ApiResult,
         ffmpeg::{
@@ -261,6 +294,25 @@ mod tests {
         build_video_arguments(&request, Some(&source))
     }
 
+    fn source_with_pixel_format(
+        codec: &str,
+        pixel_format: &str,
+        bit_depth: Option<u8>,
+    ) -> VideoStream {
+        VideoStream {
+            pixel_format: Some(pixel_format.to_owned()),
+            bit_depth,
+            ..source(codec, 3840, 2160, 30.0)
+        }
+    }
+
+    fn pixel_format_argument(arguments: &[String]) -> Option<&str> {
+        arguments
+            .windows(2)
+            .find(|pair| pair[0] == "-pix_fmt")
+            .map(|pair| pair[1].as_str())
+    }
+
     #[test]
     fn quality_levels_map_to_stable_crf_values() {
         assert_eq!(
@@ -272,6 +324,146 @@ mod tests {
         assert_eq!(QualityLevel::Balanced.crf(VideoCodec::H265), Some(26));
         assert_eq!(QualityLevel::Balanced.crf(VideoCodec::Av1), Some(33));
         assert_eq!(QualityLevel::Balanced.crf(VideoCodec::Copy), None);
+    }
+
+    #[test]
+    fn h264_targets_eight_bit_four_two_zero_from_a_ten_bit_source() {
+        let ten_bit_hevc = source_with_pixel_format("hevc", "yuv420p10le", Some(10));
+        let request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+        );
+
+        let arguments = build_video_arguments(&request, Some(&ten_bit_hevc)).unwrap();
+
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:v", "libx264"]));
+        assert_eq!(pixel_format_argument(&arguments), Some("yuv420p"));
+    }
+
+    #[test]
+    fn both_encoding_speeds_agree_on_the_h264_pixel_format() {
+        for bit_depth in [None, Some(8), Some(10), Some(12)] {
+            let efficient =
+                output_pixel_format(VideoCodec::H264, EncodingSpeed::Efficient, bit_depth);
+            let fast = output_pixel_format(VideoCodec::H264, EncodingSpeed::Fast, bit_depth);
+
+            assert_eq!(efficient, Some("yuv420p"));
+            assert_eq!(fast, efficient);
+        }
+    }
+
+    #[test]
+    fn h265_and_av1_preserve_ten_bit_sources() {
+        assert_eq!(
+            output_pixel_format(VideoCodec::H265, EncodingSpeed::Efficient, Some(10)),
+            Some("yuv420p10le")
+        );
+        assert_eq!(
+            output_pixel_format(VideoCodec::Av1, EncodingSpeed::Efficient, Some(10)),
+            Some("yuv420p10le")
+        );
+        assert_eq!(
+            output_pixel_format(VideoCodec::H265, EncodingSpeed::Fast, Some(10)),
+            Some("p010le")
+        );
+
+        let ten_bit_hevc = source_with_pixel_format("hevc", "yuv420p10le", Some(10));
+        let mut request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H265,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+        );
+        let h265 = build_video_arguments(&request, Some(&ten_bit_hevc)).unwrap();
+        assert_eq!(pixel_format_argument(&h265), Some("yuv420p10le"));
+
+        request.container = OutputContainer::Mkv;
+        request.video_codec = VideoCodec::Av1;
+        let av1 = build_video_arguments(&request, Some(&ten_bit_hevc)).unwrap();
+        assert_eq!(pixel_format_argument(&av1), Some("yuv420p10le"));
+    }
+
+    #[test]
+    fn sources_deeper_than_ten_bit_are_capped_at_ten_bit() {
+        assert_eq!(
+            output_pixel_format(VideoCodec::H265, EncodingSpeed::Efficient, Some(12)),
+            Some("yuv420p10le")
+        );
+        assert_eq!(
+            output_pixel_format(VideoCodec::Av1, EncodingSpeed::Efficient, Some(16)),
+            Some("yuv420p10le")
+        );
+    }
+
+    #[test]
+    fn eight_bit_and_unprobed_sources_stay_eight_bit() {
+        for codec in [VideoCodec::H264, VideoCodec::H265, VideoCodec::Av1] {
+            for bit_depth in [None, Some(8)] {
+                assert_eq!(
+                    output_pixel_format(codec, EncodingSpeed::Efficient, bit_depth),
+                    Some("yuv420p")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn chroma_richer_than_four_two_zero_is_normalized() {
+        let prores = source_with_pixel_format("prores", "yuv422p10le", Some(10));
+        let mut request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+        );
+        let h264 = build_video_arguments(&request, Some(&prores)).unwrap();
+        assert_eq!(pixel_format_argument(&h264), Some("yuv420p"));
+
+        request.video_codec = VideoCodec::H265;
+        let h265 = build_video_arguments(&request, Some(&prores)).unwrap();
+        assert_eq!(pixel_format_argument(&h265), Some("yuv420p10le"));
+    }
+
+    #[test]
+    fn copying_the_original_video_never_forces_a_pixel_format() {
+        assert_eq!(
+            output_pixel_format(VideoCodec::Copy, EncodingSpeed::Efficient, Some(10)),
+            None
+        );
+
+        let arguments = original_arguments(
+            OutputContainer::Mkv,
+            VideoCodec::Copy,
+            EncodingSpeed::Efficient,
+            QualityLevel::Balanced,
+            Some("prores"),
+        )
+        .unwrap();
+
+        assert!(!arguments.iter().any(|argument| argument == "-pix_fmt"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn fast_hardware_paths_follow_the_same_pixel_format_policy() {
+        let ten_bit_hevc = source_with_pixel_format("hevc", "yuv420p10le", Some(10));
+        let mut request = request(
+            OutputContainer::Mp4,
+            VideoCodec::H264,
+            EncodingSpeed::Fast,
+            QualityLevel::Balanced,
+        );
+        let h264 = build_video_arguments(&request, Some(&ten_bit_hevc)).unwrap();
+        assert!(h264
+            .windows(2)
+            .any(|pair| pair == ["-c:v", "h264_videotoolbox"]));
+        assert_eq!(pixel_format_argument(&h264), Some("yuv420p"));
+
+        request.video_codec = VideoCodec::H265;
+        let h265 = build_video_arguments(&request, Some(&ten_bit_hevc)).unwrap();
+        assert_eq!(pixel_format_argument(&h265), Some("p010le"));
     }
 
     #[test]

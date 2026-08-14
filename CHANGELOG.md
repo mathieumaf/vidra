@@ -8,6 +8,10 @@ All notable changes to Vidra are documented in this file.
 
 - Allow AV1 video in MP4 output, tagged as `av01` alongside the existing faststart behavior.
 
+### Fixed
+
+- Keep H.264 output at 8-bit 4:2:0 on both encoding speeds so converted files stay hardware decodable, and normalize output chroma to 4:2:0 while H.265 and AV1 keep a 10-bit source at 10 bits.
+
 ## 0.1.0-beta.3 - 2026-07-18
 
 ### Added
