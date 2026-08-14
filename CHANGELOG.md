@@ -4,6 +4,10 @@ All notable changes to Vidra are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Show the running Vidra and FFmpeg versions, exact release and source links, GPL license, and third-party notices in Settings.
+
 ### Changed
 
 - Allow AV1 video in MP4 output, tagged as `av01` alongside the existing faststart behavior.

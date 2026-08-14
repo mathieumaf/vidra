@@ -12,6 +12,7 @@ export default defineConfig(async () => ({
   // Lets diagnostic reports name the Vidra version without an extra command.
   define: {
     __VIDRA_VERSION__: JSON.stringify(manifest.version),
+    __VIDRA_RELEASE_TAG__: JSON.stringify(process.env.VIDRA_RELEASE_TAG ?? null),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

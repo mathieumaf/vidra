@@ -24,6 +24,7 @@ import {
 import { useEncodingQueue } from "../hooks/useEncodingQueue";
 import { useConversionHistory } from "../hooks/useConversionHistory";
 import { useEncodingProfiles } from "../hooks/useEncodingProfiles";
+import { useApplicationInfo } from "../hooks/useApplicationInfo";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
 import { useRuntimeFailure } from "../hooks/useRuntimeFailure";
 import type {
@@ -48,6 +49,7 @@ import "../styles/views.css";
 import "../styles/failure.css";
 
 export default function App() {
+  const applicationInfo = useApplicationInfo();
   const profileStore = useEncodingProfiles();
   const initialProfile = profileStore.effectiveDefaultProfile;
   const initialSettings = initialProfile.settings;
@@ -490,6 +492,9 @@ export default function App() {
               <SettingsView
                 status={status}
                 isReady={isReady}
+                appVersion={applicationInfo.version}
+                releaseTag={applicationInfo.releaseTag}
+                applicationError={applicationInfo.error}
                 profiles={profileStore.profiles}
                 defaultProfileId={profileStore.defaultProfileId}
                 lastUsedProfileId={profileStore.lastUsedProfileId}
@@ -497,6 +502,8 @@ export default function App() {
                 onRenameProfile={profileStore.renameProfile}
                 onDeleteProfile={deleteProfile}
                 onDefaultProfileChange={changeDefaultProfile}
+                onOpenSource={() => { void applicationInfo.openSource(); }}
+                onOpenRelease={() => { void applicationInfo.openRelease(); }}
               />
             )}
           </div>
