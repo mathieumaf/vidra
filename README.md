@@ -28,6 +28,7 @@ Current capabilities:
 - new videos can be prepared and appended while another job is running;
 - per-job progress with ETA and persistent local conversion history;
 - structured, path-redacted FFmpeg diagnostic reports that can be copied or saved after failures;
+- application and FFmpeg version details, source and release links, and in-app third-party notices;
 - a fixed desktop interface with no browser-style page scrolling.
 
 ## Installation

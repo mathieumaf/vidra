@@ -1,13 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
+import { THIRD_PARTY_NOTICE_GROUPS } from "../../config/legal";
 import type { EncodingProfile } from "../../config/profiles";
 import { qualityLevel } from "../../config/quality";
 import { outputResolutionLabel } from "../../config/resolution";
 import type { FfmpegStatus } from "../../types/media";
+import { Icon } from "../ui/Icon";
 
 type SettingsViewProps = {
   status: FfmpegStatus | null;
   isReady: boolean;
+  appVersion: string | null;
+  releaseTag: string | null;
+  applicationError: string | null;
   profiles: EncodingProfile[];
   defaultProfileId: string | null;
   lastUsedProfileId: string;
@@ -15,11 +20,16 @@ type SettingsViewProps = {
   onRenameProfile: (profileId: string, name: string) => void;
   onDeleteProfile: (profileId: string) => void;
   onDefaultProfileChange: (profileId: string | null) => void;
+  onOpenSource: () => void;
+  onOpenRelease: () => void;
 };
 
 export function SettingsView({
   status,
   isReady,
+  appVersion,
+  releaseTag,
+  applicationError,
   profiles,
   defaultProfileId,
   lastUsedProfileId,
@@ -27,14 +37,17 @@ export function SettingsView({
   onRenameProfile,
   onDeleteProfile,
   onDefaultProfileChange,
+  onOpenSource,
+  onOpenRelease,
 }: SettingsViewProps) {
+  const [showNotices, setShowNotices] = useState(false);
   const builtInProfiles = profiles.filter((profile) => profile.isBuiltIn);
   const userProfiles = profiles.filter((profile) => !profile.isBuiltIn);
   const lastUsedProfile = profiles.find((profile) => profile.id === lastUsedProfileId);
 
   return (
     <div className="settings-view">
-      <div className="settings-scroll">
+      <div className="settings-scroll" inert={showNotices}>
         <section className="settings-section">
           <div className="settings-section-heading">
             <div><strong>Encoding profiles</strong><p>Reusable conversion settings stored on this Mac.</p></div>
@@ -118,7 +131,16 @@ export function SettingsView({
               </span>
             </div>
             <div className="settings-row">
-              <div><strong>FFmpeg</strong><p className="version-text">{status?.ffmpegVersion ?? "Version unavailable"}</p></div>
+              <div><strong>Vidra</strong><p>Application version</p></div>
+              <span className="settings-value version-value">
+                {appVersion ?? "Version unavailable"}
+              </span>
+            </div>
+            <div className="settings-row">
+              <div><strong>FFmpeg</strong><p>Bundled encoding engine</p></div>
+              <span className="settings-value version-text">
+                {status?.ffmpegVersion ?? "Version unavailable"}
+              </span>
             </div>
             <div className="settings-row">
               <div><strong>Default output</strong><p>MP4 · H.264 video · original resolution · automatic audio</p></div>
@@ -126,10 +148,95 @@ export function SettingsView({
             </div>
           </section>
         </section>
-        <p className="license-copy">
-          Vidra is open source under GPL-3.0-or-later. All processing happens on your device.
-        </p>
+
+        <section className="settings-section">
+          <div className="settings-section-heading">
+            <div><strong>About Vidra</strong><p>Open-source software and bundled components.</p></div>
+          </div>
+          <section className="settings-card">
+            <div className="settings-row about-row">
+              <div>
+                <strong>GPL-3.0-or-later</strong>
+                <p>Vidra is open source. All processing happens on your device.</p>
+              </div>
+              <div className="settings-link-actions">
+                <button type="button" onClick={onOpenSource}>
+                  Source code <Icon name="external" />
+                </button>
+                <button type="button" disabled={!releaseTag} onClick={onOpenRelease}>
+                  {releaseTag ? `Release ${releaseTag}` : "Release"} <Icon name="external" />
+                </button>
+              </div>
+            </div>
+            <div className="settings-row about-row">
+              <div>
+                <strong>Third-party notices</strong>
+                <p>Licenses for FFmpeg, codecs, and application libraries bundled with Vidra.</p>
+              </div>
+              <button className="settings-notices-button" type="button" onClick={() => setShowNotices(true)}>
+                View notices
+              </button>
+            </div>
+          </section>
+          {applicationError && <p className="settings-application-error" role="status">{applicationError}</p>}
+        </section>
       </div>
+
+      {showNotices && <ThirdPartyNotices onClose={() => setShowNotices(false)} />}
+    </div>
+  );
+}
+
+function ThirdPartyNotices({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="notices-overlay">
+      <section
+        aria-describedby="third-party-notices-description"
+        aria-labelledby="third-party-notices-title"
+        aria-modal="true"
+        className="notices-panel"
+        role="dialog"
+      >
+        <header className="notices-heading">
+          <div>
+            <strong id="third-party-notices-title">Third-party notices</strong>
+            <p id="third-party-notices-description">
+              Principal components distributed with Vidra and their licenses.
+            </p>
+          </div>
+          <button autoFocus aria-label="Close third-party notices" type="button" onClick={onClose}>
+            <Icon name="remove" />
+          </button>
+        </header>
+
+        <div className="notices-content">
+          {THIRD_PARTY_NOTICE_GROUPS.map((group) => (
+            <section className="notices-group" key={group.title}>
+              <span>{group.title}</span>
+              <div>
+                {group.notices.map((notice) => (
+                  <div className="notice-row" key={notice.name}>
+                    <div><strong>{notice.name}</strong><p>{notice.detail}</p></div>
+                    <span>{notice.license}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+          <p className="notices-footer">
+            Exact dependency versions are recorded in the Vidra source tree. Corresponding FFmpeg
+            sources, checksums, and build configuration are attached to each public release.
+          </p>
+        </div>
+      </section>
     </div>
   );
 }
