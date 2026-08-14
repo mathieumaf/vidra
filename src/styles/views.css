@@ -154,6 +154,13 @@
 .settings-link-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
 .settings-link-actions svg { width: 13px; height: 13px; }
 .settings-application-error { margin: 7px 4px 0; color: #9a4138; font-size: var(--text-caption); }
+.settings-update-row > div { min-width: 0; }
+.settings-update-row .settings-update-notes { max-width: 500px; margin-top: 7px; padding-left: 9px; border-left: 2px solid #c9ddd0; color: #647069; line-height: 1.45; white-space: pre-line; }
+.settings-update-button { min-height: 31px; flex: 0 0 auto; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; color: #526058; background: #fafbfa; font-size: var(--text-caption); font-weight: var(--weight-semibold); cursor: pointer; }
+.settings-update-button:hover:not(:disabled) { border-color: #bdc9c1; color: var(--ink); background: #f3f6f4; }
+.settings-update-button.primary { color: #fff; border-color: var(--green); background: var(--green); }
+.settings-update-button.primary:hover:not(:disabled) { color: #fff; border-color: var(--green-dark); background: var(--green-dark); }
+.settings-update-button:disabled { opacity: 0.5; cursor: not-allowed; }
 .notices-overlay { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 18px; border-radius: 14px; background: rgba(244, 247, 244, 0.82); backdrop-filter: blur(4px); }
 .notices-panel { width: min(620px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #dfe5e0; border-radius: 14px; background: var(--surface); box-shadow: 0 18px 50px rgba(28, 45, 35, 0.16); }
 .notices-heading { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 16px 16px 13px 18px; border-bottom: 1px solid #e8ece9; }

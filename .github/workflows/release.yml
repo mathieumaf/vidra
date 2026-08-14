@@ -74,6 +74,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VIDRA_FFMPEG_MODE: release
           VIDRA_RELEASE_TAG: ${{ github.ref_name }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -86,7 +88,19 @@ jobs:
           releaseBody: See CHANGELOG.md for the changes in this release. FFmpeg corresponding sources and checksums are attached.
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
           args: --bundles dmg --target aarch64-apple-darwin
+
+      - name: Use the exact release tag in the updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MANIFEST_DIRECTORY="$RUNNER_TEMP/updater-manifest"
+          mkdir -p "$MANIFEST_DIRECTORY"
+          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir "$MANIFEST_DIRECTORY"
+          pnpm release:prepare-updater-manifest -- "$MANIFEST_DIRECTORY/latest.json" "$GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" "$MANIFEST_DIRECTORY/latest.json" --clobber
 
       - name: Verify signature and notarization
         run: |

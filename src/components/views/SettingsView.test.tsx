@@ -15,6 +15,8 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsView>[0]> =
     appVersion: "1.2.3",
     releaseTag: "v1.2.3-beta.1",
     applicationError: null,
+    updaterState: { phase: "up-to-date", update: null, error: null },
+    isUpdateBlocked: false,
     profiles: [],
     defaultProfileId: null,
     lastUsedProfileId: "",
@@ -24,6 +26,8 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsView>[0]> =
     onDefaultProfileChange: vi.fn(),
     onOpenSource: vi.fn(),
     onOpenRelease: vi.fn(),
+    onCheckForUpdates: vi.fn(),
+    onInstallUpdate: vi.fn(),
     ...overrides,
   };
   return { props, tree: mount(<SettingsView {...props} />) };
@@ -37,6 +41,31 @@ describe("SettingsView application information", () => {
     expect(tree.text()).toContain("FFmpegBundled encoding engineffmpeg version 8.0.1");
     expect(tree.text()).toContain("GPL-3.0-or-later");
     tree.unmount();
+  });
+
+  it("offers an available update only when conversions are idle", () => {
+    const update = {
+      currentVersion: "1.2.3",
+      version: "1.2.4",
+      date: null,
+      notes: "Improves update safety.",
+    };
+    const available = renderSettings({
+      updaterState: { phase: "available", update, error: null },
+    });
+
+    available.tree.click("Install and restart");
+    expect(available.props.onInstallUpdate).toHaveBeenCalledOnce();
+    expect(available.tree.text()).toContain("Improves update safety.");
+    available.tree.unmount();
+
+    const blocked = renderSettings({
+      updaterState: { phase: "available", update, error: null },
+      isUpdateBlocked: true,
+    });
+    expect(blocked.tree.button("Install and restart").disabled).toBe(true);
+    expect(blocked.tree.text()).toContain("Finish or cancel every queued conversion");
+    blocked.tree.unmount();
   });
 
   it("opens the source and matching release actions", () => {

@@ -19,6 +19,19 @@ struct JobState {
     pending: VecDeque<PendingJob>,
     waiting_order: VecDeque<String>,
     cancelled: HashSet<String>,
+    update_in_progress: bool,
+}
+
+pub struct UpdateGuard<'a> {
+    manager: &'a JobManager,
+}
+
+impl Drop for UpdateGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.manager.state.lock() {
+            state.update_in_progress = false;
+        }
+    }
 }
 
 pub struct JobManager {
@@ -44,6 +57,12 @@ impl JobManager {
 
     pub fn append(&self, jobs: Vec<PendingJob>) -> ApiResult<()> {
         let mut state = self.lock()?;
+        if state.update_in_progress {
+            return Err(ApiError::new(
+                "update_in_progress",
+                "Wait for the application update to finish before adding conversions.",
+            ));
+        }
         let mut outputs = state
             .pending
             .iter()
@@ -72,6 +91,12 @@ impl JobManager {
 
     pub fn reserve_next(&self) -> ApiResult<Option<ReservedJob>> {
         let mut state = self.lock()?;
+        if state.update_in_progress {
+            return Err(ApiError::new(
+                "update_in_progress",
+                "Wait for the application update to finish before starting a conversion.",
+            ));
+        }
         if state.active.is_some() {
             return Ok(None);
         }
@@ -288,6 +313,24 @@ impl JobManager {
         Ok(())
     }
 
+    pub fn begin_update(&self) -> ApiResult<UpdateGuard<'_>> {
+        let mut state = self.lock()?;
+        if state.update_in_progress {
+            return Err(ApiError::new(
+                "update_in_progress",
+                "An application update is already in progress.",
+            ));
+        }
+        if state.active.is_some() || !state.suspended.is_empty() || !state.pending.is_empty() {
+            return Err(ApiError::new(
+                "conversion_in_progress",
+                "Finish or cancel every queued conversion before installing an update.",
+            ));
+        }
+        state.update_in_progress = true;
+        Ok(UpdateGuard { manager: self })
+    }
+
     pub fn take_cancelled(&self, job_id: &str) -> bool {
         self.state
             .lock()
@@ -303,6 +346,7 @@ impl JobManager {
                 state.pending.clear();
                 state.waiting_order.clear();
                 state.cancelled.clear();
+                state.update_in_progress = false;
                 running
             }
             Err(error) => {

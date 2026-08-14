@@ -4,6 +4,7 @@ import { THIRD_PARTY_NOTICE_GROUPS } from "../../config/legal";
 import type { EncodingProfile } from "../../config/profiles";
 import { qualityLevel } from "../../config/quality";
 import { outputResolutionLabel } from "../../config/resolution";
+import type { ApplicationUpdaterState } from "../../hooks/useApplicationUpdater";
 import type { FfmpegStatus } from "../../types/media";
 import { Icon } from "../ui/Icon";
 
@@ -13,6 +14,8 @@ type SettingsViewProps = {
   appVersion: string | null;
   releaseTag: string | null;
   applicationError: string | null;
+  updaterState: ApplicationUpdaterState;
+  isUpdateBlocked: boolean;
   profiles: EncodingProfile[];
   defaultProfileId: string | null;
   lastUsedProfileId: string;
@@ -22,6 +25,8 @@ type SettingsViewProps = {
   onDefaultProfileChange: (profileId: string | null) => void;
   onOpenSource: () => void;
   onOpenRelease: () => void;
+  onCheckForUpdates: () => void;
+  onInstallUpdate: () => void;
 };
 
 export function SettingsView({
@@ -30,6 +35,8 @@ export function SettingsView({
   appVersion,
   releaseTag,
   applicationError,
+  updaterState,
+  isUpdateBlocked,
   profiles,
   defaultProfileId,
   lastUsedProfileId,
@@ -39,6 +46,8 @@ export function SettingsView({
   onDefaultProfileChange,
   onOpenSource,
   onOpenRelease,
+  onCheckForUpdates,
+  onInstallUpdate,
 }: SettingsViewProps) {
   const [showNotices, setShowNotices] = useState(false);
   const builtInProfiles = profiles.filter((profile) => profile.isBuiltIn);
@@ -136,6 +145,21 @@ export function SettingsView({
                 {appVersion ?? "Version unavailable"}
               </span>
             </div>
+            <div className="settings-row settings-update-row">
+              <div>
+                <strong>Application updates</strong>
+                <p>{updateDescription(updaterState, isUpdateBlocked)}</p>
+                {updaterState.update?.notes && updaterState.phase === "available" && (
+                  <p className="settings-update-notes">{updaterState.update.notes}</p>
+                )}
+              </div>
+              <UpdateAction
+                state={updaterState}
+                isBlocked={isUpdateBlocked}
+                onCheck={onCheckForUpdates}
+                onInstall={onInstallUpdate}
+              />
+            </div>
             <div className="settings-row">
               <div><strong>FFmpeg</strong><p>Bundled encoding engine</p></div>
               <span className="settings-value version-text">
@@ -185,6 +209,68 @@ export function SettingsView({
       {showNotices && <ThirdPartyNotices onClose={() => setShowNotices(false)} />}
     </div>
   );
+}
+
+function UpdateAction({
+  state,
+  isBlocked,
+  onCheck,
+  onInstall,
+}: {
+  state: ApplicationUpdaterState;
+  isBlocked: boolean;
+  onCheck: () => void;
+  onInstall: () => void;
+}) {
+  if (state.phase === "checking") {
+    return <button className="settings-update-button" disabled type="button">Checking…</button>;
+  }
+  if (state.phase === "installing") {
+    return <button className="settings-update-button" disabled type="button">Installing…</button>;
+  }
+  if (state.phase === "available") {
+    return (
+      <button
+        className="settings-update-button primary"
+        disabled={isBlocked}
+        type="button"
+        onClick={onInstall}
+      >
+        Install and restart
+      </button>
+    );
+  }
+  if (state.phase === "error" && state.update) {
+    return (
+      <button
+        className="settings-update-button primary"
+        disabled={isBlocked}
+        type="button"
+        onClick={onInstall}
+      >
+        Try installation again
+      </button>
+    );
+  }
+  return (
+    <button className="settings-update-button" type="button" onClick={onCheck}>
+      Check for updates
+    </button>
+  );
+}
+
+function updateDescription(state: ApplicationUpdaterState, isBlocked: boolean): string {
+  if (state.phase === "checking") return "Looking for a newer signed release…";
+  if (state.phase === "installing") return "Downloading, verifying, and installing the update…";
+  if (state.error) return state.error;
+  if (state.phase === "available" && state.update) {
+    if (isBlocked) {
+      return `Version ${state.update.version} is available. Finish or cancel every queued conversion before installing it.`;
+    }
+    return `Version ${state.update.version} is available and ready to install.`;
+  }
+  if (state.phase === "up-to-date") return "Vidra is up to date.";
+  return "Signed releases are checked automatically when Vidra starts.";
 }
 
 function ThirdPartyNotices({ onClose }: { onClose: () => void }) {

@@ -1,0 +1,25 @@
+.update-available-notice {
+  position: fixed;
+  top: 58px;
+  right: var(--space-5);
+  z-index: 80;
+  width: min(390px, calc(100vw - var(--space-8)));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid #bed9c8;
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  box-shadow: 0 12px 35px rgba(33, 73, 51, 0.14);
+}
+.update-notice-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; color: var(--green); background: var(--green-soft); }
+.update-notice-mark svg { width: var(--icon-small); height: var(--icon-small); }
+.update-available-notice strong { font-size: var(--text-body); }
+.update-available-notice p { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--text-small); line-height: var(--leading-normal); }
+.update-available-notice div > button { min-height: 29px; margin-top: var(--space-2); padding: 5px 9px; border: 0; border-radius: 7px; color: #fff; background: var(--green); font-size: var(--text-caption); font-weight: var(--weight-semibold); cursor: pointer; }
+.update-available-notice div > button:hover { background: var(--green-dark); }
+.update-notice-dismiss { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; color: #69736d; background: transparent; cursor: pointer; }
+.update-notice-dismiss:hover { color: var(--ink); background: #eef2ef; }
+.update-notice-dismiss svg { width: var(--icon-small); height: var(--icon-small); }
