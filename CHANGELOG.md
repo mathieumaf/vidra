@@ -2,10 +2,11 @@
 
 All notable changes to Vidra are documented in this file.
 
-## Unreleased
+## 0.1.0-beta.4 - 2026-08-14
 
 ### Added
 
+- Add signed application updates with automatic release checks, an in-app install prompt, and conversion-safe installation.
 - Show the running Vidra and FFmpeg versions, exact release and source links, GPL license, and third-party notices in Settings.
 
 ### Changed
