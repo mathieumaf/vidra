@@ -302,6 +302,8 @@ pub struct EncodeRequest {
     pub preserve_subtitles: bool,
     pub preserve_metadata: bool,
     pub preserve_chapters: bool,
+    #[serde(default)]
+    pub replace_existing: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

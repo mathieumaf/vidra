@@ -3,8 +3,8 @@ mod video;
 
 use self::{audio::audio_arguments, video::video_arguments};
 use super::{
-    validate_input, validate_output, AudioMode, AudioStream, EncodeRequest, MediaInfo,
-    OutputContainer, SubtitleStream,
+    validate_input, validate_output, AudioMode, AudioStream, EncodeRequest, ExistingOutput,
+    MediaInfo, OutputContainer, SubtitleStream,
 };
 use crate::{
     error::{ApiError, ApiResult},
@@ -100,6 +100,7 @@ pub(super) fn build_command(
         &job.request.output_path,
         std::slice::from_ref(&input),
         job.request.container,
+        ExistingOutput::for_request(&job.request),
     )?;
     let command = app
         .shell()
@@ -179,6 +180,7 @@ mod tests {
             preserve_subtitles: true,
             preserve_metadata: true,
             preserve_chapters: true,
+            replace_existing: false,
         }
     }
 
