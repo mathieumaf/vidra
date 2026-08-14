@@ -38,7 +38,7 @@ export const VIDEO_CODECS: ReadonlyArray<{
   { id: "copy", label: "Original", description: "No re-encoding" },
   { id: "h264", label: "H.264", description: "Best compatibility" },
   { id: "h265", label: "H.265", description: "Smaller files" },
-  { id: "av1", label: "AV1", description: "Smallest · MKV" },
+  { id: "av1", label: "AV1", description: "Smallest files" },
 ];
 
 export const ENCODING_SPEEDS: ReadonlyArray<{

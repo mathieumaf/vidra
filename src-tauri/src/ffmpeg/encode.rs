@@ -147,12 +147,16 @@ pub(crate) fn redacted_command(job: &PendingJob) -> ApiResult<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        mapping_arguments, selected_audio_streams, validate_subtitle_streams, GLOBAL_ARGUMENTS,
+        encoding_arguments, mapping_arguments, selected_audio_streams, validate_subtitle_streams,
+        GLOBAL_ARGUMENTS,
     };
-    use crate::ffmpeg::{
-        AudioBitrate, AudioChannels, AudioMode, AudioStream, AudioTrackMode, EncodeRequest,
-        EncodingSpeed, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel,
-        SubtitleStream, VideoCodec,
+    use crate::{
+        ffmpeg::{
+            AudioBitrate, AudioChannels, AudioMode, AudioStream, AudioTrackMode, EncodeRequest,
+            EncodingSpeed, MediaInfo, OutputContainer, OutputFrameRate, OutputResolution,
+            QualityLevel, SubtitleStream, VideoCodec, VideoStream,
+        },
+        jobs::PendingJob,
     };
 
     fn request(container: OutputContainer) -> EncodeRequest {
@@ -175,6 +179,39 @@ mod tests {
             preserve_subtitles: true,
             preserve_metadata: true,
             preserve_chapters: true,
+        }
+    }
+
+    fn job(request: EncodeRequest, audio: Vec<AudioStream>) -> PendingJob {
+        PendingJob {
+            id: "job-1".to_owned(),
+            media: MediaInfo {
+                path: request.input_path.clone(),
+                name: "input.mov".to_owned(),
+                duration_seconds: 10.0,
+                size_bytes: 1_000,
+                format_name: "mov,mp4".to_owned(),
+                format_long_name: None,
+                video: Some(VideoStream {
+                    codec: "h264".to_owned(),
+                    width: 1920,
+                    height: 1080,
+                    frame_rate: Some(30.0),
+                    pixel_format: None,
+                    bit_depth: None,
+                    color_range: None,
+                    color_space: None,
+                    color_transfer: None,
+                    color_primaries: None,
+                    hdr_format: None,
+                }),
+                audio,
+                subtitles: vec![],
+                chapter_count: 0,
+                has_metadata: false,
+            },
+            request,
+            ffmpeg_version: None,
         }
     }
 
@@ -212,6 +249,42 @@ mod tests {
         assert!(!mapping_arguments(&request)
             .iter()
             .any(|argument| argument == "0:2"));
+    }
+
+    #[test]
+    fn mp4_av1_keeps_the_regular_mp4_audio_rules() {
+        let mut request = request(OutputContainer::Mp4);
+        request.video_codec = VideoCodec::Av1;
+        request.subtitle_stream_indexes = vec![];
+        let audio = vec![
+            AudioStream {
+                index: 1,
+                codec: "aac".to_owned(),
+                channels: Some(2),
+                sample_rate: Some(48_000),
+                bit_rate: Some(128_000),
+                language: None,
+                title: None,
+            },
+            AudioStream {
+                index: 2,
+                codec: "flac".to_owned(),
+                channels: Some(2),
+                sample_rate: Some(48_000),
+                bit_rate: Some(900_000),
+                language: None,
+                title: None,
+            },
+        ];
+
+        let arguments = encoding_arguments(&job(request, audio)).unwrap();
+
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c:v", "libsvtav1"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-tag:v", "av01"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:a:0", "copy"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:a:1", "aac"]));
     }
 
     #[test]

@@ -168,15 +168,15 @@ export default function App() {
     commitSettings({
       ...currentSettings(),
       container,
-      videoCodec: videoCodec === "av1" || incompatibleVideoCopy ? "h264" : videoCodec,
-      encodingSpeed: videoCodec === "av1" || incompatibleVideoCopy ? "efficient" : encodingSpeed,
+      videoCodec: incompatibleVideoCopy ? "h264" : videoCodec,
+      encodingSpeed: incompatibleVideoCopy ? "efficient" : encodingSpeed,
       audioMode: audioMode === "opus" || incompatibleAudioCopy ? "auto" : audioMode,
     });
   }
 
   function changeVideoCodec(codec: VideoCodec) {
-    const needsMkv = codec === "av1"
-      || (codec === "copy" && !canCopyVideoToMp4(queue.primaryItem?.media.video ?? null));
+    const needsMkv = codec === "copy"
+      && !canCopyVideoToMp4(queue.primaryItem?.media.video ?? null);
     commitSettings({
       ...currentSettings(),
       container: needsMkv ? "mkv" : outputContainer,
