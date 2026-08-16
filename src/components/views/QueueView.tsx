@@ -57,13 +57,17 @@ export function QueueView({
 }: QueueViewProps) {
   if (items.length === 0) {
     return (
-      <div className="utility-view">
-        <EmptyState
-          icon="queue"
-          title="Your queue is empty"
-          copy="Choose one or more videos to create a batch conversion."
-          action={onGoToConvert}
-        />
+      <div className="queue-view">
+        {notice && <div className="notice-message queue-message" role="status">{notice}</div>}
+        {error && <div className="error-message queue-message" role="alert">{error}</div>}
+        <div className="utility-view">
+          <EmptyState
+            icon="queue"
+            title="Your queue is empty"
+            copy="Choose one or more videos to create a batch conversion."
+            action={onGoToConvert}
+          />
+        </div>
       </div>
     );
   }
@@ -129,7 +133,7 @@ export function QueueView({
         </section>
       )}
 
-      {notice && <div className="notice-message queue-message">{notice}</div>}
+      {notice && <div className="notice-message queue-message" role="status">{notice}</div>}
 
       {error && <div className="error-message queue-message" role="alert">{error}</div>}
 

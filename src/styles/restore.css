@@ -1,0 +1,101 @@
+.pending-queue-restore-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: rgba(238, 241, 237, 0.84);
+  backdrop-filter: blur(6px);
+}
+
+.pending-queue-restore-panel {
+  width: min(520px, 100%);
+  max-height: min(560px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dce3dd;
+  border-radius: var(--radius-large);
+  background: var(--surface);
+  box-shadow: 0 22px 60px rgba(27, 45, 35, 0.18);
+}
+
+.pending-queue-restore-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-bottom: 1px solid #e7ebe8;
+}
+
+.pending-queue-restore-heading > div:last-child { min-width: 0; }
+.pending-queue-restore-heading h2 {
+  margin: 1px 0 0;
+  font-size: var(--text-title);
+  letter-spacing: -0.02em;
+}
+.pending-queue-restore-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-normal);
+}
+.pending-queue-restore-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--green);
+  background: var(--green-soft);
+}
+.pending-queue-restore-mark svg { width: var(--icon-medium); height: var(--icon-medium); }
+
+.pending-queue-restore-list {
+  min-height: 0;
+  overflow-y: auto;
+  margin: var(--space-4) var(--space-5) 0;
+  border: 1px solid #e4e9e5;
+  border-radius: 10px;
+  scrollbar-color: #cbd3cd transparent;
+  scrollbar-width: thin;
+}
+.pending-queue-restore-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+}
+.pending-queue-restore-row + .pending-queue-restore-row { border-top: 1px solid #edf0ed; }
+.pending-queue-restore-row svg {
+  width: var(--icon-small);
+  height: var(--icon-small);
+  flex: 0 0 auto;
+  color: #6f7b73;
+}
+.pending-queue-restore-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}
+
+.pending-queue-restore-note,
+.pending-queue-restore-status {
+  margin: var(--space-3) var(--space-5) 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-normal);
+}
+.pending-queue-restore-status { color: #725d32; }
+.pending-queue-restore-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}

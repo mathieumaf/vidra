@@ -19,6 +19,13 @@ import {
   normalizedTrackSelection,
   TERMINAL_JOB_STATUSES,
 } from "../lib/queue";
+import {
+  clearPendingQueue,
+  loadPendingQueue,
+  savePendingQueue,
+  type PendingQueueEntry,
+  type PendingQueueSnapshot,
+} from "../lib/pendingQueue";
 import { rememberedQueueItems, rememberQueueItems } from "../lib/queueSession";
 import {
   cancelEncode,
@@ -96,6 +103,10 @@ export function useEncodingQueue({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [restoreOffer, setRestoreOffer] = useState<PendingQueueSnapshot | null>(() => (
+    rememberedQueueItems().length === 0 ? loadPendingQueue() : null
+  ));
+  const [isRestoring, setIsRestoring] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const defaultSettingsRef = useRef<EncodingSettings>({
     quality: quality.id,
@@ -129,7 +140,8 @@ export function useEncodingQueue({
 
   useEffect(() => {
     rememberQueueItems(items);
-  }, [items]);
+    if (!restoreOffer) savePendingQueue(items);
+  }, [items, restoreOffer]);
 
   useEffect(() => {
     const subscriptions = Promise.all([
@@ -287,6 +299,45 @@ export function useEncodingQueue({
     }
   }
 
+  async function restorePendingQueue(): Promise<number> {
+    if (!restoreOffer || !isReady || isRestoring) return 0;
+    const entries = restoreOffer.entries;
+    setIsRestoring(true);
+    setError(null);
+    setResult(null);
+    try {
+      const probes = await Promise.allSettled(entries.map((entry) => probeMedia(entry.sourcePath)));
+      const restoredItems = probes.flatMap((probe, index) => {
+        if (probe.status !== "fulfilled") return [];
+        const entry = entries[index];
+        return [{
+          ...createQueueItem(probe.value, entry.settings),
+          trackSelection: normalizedTrackSelection(probe.value, entry.trackSelection),
+        }];
+      });
+      const droppedEntries = entries.filter((_, index) => probes[index].status === "rejected");
+
+      setItems((currentItems) => {
+        const base = currentItems.every((item) => TERMINAL_JOB_STATUSES.has(item.status))
+          ? []
+          : currentItems;
+        return [...base, ...restoredItems];
+      });
+      if (restoredItems.length > 0) setSelectedClientId(restoredItems[0].clientId);
+      setNotice(restoreNotice(restoredItems.length, droppedEntries));
+      clearPendingQueue();
+      setRestoreOffer(null);
+      return restoredItems.length;
+    } finally {
+      setIsRestoring(false);
+    }
+  }
+
+  function discardPendingQueue() {
+    clearPendingQueue();
+    setRestoreOffer(null);
+  }
+
   async function startEncoding(): Promise<number> {
     if (readyItems.length === 0 || !isReady) return 0;
     const blocked = readyItems.find((item) => (
@@ -374,6 +425,7 @@ export function useEncodingQueue({
       allowInsufficientDiskSpace: false,
     }));
 
+    let startingJobId: string | null = null;
     try {
       let queued: QueuedEncode[];
       try {
@@ -395,22 +447,35 @@ export function useEncodingQueue({
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),
       );
-      setItems((current) => current.map((item) => {
+      const startingClientId = shouldStartQueue ? readyItems[0]?.clientId : null;
+      startingJobId = shouldStartQueue ? queued[0]?.jobId ?? null : null;
+      const markQueued = (current: EncodeQueueItem[]): EncodeQueueItem[] => current.map((item) => {
         const job = jobsByClientId.get(item.clientId);
         return job
           ? {
               ...item,
               jobId: job.jobId,
               outputPath: job.outputPath,
-              status: "queued",
+              status: item.clientId === startingClientId ? "encoding" : "queued",
               progress: emptyProgress(job.jobId),
             }
           : item;
-      }));
+      });
+      setItems(markQueued);
+      // Exclude the job that is about to start before asking Rust to launch it,
+      // so a process crash cannot leave interrupted work in the saved queue.
+      savePendingQueue(markQueued(items));
       setSelectedClientId(null);
       if (shouldStartQueue) await startEncodeQueue();
       return queued.length;
     } catch (encodeError) {
+      if (startingJobId) {
+        setItems((current) => current.map((item) => (
+          item.jobId === startingJobId && item.status === "encoding"
+            ? { ...item, status: "queued" }
+            : item
+        )));
+      }
       setError(errorMessage(encodeError));
       return 0;
     }
@@ -584,10 +649,14 @@ export function useEncodingQueue({
     queueCount,
     isProbing,
     isDraggingFiles,
+    restoreOffer,
+    isRestoring,
     result,
     error,
     notice,
     selectVideos,
+    restorePendingQueue,
+    discardPendingQueue,
     startEncoding,
     revealOutput,
     removeOrCancel,
@@ -600,4 +669,21 @@ export function useEncodingQueue({
     reset,
     setError,
   };
+}
+
+function restoreNotice(restoredCount: number, droppedEntries: PendingQueueEntry[]): string {
+  const restored = restoredCount === 1 ? "1 video" : `${restoredCount} videos`;
+  if (droppedEntries.length === 0) {
+    return `Restored ${restored} with saved settings. Choose where to save ${restoredCount === 1 ? "it" : "them"} when you start encoding.`;
+  }
+
+  const names = droppedEntries
+    .map((entry) => `“${entry.sourceName}” (${entry.sourcePath})`)
+    .join(", ");
+  const unavailable = droppedEntries.length === 1
+    ? `Could not restore ${names} because its source file could not be read from the saved location.`
+    : `Could not restore ${names} because their source files could not be read from the saved locations.`;
+  return restoredCount > 0
+    ? `Restored ${restored} with saved settings. ${unavailable}`
+    : unavailable;
 }
