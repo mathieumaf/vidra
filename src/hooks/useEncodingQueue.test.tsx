@@ -162,7 +162,7 @@ describe("useEncodingQueue", () => {
       [expect.objectContaining({ allowInsufficientDiskSpace: true })],
     );
     expect(encodingMocks.startEncodeQueue).toHaveBeenCalledOnce();
-    expect(tree.text()).toContain("queued");
+    expect(tree.text()).toContain("Status: encoding");
     tree.unmount();
   });
 
