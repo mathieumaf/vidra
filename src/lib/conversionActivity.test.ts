@@ -47,6 +47,18 @@ describe("conversionActivity", () => {
     expect(message).toContain("1 other conversion is still in the queue");
   });
 
+  it("does not report a fake percentage for indeterminate progress", () => {
+    const item = encodingItemFixture("live-stream.ts", 0);
+    item.progress.indeterminate = true;
+
+    const activity = conversionActivity([item]);
+    const message = conversionActivityMessage(activity);
+
+    expect(activity.activePercent).toBeNull();
+    expect(message).toContain("live-stream.ts");
+    expect(message).not.toContain("0%");
+  });
+
   it("explains a paused, queued, prepared, and empty queue differently", () => {
     const paused = conversionActivityMessage(conversionActivity([
       queueItemFixture({ media: mediaFixture("paused.mov"), status: "paused" }),
