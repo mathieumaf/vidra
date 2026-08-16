@@ -1,8 +1,10 @@
 import { formatBitrate } from "../../lib/format";
 import {
   audioTrackName,
+  canKeepSubtitleInMp4,
   channelLabel,
   codecLabel,
+  isImageBasedSubtitle,
   languageLabel,
   sampleRateLabel,
   subtitleTrackName,
@@ -39,14 +41,30 @@ export function TrackSelectionOptions({
 }: TrackSelectionOptionsProps) {
   const audioIndexes = audio.map((track) => track.index);
   const subtitleIndexes = subtitles.map((track) => track.index);
+  const availableSubtitles = subtitles.filter((track) => (
+    container === "mkv" || canKeepSubtitleInMp4(track.codec)
+  ));
+  const availableSubtitleIndexes = availableSubtitles.map((track) => track.index);
+  const selectedAvailableSubtitleIndexes = availableSubtitleIndexes.filter((index) => (
+    selection.subtitleStreamIndexes.includes(index)
+  ));
   const audioDisabled = disabled || audioMode === "none" || audio.length === 0;
-  const subtitlesDisabled = disabled || container !== "mkv" || subtitles.length === 0;
+  const subtitlesDisabled = disabled || availableSubtitles.length === 0;
   const allAudioSelected = audio.length > 0
     && sameIndexes(selection.audioStreamIndexes, audioIndexes);
   const firstAudioSelected = !allAudioSelected && selection.audioStreamIndexes.length === 1
     && selection.audioStreamIndexes[0] === audioIndexes[0];
-  const allSubtitlesSelected = subtitles.length > 0
-    && sameIndexes(selection.subtitleStreamIndexes, subtitleIndexes);
+  const allSubtitlesSelected = availableSubtitles.length > 0
+    && sameIndexes(selectedAvailableSubtitleIndexes, availableSubtitleIndexes);
+  const imageSubtitleCount = container === "mp4"
+    ? subtitles.filter((track) => isImageBasedSubtitle(track.codec)).length
+    : 0;
+  const unsupportedSubtitleCount = container === "mp4"
+    ? subtitles.length - availableSubtitles.length - imageSubtitleCount
+    : 0;
+  const hasAssSubtitles = availableSubtitles.some((track) => (
+    ["ass", "ssa"].includes(track.codec.toLowerCase())
+  ));
 
   function changeAudioTrack(index: number, selected: boolean) {
     const indexes = toggleIndex(audioIndexes, selection.audioStreamIndexes, index, selected);
@@ -59,12 +77,21 @@ export function TrackSelectionOptions({
   }
 
   function changeSubtitleTrack(index: number, selected: boolean) {
-    onSubtitleChange(toggleIndex(
-      subtitleIndexes,
-      selection.subtitleStreamIndexes,
+    changeAvailableSubtitles(toggleIndex(
+      availableSubtitleIndexes,
+      selectedAvailableSubtitleIndexes,
       index,
       selected,
     ));
+  }
+
+  function changeAvailableSubtitles(indexes: number[]) {
+    const available = new Set(availableSubtitleIndexes);
+    const next = new Set([
+      ...selection.subtitleStreamIndexes.filter((index) => !available.has(index)),
+      ...indexes,
+    ]);
+    onSubtitleChange(subtitleIndexes.filter((index) => next.has(index)));
   }
 
   return (
@@ -124,7 +151,7 @@ export function TrackSelectionOptions({
         <div className="track-selection-group">
           <TrackGroupHeading
             label="Subtitle tracks"
-            selected={container === "mkv" ? selection.subtitleStreamIndexes.length : 0}
+            selected={selectedAvailableSubtitleIndexes.length}
             total={subtitles.length}
           />
           <div className="track-shortcuts" aria-label="Subtitle track shortcuts">
@@ -132,29 +159,46 @@ export function TrackSelectionOptions({
               label="All"
               active={allSubtitlesSelected}
               disabled={subtitlesDisabled}
-              onClick={() => onSubtitleChange(subtitleIndexes)}
+              onClick={() => changeAvailableSubtitles(availableSubtitleIndexes)}
             />
             <Shortcut
               label="None"
-              active={selection.subtitleStreamIndexes.length === 0}
+              active={selectedAvailableSubtitleIndexes.length === 0}
               disabled={subtitlesDisabled}
-              onClick={() => onSubtitleChange([])}
+              onClick={() => changeAvailableSubtitles([])}
             />
           </div>
-          {container !== "mkv" && subtitles.length > 0 && (
-            <p className="track-selection-notice">Selection retained. Subtitle copying is available with MKV.</p>
+          {container === "mp4" && availableSubtitles.length > 0 && (
+            <p className="track-selection-notice">
+              Text subtitle tracks will be converted to MP4 text.
+              {hasAssSubtitles && " ASS styling will be lost."}
+            </p>
+          )}
+          {imageSubtitleCount > 0 && (
+            <p className="track-selection-notice">
+              {imageSubtitleCount} image-based subtitle {imageSubtitleCount === 1 ? "track" : "tracks"} cannot be kept in MP4.
+            </p>
+          )}
+          {unsupportedSubtitleCount > 0 && (
+            <p className="track-selection-notice">
+              {unsupportedSubtitleCount} unsupported subtitle {unsupportedSubtitleCount === 1 ? "track" : "tracks"} cannot be kept in MP4.
+            </p>
           )}
           <div className="track-selection-list">
-            {subtitles.length > 0 ? subtitles.map((track, index) => (
-              <SubtitleTrackOption
-                key={track.index}
-                track={track}
-                index={index}
-                checked={selection.subtitleStreamIndexes.includes(track.index)}
-                disabled={subtitlesDisabled}
-                onChange={(checked) => changeSubtitleTrack(track.index, checked)}
-              />
-            )) : <p className="empty-track-copy">No subtitle tracks found.</p>}
+            {subtitles.length > 0 ? subtitles.map((track, index) => {
+              const available = container === "mkv" || canKeepSubtitleInMp4(track.codec);
+              return (
+                <SubtitleTrackOption
+                  key={track.index}
+                  track={track}
+                  index={index}
+                  container={container}
+                  checked={available && selection.subtitleStreamIndexes.includes(track.index)}
+                  disabled={subtitlesDisabled || !available}
+                  onChange={(checked) => changeSubtitleTrack(track.index, checked)}
+                />
+              );
+            }) : <p className="empty-track-copy">No subtitle tracks found.</p>}
           </div>
         </div>
       </div>
@@ -245,37 +289,60 @@ function AudioTrackOption({
 function SubtitleTrackOption({
   track,
   index,
+  container,
   checked,
   disabled,
   onChange,
 }: {
   track: SubtitleStream;
   index: number;
+  container: OutputContainer;
   checked: boolean;
   disabled: boolean;
   onChange: (checked: boolean) => void;
 }) {
   const language = languageLabel(track.language);
+  const name = subtitleTrackName(track, index);
+  const outputNote = subtitleOutputNote(track, container);
   return (
     <label className="track-selection-row compact-track-option">
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
-        aria-label={`Keep ${subtitleTrackName(track, index)}`}
+        aria-label={outputNote?.excluded ? `${name} cannot be kept in MP4` : `Keep ${name}`}
         onChange={(event) => onChange(event.target.checked)}
       />
       <span className="track-option-details">
         <span className="track-option-title">
-          <strong>{subtitleTrackName(track, index)}</strong>
+          <strong>{name}</strong>
           {language && <span>{language}</span>}
           {track.isDefault && <span>Default</span>}
           {track.isForced && <span>Forced</span>}
         </span>
-        <span className="track-option-facts">{codecLabel(track.codec)}</span>
+        <span className="track-option-facts">
+          {[codecLabel(track.codec), outputNote?.copy].filter(Boolean).join(" · ")}
+        </span>
       </span>
     </label>
   );
+}
+
+function subtitleOutputNote(
+  track: SubtitleStream,
+  container: OutputContainer,
+): { copy: string; excluded: boolean } | null {
+  if (container === "mkv") return null;
+  if (["ass", "ssa"].includes(track.codec.toLowerCase())) {
+    return { copy: "Converted to MP4 text; styling will be lost", excluded: false };
+  }
+  if (canKeepSubtitleInMp4(track.codec)) {
+    return { copy: "Converted to MP4 text", excluded: false };
+  }
+  if (isImageBasedSubtitle(track.codec)) {
+    return { copy: "Image-based; cannot be kept in MP4", excluded: true };
+  }
+  return { copy: "Unsupported in MP4", excluded: true };
 }
 
 function toggleIndex(
