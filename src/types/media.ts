@@ -105,6 +105,8 @@ export type MediaInfo = {
 export type EncodeProgress = {
   jobId: string;
   percent: number;
+  indeterminate: boolean;
+  elapsedSeconds: number;
   outTimeSeconds: number;
   speed: string | null;
   etaSeconds: number | null;

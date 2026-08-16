@@ -19,7 +19,9 @@ export function conversionActivity(items: EncodeQueueItem[]): ConversionActivity
     queuedCount: items.filter((item) => item.status === "queued").length,
     preparedCount: items.filter((item) => item.status === "ready").length,
     activeName: active?.media.name ?? null,
-    activePercent: active ? Math.round(active.progress.percent) : null,
+    activePercent: active && !active.progress.indeterminate
+      ? Math.round(active.progress.percent)
+      : null,
   };
 }
 

@@ -47,6 +47,8 @@ describe("queue helpers", () => {
     expect(emptyProgress("job-1")).toEqual({
       jobId: "job-1",
       percent: 0,
+      indeterminate: false,
+      elapsedSeconds: 0,
       outTimeSeconds: 0,
       speed: null,
       etaSeconds: null,

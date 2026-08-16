@@ -14,6 +14,8 @@ export function emptyProgress(jobId = ""): EncodeProgress {
   return {
     jobId,
     percent: 0,
+    indeterminate: false,
+    elapsedSeconds: 0,
     outTimeSeconds: 0,
     speed: null,
     etaSeconds: null,

@@ -62,7 +62,16 @@ describe("ConvertView", () => {
         canEdit={false}
         canResume={false}
         isPaused={false}
-        progress={{ jobId: "job-1", percent: 100, outTimeSeconds: 2, speed: null, etaSeconds: 0, frame: null }}
+        progress={{
+          jobId: "job-1",
+          percent: 100,
+          indeterminate: false,
+          elapsedSeconds: 2,
+          outTimeSeconds: 2,
+          speed: null,
+          etaSeconds: 0,
+          frame: null,
+        }}
         result={{ jobId: "job-1", status: "completed", outputPath: "/tmp/output.mp4", error: null, diagnostic: null }}
         error={null}
         onSelectVideo={noop}
