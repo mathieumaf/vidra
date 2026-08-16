@@ -68,6 +68,7 @@ function QueueProbe() {
       <p>{queue.error ?? "No queue error"}</p>
       <p>Restore offer: {queue.restoreOffer?.entries.length ?? 0}</p>
       <p>Quality: {queue.items[0]?.settings.quality ?? "none"}</p>
+      <p>Status: {queue.items[0]?.status ?? "none"}</p>
       <p>{queue.notice}</p>
       <button type="button" onClick={() => void queue.restorePendingQueue()}>
         Restore saved queue
@@ -217,7 +218,8 @@ describe("useEncodingQueue", () => {
 
     expect(tree.text()).toContain("1 in the queue: available.mov");
     expect(tree.text()).toContain("Could not restore “missing.mov”");
-    expect(tree.text()).toContain("source file is no longer available at the saved location");
+    expect(tree.text()).toContain(missing.media.path);
+    expect(tree.text()).toContain("source file could not be read from the saved location");
     expect(parsePendingQueue(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY))?.entries)
       .toHaveLength(1);
     tree.unmount();
@@ -235,6 +237,33 @@ describe("useEncodingQueue", () => {
 
     expect(tree.text()).toContain("0 in the queue: nothing");
     expect(tree.text()).toContain("Restore offer: 0");
+    expect(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY)).toBeNull();
+    tree.unmount();
+  });
+
+  it("removes a job from persistence before starting its process", async () => {
+    const ready = queueItemFixture();
+    rememberQueueItems([ready]);
+    dialogMocks.save.mockResolvedValue("/Users/casey/Movies/encoded.mp4");
+    encodingMocks.enqueueEncodes.mockResolvedValue([{
+      jobId: "job-1",
+      inputPath: ready.media.path,
+      outputPath: "/Users/casey/Movies/encoded.mp4",
+    }]);
+    encodingMocks.startEncodeQueue.mockImplementation(async () => {
+      expect(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY)).toBeNull();
+    });
+    const tree = mount(<QueueProbe />);
+
+    expect(parsePendingQueue(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY))?.entries)
+      .toHaveLength(1);
+    await act(async () => {
+      tree.button("Start encoding").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(encodingMocks.startEncodeQueue).toHaveBeenCalledOnce();
+    expect(tree.text()).toContain("Status: encoding");
     expect(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY)).toBeNull();
     tree.unmount();
   });

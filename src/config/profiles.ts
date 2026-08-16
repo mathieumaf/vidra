@@ -175,22 +175,26 @@ function isUserProfile(value: unknown): value is UserEncodingProfile {
 
 export function isEncodingSettings(value: unknown): value is EncodingSettings {
   if (!isRecord(value)) return false;
-  return validValues.quality.has(String(value.quality))
-    && validValues.container.has(String(value.container))
-    && validValues.videoCodec.has(String(value.videoCodec))
-    && validValues.encodingSpeed.has(String(value.encodingSpeed))
-    && validValues.audioMode.has(String(value.audioMode))
-    && validValues.outputResolution.has(String(value.outputResolution))
-    && validValues.outputFrameRate.has(String(value.outputFrameRate))
+  return isValidString(value.quality, validValues.quality)
+    && isValidString(value.container, validValues.container)
+    && isValidString(value.videoCodec, validValues.videoCodec)
+    && isValidString(value.encodingSpeed, validValues.encodingSpeed)
+    && isValidString(value.audioMode, validValues.audioMode)
+    && isValidString(value.outputResolution, validValues.outputResolution)
+    && isValidString(value.outputFrameRate, validValues.outputFrameRate)
     && Number.isInteger(value.qualityTuning)
     && Number(value.qualityTuning) >= -2
     && Number(value.qualityTuning) <= 2
-    && validValues.audioBitrate.has(String(value.audioBitrate))
-    && validValues.audioChannels.has(String(value.audioChannels))
-    && validValues.audioTrackMode.has(String(value.audioTrackMode))
+    && isValidString(value.audioBitrate, validValues.audioBitrate)
+    && isValidString(value.audioChannels, validValues.audioChannels)
+    && isValidString(value.audioTrackMode, validValues.audioTrackMode)
     && typeof value.preserveSubtitles === "boolean"
     && typeof value.preserveMetadata === "boolean"
     && typeof value.preserveChapters === "boolean";
+}
+
+function isValidString(value: unknown, validValues: ReadonlySet<string>): boolean {
+  return typeof value === "string" && validValues.has(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

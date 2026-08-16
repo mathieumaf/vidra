@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { BUILT_IN_PROFILES } from "../../config/profiles";
 import { mount } from "../../test/dom";
@@ -40,6 +41,15 @@ describe("PendingQueueRestoreOffer", () => {
     expect(tree.text()).toContain("holiday.mov");
     expect(tree.text()).toContain("interview.mkv");
     expect(tree.text()).toContain("Encoding will not start automatically");
+    expect(document.activeElement).toBe(tree.button("Restore queue"));
+
+    act(() => {
+      tree.button("Restore queue").dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        key: "Tab",
+      }));
+    });
+    expect(document.activeElement).toBe(tree.button("Start fresh"));
 
     tree.click("Restore queue");
     expect(onRestore).toHaveBeenCalledOnce();
@@ -60,6 +70,7 @@ describe("PendingQueueRestoreOffer", () => {
     );
 
     expect(tree.button("Restore queue").disabled).toBe(true);
+    expect(document.activeElement).toBe(tree.button("Start fresh"));
     expect(tree.text()).toContain("Waiting for the local encoding tools");
     tree.click("Start fresh");
     expect(onDiscard).toHaveBeenCalledOnce();

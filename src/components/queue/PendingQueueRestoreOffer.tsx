@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { PendingQueueSnapshot } from "../../lib/pendingQueue";
 import { Icon } from "../ui/Icon";
 
@@ -17,6 +18,30 @@ export function PendingQueueRestoreOffer({
   onDiscard,
 }: PendingQueueRestoreOfferProps) {
   const count = snapshot.entries.length;
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    function keepFocusInside(event: KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const buttons = [...(panelRef.current?.querySelectorAll<HTMLButtonElement>(
+        "button:not(:disabled)",
+      ) ?? [])];
+      if (buttons.length === 0) return;
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    const panel = panelRef.current;
+    panel?.addEventListener("keydown", keepFocusInside);
+    return () => panel?.removeEventListener("keydown", keepFocusInside);
+  }, []);
 
   return (
     <div className="pending-queue-restore-overlay">
@@ -25,6 +50,7 @@ export function PendingQueueRestoreOffer({
         aria-labelledby="pending-queue-restore-title"
         aria-modal="true"
         className="pending-queue-restore-panel"
+        ref={panelRef}
         role="dialog"
       >
         <div className="pending-queue-restore-heading">
@@ -59,6 +85,7 @@ export function PendingQueueRestoreOffer({
 
         <div className="pending-queue-restore-actions">
           <button
+            autoFocus={!canRestore}
             className="secondary-button"
             type="button"
             onClick={onDiscard}
@@ -67,7 +94,7 @@ export function PendingQueueRestoreOffer({
             Start fresh
           </button>
           <button
-            autoFocus
+            autoFocus={canRestore}
             className="primary-button"
             type="button"
             onClick={onRestore}

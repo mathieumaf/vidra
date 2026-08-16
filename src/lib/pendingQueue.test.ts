@@ -63,5 +63,14 @@ describe("pending queue persistence", () => {
       version: 1,
       entries: [{ sourcePath: "/tmp/missing.mov", sourceName: "missing.mov" }],
     }))).toBeNull();
+
+    const validEntry = pendingQueueEntries([queueItemFixture()])[0];
+    expect(parsePendingQueue(JSON.stringify({
+      version: 1,
+      entries: [{
+        ...validEntry,
+        settings: { ...validEntry.settings, outputFrameRate: 30 },
+      }],
+    }))).toBeNull();
   });
 });

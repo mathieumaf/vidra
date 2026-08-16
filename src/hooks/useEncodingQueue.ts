@@ -425,6 +425,7 @@ export function useEncodingQueue({
       allowInsufficientDiskSpace: false,
     }));
 
+    let startingJobId: string | null = null;
     try {
       let queued: QueuedEncode[];
       try {
@@ -446,22 +447,35 @@ export function useEncodingQueue({
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),
       );
-      setItems((current) => current.map((item) => {
+      const startingClientId = shouldStartQueue ? readyItems[0]?.clientId : null;
+      startingJobId = shouldStartQueue ? queued[0]?.jobId ?? null : null;
+      const markQueued = (current: EncodeQueueItem[]): EncodeQueueItem[] => current.map((item) => {
         const job = jobsByClientId.get(item.clientId);
         return job
           ? {
               ...item,
               jobId: job.jobId,
               outputPath: job.outputPath,
-              status: "queued",
+              status: item.clientId === startingClientId ? "encoding" : "queued",
               progress: emptyProgress(job.jobId),
             }
           : item;
-      }));
+      });
+      setItems(markQueued);
+      // Exclude the job that is about to start before asking Rust to launch it,
+      // so a process crash cannot leave interrupted work in the saved queue.
+      savePendingQueue(markQueued(items));
       setSelectedClientId(null);
       if (shouldStartQueue) await startEncodeQueue();
       return queued.length;
     } catch (encodeError) {
+      if (startingJobId) {
+        setItems((current) => current.map((item) => (
+          item.jobId === startingJobId && item.status === "encoding"
+            ? { ...item, status: "queued" }
+            : item
+        )));
+      }
       setError(errorMessage(encodeError));
       return 0;
     }
@@ -663,10 +677,12 @@ function restoreNotice(restoredCount: number, droppedEntries: PendingQueueEntry[
     return `Restored ${restored} with saved settings. Choose where to save ${restoredCount === 1 ? "it" : "them"} when you start encoding.`;
   }
 
-  const names = droppedEntries.map((entry) => `“${entry.sourceName}”`).join(", ");
+  const names = droppedEntries
+    .map((entry) => `“${entry.sourceName}” (${entry.sourcePath})`)
+    .join(", ");
   const unavailable = droppedEntries.length === 1
-    ? `Could not restore ${names} because its source file is no longer available at the saved location.`
-    : `Could not restore ${names} because their source files are no longer available at the saved locations.`;
+    ? `Could not restore ${names} because its source file could not be read from the saved location.`
+    : `Could not restore ${names} because their source files could not be read from the saved locations.`;
   return restoredCount > 0
     ? `Restored ${restored} with saved settings. ${unavailable}`
     : unavailable;
