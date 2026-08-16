@@ -1,6 +1,4 @@
-use super::{
-    AudioChannels, AudioMode, EncodeRequest, MediaInfo, OutputFrameRate, QualityLevel, VideoCodec,
-};
+use super::{AudioMode, EncodeRequest, MediaInfo, QualityLevel, VideoCodec};
 use crate::error::{ApiError, ApiResult};
 use std::{
     collections::HashMap,
