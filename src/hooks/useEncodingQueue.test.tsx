@@ -5,11 +5,21 @@ import { useEncodingQueue } from "./useEncodingQueue";
 import { DEFAULT_ADVANCED_SETTINGS } from "../config/advanced";
 import { QUALITY_LEVELS } from "../config/quality";
 import {
+  PENDING_QUEUE_STORAGE_KEY,
+  parsePendingQueue,
+  pendingQueueEntries,
+  serializePendingQueue,
+} from "../lib/pendingQueue";
+import {
   clearQueueSession,
   rememberedQueueItems,
   rememberQueueItems,
 } from "../lib/queueSession";
-import { encodingItemFixture, queueItemFixture } from "../test/fixtures";
+import {
+  encodingItemFixture,
+  mediaFixture,
+  queueItemFixture,
+} from "../test/fixtures";
 import { mount } from "../test/dom";
 
 const dialogMocks = vi.hoisted(() => ({
@@ -56,6 +66,13 @@ function QueueProbe() {
         {" · "}{queue.items[0]?.status ?? "empty"}
       </p>
       <p>{queue.error ?? "No queue error"}</p>
+      <p>Restore offer: {queue.restoreOffer?.entries.length ?? 0}</p>
+      <p>Quality: {queue.items[0]?.settings.quality ?? "none"}</p>
+      <p>{queue.notice}</p>
+      <button type="button" onClick={() => void queue.restorePendingQueue()}>
+        Restore saved queue
+      </button>
+      <button type="button" onClick={queue.discardPendingQueue}>Discard saved queue</button>
       <button type="button" onClick={() => void queue.startEncoding()}>Start encoding</button>
       <button type="button" onClick={queue.reset}>Clear the queue</button>
     </div>
@@ -69,6 +86,8 @@ beforeEach(() => {
 
 afterEach(() => {
   clearQueueSession();
+  localStorage.clear();
+  vi.clearAllMocks();
 });
 
 describe("useEncodingQueue", () => {
@@ -143,6 +162,80 @@ describe("useEncodingQueue", () => {
     );
     expect(encodingMocks.startEncodeQueue).toHaveBeenCalledOnce();
     expect(tree.text()).toContain("queued");
+    tree.unmount();
+  });
+
+  it("offers persisted work on launch and restores it only after confirmation", async () => {
+    const saved = queueItemFixture({
+      settings: {
+        ...queueItemFixture().settings,
+        quality: "high-quality",
+        videoCodec: "h265",
+      },
+    });
+    localStorage.setItem(
+      PENDING_QUEUE_STORAGE_KEY,
+      serializePendingQueue(pendingQueueEntries([saved])),
+    );
+    encodingMocks.probeMedia.mockResolvedValue(saved.media);
+
+    const tree = mount(<QueueProbe />);
+
+    expect(tree.text()).toContain("0 in the queue: nothing");
+    expect(tree.text()).toContain("Restore offer: 1");
+    expect(encodingMocks.probeMedia).not.toHaveBeenCalled();
+
+    await act(async () => {
+      tree.button("Restore saved queue").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(tree.text()).toContain("1 in the queue: clip.mov");
+    expect(tree.text()).toContain("Restore offer: 0");
+    expect(tree.text()).toContain("Quality: high-quality");
+    expect(tree.text()).toContain("Restored 1 video with saved settings");
+    tree.unmount();
+  });
+
+  it("drops unavailable sources and explains each missing entry", async () => {
+    const available = queueItemFixture({ media: mediaFixture("available.mov") });
+    const missing = queueItemFixture({ media: mediaFixture("missing.mov") });
+    localStorage.setItem(
+      PENDING_QUEUE_STORAGE_KEY,
+      serializePendingQueue(pendingQueueEntries([available, missing])),
+    );
+    encodingMocks.probeMedia.mockImplementation(async (path: string) => {
+      if (path.endsWith("missing.mov")) throw new Error("Path does not exist");
+      return available.media;
+    });
+
+    const tree = mount(<QueueProbe />);
+    await act(async () => {
+      tree.button("Restore saved queue").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(tree.text()).toContain("1 in the queue: available.mov");
+    expect(tree.text()).toContain("Could not restore “missing.mov”");
+    expect(tree.text()).toContain("source file is no longer available at the saved location");
+    expect(parsePendingQueue(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY))?.entries)
+      .toHaveLength(1);
+    tree.unmount();
+  });
+
+  it("discards saved work without adding it to the live queue", () => {
+    const saved = queueItemFixture();
+    localStorage.setItem(
+      PENDING_QUEUE_STORAGE_KEY,
+      serializePendingQueue(pendingQueueEntries([saved])),
+    );
+    const tree = mount(<QueueProbe />);
+
+    tree.click("Discard saved queue");
+
+    expect(tree.text()).toContain("0 in the queue: nothing");
+    expect(tree.text()).toContain("Restore offer: 0");
+    expect(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY)).toBeNull();
     tree.unmount();
   });
 });

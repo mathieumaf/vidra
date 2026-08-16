@@ -173,7 +173,7 @@ function isUserProfile(value: unknown): value is UserEncodingProfile {
     && isEncodingSettings(value.settings);
 }
 
-function isEncodingSettings(value: unknown): value is EncodingSettings {
+export function isEncodingSettings(value: unknown): value is EncodingSettings {
   if (!isRecord(value)) return false;
   return validValues.quality.has(String(value.quality))
     && validValues.container.has(String(value.container))

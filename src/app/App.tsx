@@ -3,6 +3,7 @@ import { ConvertView } from "../components/convert/ConvertView";
 import { AppErrorBoundary } from "../components/error/AppErrorBoundary";
 import { FailureState } from "../components/error/FailureState";
 import { RuntimeFailureNotice } from "../components/error/RuntimeFailureNotice";
+import { PendingQueueRestoreOffer } from "../components/queue/PendingQueueRestoreOffer";
 import { UpdateAvailableNotice } from "../components/update/UpdateAvailableNotice";
 import { DragRegion } from "../components/layout/DragRegion";
 import { Sidebar } from "../components/layout/Sidebar";
@@ -50,6 +51,7 @@ import "../styles/conversion.css";
 import "../styles/views.css";
 import "../styles/failure.css";
 import "../styles/update.css";
+import "../styles/restore.css";
 
 export default function App() {
   const applicationInfo = useApplicationInfo();
@@ -126,6 +128,11 @@ export default function App() {
   async function startEncoding() {
     const queued = await queue.startEncoding();
     if (queued > 1 || queue.hasActiveJobs) setView("queue");
+  }
+
+  async function restorePendingQueue() {
+    await queue.restorePendingQueue();
+    setView("queue");
   }
 
   async function newConversion() {
@@ -524,6 +531,16 @@ export default function App() {
         <div className="file-drop-overlay" aria-hidden="true">
           <div><Icon name="plus" /><strong>Add videos to the batch</strong></div>
         </div>
+      )}
+
+      {queue.restoreOffer && (
+        <PendingQueueRestoreOffer
+          snapshot={queue.restoreOffer}
+          canRestore={isReady}
+          isRestoring={queue.isRestoring}
+          onRestore={() => void restorePendingQueue()}
+          onDiscard={queue.discardPendingQueue}
+        />
       )}
 
       {runtimeFailure.failure && (

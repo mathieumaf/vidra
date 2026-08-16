@@ -19,6 +19,13 @@ import {
   normalizedTrackSelection,
   TERMINAL_JOB_STATUSES,
 } from "../lib/queue";
+import {
+  clearPendingQueue,
+  loadPendingQueue,
+  savePendingQueue,
+  type PendingQueueEntry,
+  type PendingQueueSnapshot,
+} from "../lib/pendingQueue";
 import { rememberedQueueItems, rememberQueueItems } from "../lib/queueSession";
 import {
   cancelEncode,
@@ -96,6 +103,10 @@ export function useEncodingQueue({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [restoreOffer, setRestoreOffer] = useState<PendingQueueSnapshot | null>(() => (
+    rememberedQueueItems().length === 0 ? loadPendingQueue() : null
+  ));
+  const [isRestoring, setIsRestoring] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const defaultSettingsRef = useRef<EncodingSettings>({
     quality: quality.id,
@@ -129,7 +140,8 @@ export function useEncodingQueue({
 
   useEffect(() => {
     rememberQueueItems(items);
-  }, [items]);
+    if (!restoreOffer) savePendingQueue(items);
+  }, [items, restoreOffer]);
 
   useEffect(() => {
     const subscriptions = Promise.all([
@@ -285,6 +297,45 @@ export function useEncodingQueue({
     } finally {
       setIsProbing(false);
     }
+  }
+
+  async function restorePendingQueue(): Promise<number> {
+    if (!restoreOffer || !isReady || isRestoring) return 0;
+    const entries = restoreOffer.entries;
+    setIsRestoring(true);
+    setError(null);
+    setResult(null);
+    try {
+      const probes = await Promise.allSettled(entries.map((entry) => probeMedia(entry.sourcePath)));
+      const restoredItems = probes.flatMap((probe, index) => {
+        if (probe.status !== "fulfilled") return [];
+        const entry = entries[index];
+        return [{
+          ...createQueueItem(probe.value, entry.settings),
+          trackSelection: normalizedTrackSelection(probe.value, entry.trackSelection),
+        }];
+      });
+      const droppedEntries = entries.filter((_, index) => probes[index].status === "rejected");
+
+      setItems((currentItems) => {
+        const base = currentItems.every((item) => TERMINAL_JOB_STATUSES.has(item.status))
+          ? []
+          : currentItems;
+        return [...base, ...restoredItems];
+      });
+      if (restoredItems.length > 0) setSelectedClientId(restoredItems[0].clientId);
+      setNotice(restoreNotice(restoredItems.length, droppedEntries));
+      clearPendingQueue();
+      setRestoreOffer(null);
+      return restoredItems.length;
+    } finally {
+      setIsRestoring(false);
+    }
+  }
+
+  function discardPendingQueue() {
+    clearPendingQueue();
+    setRestoreOffer(null);
   }
 
   async function startEncoding(): Promise<number> {
@@ -584,10 +635,14 @@ export function useEncodingQueue({
     queueCount,
     isProbing,
     isDraggingFiles,
+    restoreOffer,
+    isRestoring,
     result,
     error,
     notice,
     selectVideos,
+    restorePendingQueue,
+    discardPendingQueue,
     startEncoding,
     revealOutput,
     removeOrCancel,
@@ -600,4 +655,19 @@ export function useEncodingQueue({
     reset,
     setError,
   };
+}
+
+function restoreNotice(restoredCount: number, droppedEntries: PendingQueueEntry[]): string {
+  const restored = restoredCount === 1 ? "1 video" : `${restoredCount} videos`;
+  if (droppedEntries.length === 0) {
+    return `Restored ${restored} with saved settings. Choose where to save ${restoredCount === 1 ? "it" : "them"} when you start encoding.`;
+  }
+
+  const names = droppedEntries.map((entry) => `“${entry.sourceName}”`).join(", ");
+  const unavailable = droppedEntries.length === 1
+    ? `Could not restore ${names} because its source file is no longer available at the saved location.`
+    : `Could not restore ${names} because their source files are no longer available at the saved locations.`;
+  return restoredCount > 0
+    ? `Restored ${restored} with saved settings. ${unavailable}`
+    : unavailable;
 }
