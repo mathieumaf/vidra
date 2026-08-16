@@ -66,7 +66,7 @@ fn validate_subtitle_streams(streams: &[SubtitleStream], indexes: &[u32]) -> Api
     Ok(())
 }
 
-fn mapping_arguments(request: &EncodeRequest) -> Vec<String> {
+fn mapping_arguments(request: &EncodeRequest, subtitles: &[SubtitleStream]) -> Vec<String> {
     let mut arguments = vec!["-map".to_owned(), "0:v:0?".to_owned()];
     if request.audio_mode != AudioMode::None {
         for index in &request.audio_stream_indexes {
@@ -79,15 +79,38 @@ fn mapping_arguments(request: &EncodeRequest) -> Vec<String> {
         "-map_chapters".to_owned(),
         if request.preserve_chapters { "0" } else { "-1" }.to_owned(),
     ]);
-    if request.container == OutputContainer::Mkv && request.preserve_subtitles {
-        for index in &request.subtitle_stream_indexes {
+    if request.preserve_subtitles {
+        let subtitle_indexes = request
+            .subtitle_stream_indexes
+            .iter()
+            .filter(|index| {
+                request.container == OutputContainer::Mkv
+                    || subtitles.iter().any(|stream| {
+                        stream.index == **index && is_mp4_text_subtitle(&stream.codec)
+                    })
+            })
+            .collect::<Vec<_>>();
+        for index in &subtitle_indexes {
             arguments.extend(["-map".to_owned(), format!("0:{index}")]);
         }
-        if !request.subtitle_stream_indexes.is_empty() {
-            arguments.extend(["-c:s".to_owned(), "copy".to_owned()]);
+        if !subtitle_indexes.is_empty() {
+            arguments.extend([
+                "-c:s".to_owned(),
+                match request.container {
+                    OutputContainer::Mp4 => "mov_text",
+                    OutputContainer::Mkv => "copy",
+                }
+                .to_owned(),
+            ]);
         }
     }
     arguments
+}
+
+fn is_mp4_text_subtitle(codec: &str) -> bool {
+    ["subrip", "ass", "ssa", "mov_text"]
+        .iter()
+        .any(|candidate| codec.eq_ignore_ascii_case(candidate))
 }
 
 pub(super) fn build_command(
@@ -118,7 +141,7 @@ pub(super) fn build_command(
 fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
     let request = &job.request;
     let audio_streams = selected_audio_streams(&job.media.audio, &request.audio_stream_indexes)?;
-    let mut arguments = mapping_arguments(request);
+    let mut arguments = mapping_arguments(request, &job.media.subtitles);
     arguments.extend(video_arguments(request, job.media.video.as_ref())?);
     arguments.extend(audio_arguments(
         &audio_streams,
@@ -230,7 +253,8 @@ mod tests {
         request.subtitle_stream_indexes = vec![4];
         request.preserve_metadata = false;
         request.preserve_chapters = false;
-        let arguments = mapping_arguments(&request);
+        let subtitles = vec![subtitle(3, "subrip"), subtitle(4, "hdmv_pgs_subtitle")];
+        let arguments = mapping_arguments(&request, &subtitles);
 
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:2"]));
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
@@ -244,14 +268,50 @@ mod tests {
             .any(|pair| pair == ["-map_chapters", "-1"]));
 
         request.container = OutputContainer::Mp4;
-        assert!(!mapping_arguments(&request)
+        assert!(!mapping_arguments(&request, &subtitles)
             .iter()
             .any(|argument| argument == "0:4"));
 
         request.audio_mode = AudioMode::None;
-        assert!(!mapping_arguments(&request)
+        assert!(!mapping_arguments(&request, &subtitles)
             .iter()
             .any(|argument| argument == "0:2"));
+    }
+
+    #[test]
+    fn mp4_converts_text_subtitles_and_excludes_image_subtitles() {
+        let mut request = request(OutputContainer::Mp4);
+        request.subtitle_stream_indexes = vec![3, 4, 5, 6];
+        let subtitles = vec![
+            subtitle(3, "subrip"),
+            subtitle(4, "ass"),
+            subtitle(5, "hdmv_pgs_subtitle"),
+            subtitle(6, "dvd_subtitle"),
+        ];
+
+        let arguments = mapping_arguments(&request, &subtitles);
+
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:3"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
+        assert!(!arguments.iter().any(|argument| argument == "0:5"));
+        assert!(!arguments.iter().any(|argument| argument == "0:6"));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c:s", "mov_text"]));
+    }
+
+    #[test]
+    fn mkv_copies_text_and_image_subtitles() {
+        let mut request = request(OutputContainer::Mkv);
+        request.subtitle_stream_indexes = vec![3, 4];
+        let subtitles = vec![subtitle(3, "ass"), subtitle(4, "hdmv_pgs_subtitle")];
+
+        let arguments = mapping_arguments(&request, &subtitles);
+
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:3"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:s", "copy"]));
+        assert!(!arguments.iter().any(|argument| argument == "mov_text"));
     }
 
     #[test]
@@ -316,5 +376,16 @@ mod tests {
         assert!(validate_subtitle_streams(&subtitles, &[2]).is_ok());
         assert!(validate_subtitle_streams(&subtitles, &[2, 2]).is_err());
         assert!(validate_subtitle_streams(&subtitles, &[3]).is_err());
+    }
+
+    fn subtitle(index: u32, codec: &str) -> SubtitleStream {
+        SubtitleStream {
+            index,
+            codec: codec.to_owned(),
+            language: None,
+            title: None,
+            is_default: false,
+            is_forced: false,
+        }
     }
 }

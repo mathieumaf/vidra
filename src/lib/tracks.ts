@@ -12,6 +12,19 @@ export function subtitleTrackName(track: SubtitleStream, index: number): string 
   return track.title ? `Subtitle ${index + 1} · ${track.title}` : `Subtitle ${index + 1}`;
 }
 
+export function canKeepSubtitleInMp4(codec: string): boolean {
+  return ["subrip", "ass", "ssa", "mov_text"].includes(codec.toLowerCase());
+}
+
+export function isImageBasedSubtitle(codec: string): boolean {
+  return [
+    "dvb_subtitle",
+    "dvd_subtitle",
+    "hdmv_pgs_subtitle",
+    "xsub",
+  ].includes(codec.toLowerCase());
+}
+
 export function codecLabel(codec: string): string {
   return codec === "unknown" ? "Unknown codec" : codec.toUpperCase();
 }
@@ -37,8 +50,11 @@ export function queueTrackSummary(item: EncodeQueueItem): string {
     : item.media.audio.filter((track) => (
       item.trackSelection.audioStreamIndexes.includes(track.index)
     ));
-  const selectedSubtitles = item.settings.container === "mkv" && item.settings.preserveSubtitles
-    ? item.media.subtitles.filter((track) => (
+  const availableSubtitles = item.media.subtitles.filter((track) => (
+    item.settings.container === "mkv" || canKeepSubtitleInMp4(track.codec)
+  ));
+  const selectedSubtitles = item.settings.preserveSubtitles
+    ? availableSubtitles.filter((track) => (
       item.trackSelection.subtitleStreamIndexes.includes(track.index)
     ))
     : [];
@@ -48,9 +64,13 @@ export function queueTrackSummary(item: EncodeQueueItem): string {
     : selectionSummary("Audio", selectedAudio, item.media.audio.length);
   const subtitles = item.media.subtitles.length === 0
     ? "No subtitles"
-    : item.settings.container !== "mkv"
-      ? "Subtitles off in MP4"
-      : selectionSummary("Subtitles", selectedSubtitles, item.media.subtitles.length);
+    : availableSubtitles.length === 0
+      ? "No MP4-compatible subtitles"
+      : `${selectionSummary("Subtitles", selectedSubtitles, availableSubtitles.length)}${
+        availableSubtitles.length < item.media.subtitles.length
+          ? ` · ${item.media.subtitles.length - availableSubtitles.length} unavailable in MP4`
+          : ""
+      }`;
   return `${audio} · ${subtitles}`;
 }
 
