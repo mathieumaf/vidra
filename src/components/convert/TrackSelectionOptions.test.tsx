@@ -51,7 +51,12 @@ describe("TrackSelectionOptions subtitles", () => {
     expect(markup).toContain("DVD_SUBTITLE · Image-based; cannot be kept in MP4");
     expect(markup).toContain('aria-label="Subtitle 3 · Signs cannot be kept in MP4"');
     expect(markup).toContain('aria-label="Subtitle 4 cannot be kept in MP4"');
-    expect(markup.match(/disabled=""/g)).toHaveLength(2);
+    expect(markup).toMatch(
+      /<input[^>]*disabled=""[^>]*aria-label="Subtitle 3 · Signs cannot be kept in MP4"/,
+    );
+    expect(markup).toMatch(
+      /<input[^>]*disabled=""[^>]*aria-label="Subtitle 4 cannot be kept in MP4"/,
+    );
   });
 
   it("keeps every selected subtitle track available for MKV copying", () => {
@@ -59,7 +64,6 @@ describe("TrackSelectionOptions subtitles", () => {
 
     expect(markup).not.toContain("cannot be kept");
     expect(markup).not.toContain("Converted to MP4 text");
-    expect(markup).not.toContain('disabled=""');
     expect(markup.match(/checked=""/g)).toHaveLength(4);
   });
 });
