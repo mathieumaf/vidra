@@ -2,6 +2,22 @@
 
 All notable changes to Vidra are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Estimate how much destination space a conversion needs, warn before queuing when a volume may not have enough room, and let the user proceed anyway.
+- Offer to restore or discard the waiting queue after a restart, keep the saved conversion settings, and explain sources that can no longer be read, without starting encoding.
+
+### Changed
+
+- Keep compatible text subtitle tracks in MP4 output by converting them to MP4 text, warn when ASS styling will be lost, and exclude image-based subtitle tracks from MP4.
+- Show animated activity with elapsed time, processed time, and frame count when the source duration is unknown, instead of a percentage or ETA.
+
+### Fixed
+
+- Build the macOS app bundle in release workflows so signed updater archives and `latest.json` are published with each release.
+
 ## 0.1.0-beta.4 - 2026-08-14
 
 ### Added
