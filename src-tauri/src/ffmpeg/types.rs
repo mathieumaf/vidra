@@ -320,6 +320,8 @@ pub struct EncodeRequest {
 pub struct EncodeProgress {
     pub job_id: String,
     pub percent: f64,
+    pub indeterminate: bool,
+    pub elapsed_seconds: f64,
     pub out_time_seconds: f64,
     pub speed: Option<String>,
     pub eta_seconds: Option<f64>,

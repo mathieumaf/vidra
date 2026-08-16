@@ -23,6 +23,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(31, 113, 77,
 .section-label { margin-bottom: 3px; color: #7d8781; font-size: var(--text-caption); font-weight: 760; letter-spacing: 0.1em; }
 .progress-track { height: 5px; margin: 9px 0 6px; overflow: hidden; border-radius: 8px; background: #dfe8e1; }
 .progress-value { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2b8b60, #45ae79); transition: width 250ms ease; }
+.progress-value.indeterminate { width: 35%; animation: progress-indeterminate 1.2s ease-in-out infinite; transition: none; }
+.progress-value.indeterminate.paused { animation-play-state: paused; }
+
+@keyframes progress-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(385%); }
+}
 
 .primary-button, .secondary-button { min-height: 38px; padding: 0 14px; border-radius: var(--radius-small); font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; }
 .primary-button { display: flex; align-items: center; gap: 15px; border: 0; color: #fff; background: var(--green); box-shadow: 0 5px 13px rgba(31, 113, 77, 0.18); }
@@ -35,5 +42,5 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(31, 113, 77,
 .text-button.danger { color: #a6463d; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }

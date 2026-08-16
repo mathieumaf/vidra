@@ -5,7 +5,7 @@ import {
   type AdvancedEncodingSettings,
 } from "../../config/advanced";
 import type { EncodingProfile } from "../../config/profiles";
-import { formatDuration, formatEta } from "../../lib/format";
+import { formatDuration, formatEta, formatFrameCount } from "../../lib/format";
 import { colorConversionNotice, type ColorConversionNotice } from "../../lib/color";
 import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
 import type {
@@ -363,18 +363,52 @@ function ColorConversionMessage({
 }
 
 function EncodingProgress({ progress, isPaused }: { progress: EncodeProgress; isPaused: boolean }) {
+  const frameCount = progress.frame === null ? null : formatFrameCount(progress.frame);
+
   return (
     <section className="progress-panel">
       <div className="progress-heading">
         <span>{isPaused ? "Encoding paused" : "Encoding video"}</span>
-        <strong>{Math.round(progress.percent)}%</strong>
+        <strong>
+          {progress.indeterminate
+            ? isPaused ? "Paused" : "Working…"
+            : `${Math.round(progress.percent)}%`}
+        </strong>
       </div>
-      <div className="progress-track">
-        <div className="progress-value" style={{ width: `${progress.percent}%` }} />
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-label="Encoding progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress.indeterminate ? undefined : Math.round(progress.percent)}
+        aria-valuetext={progress.indeterminate
+          ? `${formatDuration(progress.outTimeSeconds)} processed`
+          : undefined}
+      >
+        <div
+          className={`progress-value${progress.indeterminate ? " indeterminate" : ""}${isPaused ? " paused" : ""}`}
+          style={progress.indeterminate ? undefined : { width: `${progress.percent}%` }}
+        />
       </div>
       <div className="progress-meta">
-        <span>{formatDuration(progress.outTimeSeconds)} processed</span>
-        <span>{isPaused ? "Paused" : <>{progress.speed ? `${progress.speed} · ` : ""}{formatEta(progress.etaSeconds)}</>}</span>
+        {progress.indeterminate ? (
+          <>
+            <span>
+              {formatDuration(progress.outTimeSeconds)} processed
+              {frameCount ? ` · ${frameCount}` : ""}
+            </span>
+            <span>
+              {formatDuration(progress.elapsedSeconds)} elapsed
+              {!isPaused && progress.speed ? ` · ${progress.speed}` : ""}
+            </span>
+          </>
+        ) : (
+          <>
+            <span>{formatDuration(progress.outTimeSeconds)} processed</span>
+            <span>{isPaused ? "Paused" : <>{progress.speed ? `${progress.speed} · ` : ""}{formatEta(progress.etaSeconds)}</>}</span>
+          </>
+        )}
       </div>
     </section>
   );

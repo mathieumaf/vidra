@@ -3,7 +3,7 @@ import { qualityLevel } from "../../config/quality";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
 import { outputFrameRateLabel } from "../../config/advanced";
-import { formatEta, outputFileName } from "../../lib/format";
+import { formatDuration, formatEta, formatFrameCount, outputFileName } from "../../lib/format";
 import { colorConversionNotice } from "../../lib/color";
 import { queueTrackSummary } from "../../lib/tracks";
 import { Icon } from "../ui/Icon";
@@ -158,6 +158,14 @@ export function QueueView({
           const destinationName = item.outputPath && DESTINATION_STATUSES.has(item.status)
             ? outputFileName(item.outputPath)
             : null;
+          const indeterminateSummary = item.progress.indeterminate
+            ? [
+                item.status === "paused" ? "Paused" : "Working…",
+                `${formatDuration(item.progress.elapsedSeconds)} elapsed`,
+                `${formatDuration(item.progress.outTimeSeconds)} processed`,
+                item.progress.frame === null ? null : formatFrameCount(item.progress.frame),
+              ].filter(Boolean).join(" · ")
+            : null;
 
           return (
             <section className={`queue-row ${item.status}`} key={item.clientId}>
@@ -187,14 +195,27 @@ export function QueueView({
                 )}
                 {isCurrent && (
                   <p>
-                    {item.status === "paused"
+                    {indeterminateSummary ?? (item.status === "paused"
                       ? `${Math.round(item.progress.percent)}% · Paused`
-                      : `${Math.round(item.progress.percent)}% · ${item.progress.speed ?? "Starting"} · ${formatEta(item.progress.etaSeconds)}`}
+                      : `${Math.round(item.progress.percent)}% · ${item.progress.speed ?? "Starting"} · ${formatEta(item.progress.etaSeconds)}`)}
                   </p>
                 )}
                 {isCurrent && (
-                  <div className="progress-track">
-                    <div className="progress-value" style={{ width: `${item.progress.percent}%` }} />
+                  <div
+                    className="progress-track"
+                    role="progressbar"
+                    aria-label={`Encoding progress for ${item.media.name}`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={item.progress.indeterminate ? undefined : Math.round(item.progress.percent)}
+                    aria-valuetext={item.progress.indeterminate
+                      ? `${formatDuration(item.progress.outTimeSeconds)} processed`
+                      : undefined}
+                  >
+                    <div
+                      className={`progress-value${item.progress.indeterminate ? " indeterminate" : ""}${item.status === "paused" ? " paused" : ""}`}
+                      style={item.progress.indeterminate ? undefined : { width: `${item.progress.percent}%` }}
+                    />
                   </div>
                 )}
                 {item.status === "failed" && item.error && <p className="queue-error">{item.error}</p>}

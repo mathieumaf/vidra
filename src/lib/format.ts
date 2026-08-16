@@ -22,6 +22,11 @@ export function formatDuration(seconds: number): string {
     : `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
+export function formatFrameCount(frames: number): string {
+  const count = Math.max(0, Math.floor(frames));
+  return `${count.toLocaleString()} ${count === 1 ? "frame" : "frames"}`;
+}
+
 export function formatEta(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return "Estimating…";
   if (seconds <= 5) return "Finishing…";
