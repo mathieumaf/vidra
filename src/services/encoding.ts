@@ -30,6 +30,7 @@ export type EncodeRequest = {
   preserveMetadata: boolean;
   preserveChapters: boolean;
   replaceExisting: boolean;
+  allowInsufficientDiskSpace: boolean;
 };
 
 export function getFfmpegStatus(): Promise<FfmpegStatus> {

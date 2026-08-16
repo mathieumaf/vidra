@@ -34,6 +34,7 @@ fn pending(id: &str) -> PendingJob {
             preserve_metadata: true,
             preserve_chapters: true,
             replace_existing: false,
+            allow_insufficient_disk_space: false,
         },
         media: MediaInfo {
             path: format!("/{id}.mov"),

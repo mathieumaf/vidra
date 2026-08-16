@@ -1,6 +1,6 @@
 use super::{
-    encode, probe, progress::ProgressParser, validate_input, validate_output, EncodeFinished,
-    EncodePauseChanged, EncodeRequest, EncodeStarted, ExistingOutput, QueuedEncode,
+    disk_space, encode, probe, progress::ProgressParser, validate_input, validate_output,
+    EncodeFinished, EncodePauseChanged, EncodeRequest, EncodeStarted, ExistingOutput, QueuedEncode,
 };
 use crate::{
     diagnostics::{failure_report, BoundedLog, DiagnosticReport},
@@ -50,6 +50,8 @@ pub async fn enqueue(
         request.output_path = output.to_string_lossy().into_owned();
         prepared.push((request, media));
     }
+
+    disk_space::ensure_available(&prepared)?;
 
     let queued = prepared
         .into_iter()

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import type { QualityLevel } from "../config/quality";
 import { outputContainer as getOutputContainer } from "../config/encoding";
 import { resolutionReducesVideo } from "../config/resolution";
@@ -40,12 +40,21 @@ import type {
   EncodeStarted,
   OutputContainer,
   OutputResolution,
+  QueuedEncode,
   TrackSelection,
   VideoCodec,
 } from "../types/media";
 
 const supportedExtensions = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts"]);
 const WORKING_JOB_STATUSES = new Set(["queued", "encoding", "paused"]);
+const INSUFFICIENT_DISK_SPACE = "insufficient_disk_space";
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return error !== null
+    && typeof error === "object"
+    && "code" in error
+    && (error as { code?: unknown }).code === code;
+}
 
 function promoteWorkingItem(items: EncodeQueueItem[], clientId: string): EncodeQueueItem[] {
   const index = items.findIndex((item) => item.clientId === clientId);
@@ -342,28 +351,47 @@ export function useEncodingQueue({
       }
     }
 
+    const requests = readyItems.map((item, index) => ({
+      inputPath: item.media.path,
+      outputPath: outputPaths[index],
+      quality: item.settings.quality,
+      container: item.settings.container,
+      videoCodec: item.settings.videoCodec,
+      encodingSpeed: item.settings.encodingSpeed,
+      audioMode: item.settings.audioMode,
+      outputResolution: item.settings.outputResolution,
+      outputFrameRate: item.settings.outputFrameRate,
+      qualityTuning: item.settings.qualityTuning,
+      audioBitrate: item.settings.audioBitrate,
+      audioChannels: item.settings.audioChannels,
+      audioTrackMode: item.settings.audioTrackMode,
+      audioStreamIndexes: item.trackSelection.audioStreamIndexes,
+      subtitleStreamIndexes: item.trackSelection.subtitleStreamIndexes,
+      preserveSubtitles: item.settings.preserveSubtitles,
+      preserveMetadata: item.settings.preserveMetadata,
+      preserveChapters: item.settings.preserveChapters,
+      replaceExisting,
+      allowInsufficientDiskSpace: false,
+    }));
+
     try {
-      const queued = await enqueueEncodes(readyItems.map((item, index) => ({
-        inputPath: item.media.path,
-        outputPath: outputPaths[index],
-        quality: item.settings.quality,
-        container: item.settings.container,
-        videoCodec: item.settings.videoCodec,
-        encodingSpeed: item.settings.encodingSpeed,
-        audioMode: item.settings.audioMode,
-        outputResolution: item.settings.outputResolution,
-        outputFrameRate: item.settings.outputFrameRate,
-        qualityTuning: item.settings.qualityTuning,
-        audioBitrate: item.settings.audioBitrate,
-        audioChannels: item.settings.audioChannels,
-        audioTrackMode: item.settings.audioTrackMode,
-        audioStreamIndexes: item.trackSelection.audioStreamIndexes,
-        subtitleStreamIndexes: item.trackSelection.subtitleStreamIndexes,
-        preserveSubtitles: item.settings.preserveSubtitles,
-        preserveMetadata: item.settings.preserveMetadata,
-        preserveChapters: item.settings.preserveChapters,
-        replaceExisting,
-      })));
+      let queued: QueuedEncode[];
+      try {
+        queued = await enqueueEncodes(requests);
+      } catch (enqueueError) {
+        if (!hasErrorCode(enqueueError, INSUFFICIENT_DISK_SPACE)) throw enqueueError;
+        const proceed = await confirm(errorMessage(enqueueError), {
+          title: "Not enough destination space",
+          kind: "warning",
+          okLabel: "Proceed anyway",
+          cancelLabel: "Choose another destination",
+        });
+        if (!proceed) return 0;
+        queued = await enqueueEncodes(requests.map((request) => ({
+          ...request,
+          allowInsufficientDiskSpace: true,
+        })));
+      }
       const jobsByClientId = new Map(
         readyItems.map((item, index) => [item.clientId, queued[index]]),
       );

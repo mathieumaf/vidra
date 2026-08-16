@@ -313,6 +313,8 @@ pub struct EncodeRequest {
     pub preserve_chapters: bool,
     #[serde(default)]
     pub replace_existing: bool,
+    #[serde(default)]
+    pub allow_insufficient_disk_space: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
