@@ -1,4 +1,5 @@
 pub mod binary;
+mod disk_space;
 pub mod encode;
 mod paths;
 pub mod probe;
