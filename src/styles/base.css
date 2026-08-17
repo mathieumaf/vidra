@@ -1,7 +1,7 @@
 :root {
   font-family: var(--font-sans);
-  color: #1c231f;
-  background: #eef1ed;
+  color: var(--ink);
+  background: var(--app-background);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

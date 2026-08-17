@@ -5,6 +5,7 @@ import type { EncodingProfile } from "../../config/profiles";
 import { qualityLevel } from "../../config/quality";
 import { outputResolutionLabel } from "../../config/resolution";
 import type { ApplicationUpdaterState } from "../../hooks/useApplicationUpdater";
+import type { ThemePreference } from "../../lib/theme";
 import type { FfmpegStatus } from "../../types/media";
 import { Icon } from "../ui/Icon";
 
@@ -19,10 +20,12 @@ type SettingsViewProps = {
   profiles: EncodingProfile[];
   defaultProfileId: string | null;
   lastUsedProfileId: string;
+  themePreference: ThemePreference;
   onDuplicateProfile: (profileId: string) => void;
   onRenameProfile: (profileId: string, name: string) => void;
   onDeleteProfile: (profileId: string) => void;
   onDefaultProfileChange: (profileId: string | null) => void;
+  onThemePreferenceChange: (preference: ThemePreference) => void;
   onOpenSource: () => void;
   onOpenRelease: () => void;
   onCheckForUpdates: () => void;
@@ -40,10 +43,12 @@ export function SettingsView({
   profiles,
   defaultProfileId,
   lastUsedProfileId,
+  themePreference,
   onDuplicateProfile,
   onRenameProfile,
   onDeleteProfile,
   onDefaultProfileChange,
+  onThemePreferenceChange,
   onOpenSource,
   onOpenRelease,
   onCheckForUpdates,
@@ -133,6 +138,25 @@ export function SettingsView({
             <div><strong>Application</strong><p>Local engine and default behavior.</p></div>
           </div>
           <section className="settings-card">
+            <div className="settings-row settings-appearance-row">
+              <div>
+                <strong>Appearance</strong>
+                <p>Auto follows your system appearance as it changes.</p>
+              </div>
+              <div className="theme-switch" role="group" aria-label="Appearance">
+                {(["auto", "light", "dark"] as const).map((preference) => (
+                  <button
+                    key={preference}
+                    className={themePreference === preference ? "active" : ""}
+                    type="button"
+                    aria-pressed={themePreference === preference}
+                    onClick={() => onThemePreferenceChange(preference)}
+                  >
+                    {preference[0].toUpperCase() + preference.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="settings-row">
               <div><strong>Encoding engine</strong><p>Bundled locally with Vidra</p></div>
               <span className={`settings-value ${isReady ? "positive" : ""}`}>
