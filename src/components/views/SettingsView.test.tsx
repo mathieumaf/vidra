@@ -20,10 +20,12 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsView>[0]> =
     profiles: [],
     defaultProfileId: null,
     lastUsedProfileId: "",
+    themePreference: "auto",
     onDuplicateProfile: vi.fn(),
     onRenameProfile: vi.fn(),
     onDeleteProfile: vi.fn(),
     onDefaultProfileChange: vi.fn(),
+    onThemePreferenceChange: vi.fn(),
     onOpenSource: vi.fn(),
     onOpenRelease: vi.fn(),
     onCheckForUpdates: vi.fn(),
@@ -76,6 +78,16 @@ describe("SettingsView application information", () => {
 
     expect(props.onOpenSource).toHaveBeenCalledOnce();
     expect(props.onOpenRelease).toHaveBeenCalledOnce();
+    tree.unmount();
+  });
+
+  it("changes the application appearance from its automatic default", () => {
+    const { props, tree } = renderSettings();
+
+    expect(tree.button("Auto").getAttribute("aria-pressed")).toBe("true");
+    tree.click("Dark");
+
+    expect(props.onThemePreferenceChange).toHaveBeenCalledWith("dark");
     tree.unmount();
   });
 

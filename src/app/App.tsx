@@ -30,6 +30,7 @@ import { useApplicationInfo } from "../hooks/useApplicationInfo";
 import { useApplicationUpdater } from "../hooks/useApplicationUpdater";
 import { useFfmpegStatus } from "../hooks/useFfmpegStatus";
 import { useRuntimeFailure } from "../hooks/useRuntimeFailure";
+import { useTheme } from "../hooks/useTheme";
 import type {
   AudioMode,
   AudioTrackMode,
@@ -52,8 +53,10 @@ import "../styles/views.css";
 import "../styles/failure.css";
 import "../styles/update.css";
 import "../styles/restore.css";
+import "../styles/theme.css";
 
 export default function App() {
+  const theme = useTheme();
   const applicationInfo = useApplicationInfo();
   const applicationUpdater = useApplicationUpdater();
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null);
@@ -513,10 +516,12 @@ export default function App() {
                 profiles={profileStore.profiles}
                 defaultProfileId={profileStore.defaultProfileId}
                 lastUsedProfileId={profileStore.lastUsedProfileId}
+                themePreference={theme.preference}
                 onDuplicateProfile={(profileId) => { profileStore.duplicateProfile(profileId); }}
                 onRenameProfile={profileStore.renameProfile}
                 onDeleteProfile={deleteProfile}
                 onDefaultProfileChange={changeDefaultProfile}
+                onThemePreferenceChange={theme.setPreference}
                 onOpenSource={() => { void applicationInfo.openSource(); }}
                 onOpenRelease={() => { void applicationInfo.openRelease(); }}
                 onCheckForUpdates={() => { void applicationUpdater.checkForUpdates(); }}

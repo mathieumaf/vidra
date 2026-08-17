@@ -6,7 +6,9 @@ import { AppFailureWindow } from "./components/error/AppFailureWindow";
 import { conversionActivity } from "./lib/conversionActivity";
 import { rememberedQueueItems } from "./lib/queueSession";
 import { installGlobalFailureHandlers } from "./lib/runtimeFailures";
+import { initializeTheme } from "./lib/theme";
 
+initializeTheme();
 installGlobalFailureHandlers();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
