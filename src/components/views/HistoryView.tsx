@@ -1,3 +1,4 @@
+import { confirm } from "@tauri-apps/plugin-dialog";
 import type { HistoryEntry } from "../../types/media";
 import { historyDescription, historySummary } from "../../lib/history";
 import { Icon } from "../ui/Icon";
@@ -46,9 +47,18 @@ export function HistoryView({
     );
   }
 
-  function clearHistory() {
-    if (window.confirm("Clear conversion history? Your media files will not be deleted.")) {
-      void onClear();
+  async function clearHistory() {
+    const confirmed = await confirm(
+      "Clear conversion history? Your media files will not be deleted.",
+      {
+        title: "Clear history",
+        kind: "warning",
+        okLabel: "Clear history",
+        cancelLabel: "Cancel",
+      },
+    );
+    if (confirmed) {
+      await onClear();
     }
   }
 
@@ -61,7 +71,7 @@ export function HistoryView({
           <p>Stored only on this Mac. Removing entries never deletes media.</p>
         </div>
         {items.length > 0 && (
-          <button className="secondary-button" type="button" onClick={clearHistory}>
+          <button className="secondary-button" type="button" onClick={() => void clearHistory()}>
             Clear history
           </button>
         )}
