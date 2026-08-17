@@ -16,7 +16,6 @@ All notable changes to Vidra are documented in this file.
 
 ### Fixed
 
-- Build the macOS app bundle in release workflows so signed updater archives and `latest.json` are published with each release.
 - Open a native confirmation dialog before clearing conversion history, and only remove entries after the user confirms.
 
 ## 0.1.0-beta.4 - 2026-08-14
