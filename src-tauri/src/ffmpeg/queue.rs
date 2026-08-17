@@ -51,7 +51,8 @@ pub async fn enqueue(
         prepared.push((request, media));
     }
 
-    disk_space::ensure_available(&prepared)?;
+    let reservations = jobs.disk_space_reservations()?;
+    disk_space::ensure_available(&prepared, &reservations)?;
 
     let queued = prepared
         .into_iter()
@@ -65,6 +66,7 @@ pub async fn enqueue(
             (
                 PendingJob {
                     id,
+                    estimated_output_bytes: disk_space::estimated_output_bytes(&request, &media),
                     request,
                     media,
                     ffmpeg_version: ffmpeg_version.clone(),

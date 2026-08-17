@@ -108,7 +108,7 @@ fn mapping_arguments(request: &EncodeRequest, subtitles: &[SubtitleStream]) -> V
 }
 
 fn is_mp4_text_subtitle(codec: &str) -> bool {
-    ["subrip", "ass", "ssa", "mov_text"]
+    ["subrip", "ass", "ssa", "mov_text", "webvtt"]
         .iter()
         .any(|candidate| codec.eq_ignore_ascii_case(candidate))
 }
@@ -211,6 +211,7 @@ mod tests {
     fn job(request: EncodeRequest, audio: Vec<AudioStream>) -> PendingJob {
         PendingJob {
             id: "job-1".to_owned(),
+            estimated_output_bytes: 0,
             media: MediaInfo {
                 path: request.input_path.clone(),
                 name: "input.mov".to_owned(),
@@ -282,12 +283,13 @@ mod tests {
     #[test]
     fn mp4_converts_text_subtitles_and_excludes_image_subtitles() {
         let mut request = request(OutputContainer::Mp4);
-        request.subtitle_stream_indexes = vec![3, 4, 5, 6];
+        request.subtitle_stream_indexes = vec![3, 4, 5, 6, 7];
         let subtitles = vec![
             subtitle(3, "subrip"),
             subtitle(4, "ass"),
             subtitle(5, "hdmv_pgs_subtitle"),
             subtitle(6, "dvd_subtitle"),
+            subtitle(7, "webvtt"),
         ];
 
         let arguments = mapping_arguments(&request, &subtitles);
@@ -296,6 +298,7 @@ mod tests {
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
         assert!(!arguments.iter().any(|argument| argument == "0:5"));
         assert!(!arguments.iter().any(|argument| argument == "0:6"));
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:7"]));
         assert!(arguments
             .windows(2)
             .any(|pair| pair == ["-c:s", "mov_text"]));

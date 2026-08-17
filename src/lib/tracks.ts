@@ -13,7 +13,7 @@ export function subtitleTrackName(track: SubtitleStream, index: number): string 
 }
 
 export function canKeepSubtitleInMp4(codec: string): boolean {
-  return ["subrip", "ass", "ssa", "mov_text"].includes(codec.toLowerCase());
+  return ["subrip", "ass", "ssa", "mov_text", "webvtt"].includes(codec.toLowerCase());
 }
 
 export function isImageBasedSubtitle(codec: string): boolean {

@@ -313,6 +313,7 @@ mod tests {
     fn pending_job() -> PendingJob {
         PendingJob {
             id: "diagnostic-test".to_owned(),
+            estimated_output_bytes: 0,
             request: EncodeRequest {
                 input_path: "/Users/private/Videos/source.mov".to_owned(),
                 output_path: "/Users/private/Exports/output.mp4".to_owned(),

@@ -1,5 +1,6 @@
 use super::{AudioMode, EncodeRequest, MediaInfo, QualityLevel, VideoCodec};
 use crate::error::{ApiError, ApiResult};
+use crate::jobs::DiskSpaceReservation;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -22,12 +23,16 @@ struct VolumeRequirement {
     all_overridden: bool,
 }
 
-pub(super) fn ensure_available(requests: &[(EncodeRequest, MediaInfo)]) -> ApiResult<()> {
-    ensure_available_with(requests, destination_space)
+pub(super) fn ensure_available(
+    requests: &[(EncodeRequest, MediaInfo)],
+    reservations: &[DiskSpaceReservation],
+) -> ApiResult<()> {
+    ensure_available_with(requests, reservations, destination_space)
 }
 
 fn ensure_available_with(
     requests: &[(EncodeRequest, MediaInfo)],
+    reservations: &[DiskSpaceReservation],
     mut space_for: impl FnMut(&Path) -> Option<VolumeSpace>,
 ) -> ApiResult<()> {
     let mut volumes = HashMap::<u64, VolumeRequirement>::new();
@@ -59,6 +64,25 @@ fn ensure_available_with(
                     .map_or(0, |metadata| metadata.len()),
             );
         }
+    }
+
+    for reservation in reservations {
+        let output = Path::new(&reservation.output_path);
+        let Some(space) = space_for(output) else {
+            continue;
+        };
+        let requirement = volumes
+            .entry(space.id)
+            .or_insert_with(|| VolumeRequirement {
+                available_bytes: space.available_bytes,
+                estimated_bytes: 0,
+                recoverable_bytes: 0,
+                all_overridden: true,
+            });
+        requirement.available_bytes = requirement.available_bytes.min(space.available_bytes);
+        requirement.estimated_bytes = requirement
+            .estimated_bytes
+            .saturating_add(reservation.remaining_bytes);
     }
 
     if let Some(requirement) = volumes.values().find(|requirement| {
@@ -293,6 +317,7 @@ mod tests {
         MediaInfo, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
         VideoStream,
     };
+    use crate::jobs::DiskSpaceReservation;
     use std::path::Path;
 
     fn request() -> EncodeRequest {
@@ -386,7 +411,7 @@ mod tests {
     #[test]
     fn rejects_an_obviously_impossible_batch_before_it_is_queued() {
         let jobs = vec![(request(), media()), (request(), media())];
-        let error = ensure_available_with(&jobs, |_| {
+        let error = ensure_available_with(&jobs, &[], |_| {
             Some(VolumeSpace {
                 id: 7,
                 available_bytes: 1024,
@@ -406,7 +431,7 @@ mod tests {
         let mut settings = request();
         let estimated = estimated_output_bytes(&settings, &source);
         let jobs = vec![(settings.clone(), source.clone())];
-        assert!(ensure_available_with(&jobs, |_| {
+        assert!(ensure_available_with(&jobs, &[], |_| {
             Some(VolumeSpace {
                 id: 7,
                 available_bytes: estimated.saturating_mul(2),
@@ -415,7 +440,7 @@ mod tests {
         .is_ok());
 
         settings.allow_insufficient_disk_space = true;
-        assert!(ensure_available_with(&[(settings, source)], |_| {
+        assert!(ensure_available_with(&[(settings, source)], &[], |_| {
             Some(VolumeSpace {
                 id: 7,
                 available_bytes: 0,
@@ -431,8 +456,28 @@ mod tests {
         let one_output = estimated_output_bytes(&settings, &source);
         let jobs = vec![(settings.clone(), source.clone()), (settings, source)];
 
-        let result = ensure_available_with(&jobs, |path: &Path| {
+        let result = ensure_available_with(&jobs, &[], |path: &Path| {
             assert_eq!(path, Path::new("/destination/output.mp4"));
+            Some(VolumeSpace {
+                id: 42,
+                available_bytes: one_output.saturating_add(1),
+            })
+        });
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn includes_space_reserved_by_jobs_already_in_the_queue() {
+        let source = media();
+        let settings = request();
+        let one_output = estimated_output_bytes(&settings, &source);
+        let reservations = vec![DiskSpaceReservation {
+            output_path: "/destination/waiting.mp4".to_owned(),
+            remaining_bytes: one_output,
+        }];
+
+        let result = ensure_available_with(&[(settings, source)], &reservations, |_| {
             Some(VolumeSpace {
                 id: 42,
                 available_bytes: one_output.saturating_add(1),

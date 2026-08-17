@@ -36,6 +36,14 @@ const subtitles: SubtitleStream[] = [
     isDefault: false,
     isForced: false,
   },
+  {
+    index: 6,
+    codec: "webvtt",
+    language: "deu",
+    title: null,
+    isDefault: false,
+    isForced: false,
+  },
 ];
 
 describe("TrackSelectionOptions subtitles", () => {
@@ -47,6 +55,7 @@ describe("TrackSelectionOptions subtitles", () => {
     expect(markup).toContain("2 image-based subtitle tracks cannot be kept in MP4.");
     expect(markup).toContain("SUBRIP · Converted to MP4 text");
     expect(markup).toContain("ASS · Converted to MP4 text; styling will be lost");
+    expect(markup).toContain("WEBVTT · Converted to MP4 text");
     expect(markup).toContain("HDMV_PGS_SUBTITLE · Image-based; cannot be kept in MP4");
     expect(markup).toContain("DVD_SUBTITLE · Image-based; cannot be kept in MP4");
     expect(markup).toContain('aria-label="Subtitle 3 · Signs cannot be kept in MP4"');
@@ -64,7 +73,7 @@ describe("TrackSelectionOptions subtitles", () => {
 
     expect(markup).not.toContain("cannot be kept");
     expect(markup).not.toContain("Converted to MP4 text");
-    expect(markup.match(/checked=""/g)).toHaveLength(4);
+    expect(markup.match(/checked=""/g)).toHaveLength(5);
   });
 });
 

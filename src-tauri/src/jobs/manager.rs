@@ -1,4 +1,4 @@
-use super::{process, ActiveJob, CancelledJob, PendingJob, ReservedJob};
+use super::{process, ActiveJob, CancelledJob, DiskSpaceReservation, PendingJob, ReservedJob};
 use crate::{
     error::{ApiError, ApiResult},
     power::SleepPreventer,
@@ -89,6 +89,51 @@ impl JobManager {
         Ok(())
     }
 
+    pub fn disk_space_reservations(&self) -> ApiResult<Vec<DiskSpaceReservation>> {
+        let (pending, running) = {
+            let state = self.lock()?;
+            let pending = state
+                .pending
+                .iter()
+                .map(|job| {
+                    (
+                        job.request.output_path.clone(),
+                        job.estimated_output_bytes,
+                        job.request.replace_existing,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let running = state
+                .active
+                .iter()
+                .chain(state.suspended.iter())
+                .map(|job| (job.output_path.clone(), job.estimated_output_bytes))
+                .collect::<Vec<_>>();
+            (pending, running)
+        };
+        let mut reservations = pending
+            .into_iter()
+            .map(|(output_path, estimated_bytes, replace_existing)| {
+                let recoverable_bytes = if replace_existing {
+                    file_size(&output_path)
+                } else {
+                    0
+                };
+                DiskSpaceReservation {
+                    output_path,
+                    remaining_bytes: estimated_bytes.saturating_sub(recoverable_bytes),
+                }
+            })
+            .collect::<Vec<_>>();
+        reservations.extend(running.into_iter().map(|(output_path, estimated_bytes)| {
+            DiskSpaceReservation {
+                remaining_bytes: estimated_bytes.saturating_sub(file_size(&output_path)),
+                output_path,
+            }
+        }));
+        Ok(reservations)
+    }
+
     pub fn reserve_next(&self) -> ApiResult<Option<ReservedJob>> {
         let mut state = self.lock()?;
         if state.update_in_progress {
@@ -115,6 +160,7 @@ impl JobManager {
             state.active = Some(ActiveJob {
                 id: job.id.clone(),
                 output_path: job.request.output_path.clone(),
+                estimated_output_bytes: job.estimated_output_bytes,
                 child: None,
                 process_id: None,
                 paused: false,
@@ -376,6 +422,13 @@ impl JobManager {
             .lock()
             .map_err(|_| ApiError::new("job_state_error", "Unable to access the job queue."))
     }
+}
+
+fn file_size(path: &str) -> u64 {
+    std::fs::metadata(path)
+        .ok()
+        .filter(|metadata| metadata.is_file())
+        .map_or(0, |metadata| metadata.len())
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ use std::{
 fn pending(id: &str) -> PendingJob {
     PendingJob {
         id: id.to_owned(),
+        estimated_output_bytes: 0,
         request: EncodeRequest {
             input_path: format!("/{id}.mov"),
             output_path: format!("/{id}.mp4"),
@@ -88,6 +89,7 @@ fn a_waiting_job_can_move_ahead_of_a_suspended_job() {
         state.suspended.push_back(ActiveJob {
             id: "paused".to_owned(),
             output_path: "/paused.mp4".to_owned(),
+            estimated_output_bytes: 0,
             child: None,
             process_id: None,
             paused: true,
@@ -128,6 +130,26 @@ fn allows_the_same_input_with_distinct_outputs() {
 }
 
 #[test]
+fn reports_space_reserved_by_pending_and_active_jobs() {
+    let manager = JobManager::default();
+    let mut job = pending("reserved");
+    job.estimated_output_bytes = 4_096;
+    manager.append(vec![job]).unwrap();
+
+    let pending_reservations = manager.disk_space_reservations().unwrap();
+    assert_eq!(pending_reservations.len(), 1);
+    assert_eq!(pending_reservations[0].remaining_bytes, 4_096);
+
+    assert_eq!(
+        pending_id(manager.reserve_next().unwrap().unwrap()),
+        "reserved"
+    );
+    let active_reservations = manager.disk_space_reservations().unwrap();
+    assert_eq!(active_reservations.len(), 1);
+    assert_eq!(active_reservations[0].remaining_bytes, 4_096);
+}
+
+#[test]
 fn sleep_is_prevented_only_while_a_job_is_active() {
     let manager = JobManager::default();
     manager.append(vec![pending("one")]).unwrap();
@@ -160,6 +182,7 @@ fn update_rejects_running_and_paused_conversions() {
         let job = ActiveJob {
             id: "active".to_owned(),
             output_path: "/active.mp4".to_owned(),
+            estimated_output_bytes: 0,
             child: None,
             process_id: None,
             paused,
@@ -217,6 +240,7 @@ fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
         state.active = Some(ActiveJob {
             id: "active".to_owned(),
             output_path: "/active.mp4".to_owned(),
+            estimated_output_bytes: 0,
             child: None,
             process_id: Some(process_id),
             paused: false,
@@ -253,6 +277,7 @@ fn shutdown_removes_incomplete_outputs_and_clears_the_queue() {
         state.active = Some(ActiveJob {
             id: "active".to_owned(),
             output_path: output.to_string_lossy().into_owned(),
+            estimated_output_bytes: 0,
             child: None,
             process_id: None,
             paused: false,
