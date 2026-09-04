@@ -7,3 +7,7 @@ export function revealOutputFile(path: string): Promise<void> {
 export function listDestinationFiles(directory: string): Promise<string[]> {
   return invoke("list_destination_files", { directory });
 }
+
+export function takeOpenedFiles(): Promise<string[]> {
+  return invoke("take_opened_files");
+}

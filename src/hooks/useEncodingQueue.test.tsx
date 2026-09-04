@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { listen } from "@tauri-apps/api/event";
 import { useEncodingQueue } from "./useEncodingQueue";
 import { DEFAULT_ADVANCED_SETTINGS } from "../config/advanced";
 import { QUALITY_LEVELS } from "../config/quality";
+import type { OpenFilesEvent } from "../types/media";
 import {
   PENDING_QUEUE_STORAGE_KEY,
   parsePendingQueue,
@@ -46,6 +48,23 @@ vi.mock("@tauri-apps/api/webview", () => ({
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => dialogMocks);
 vi.mock("../services/encoding", () => encodingMocks);
+const filesMocks = vi.hoisted(() => ({
+  listDestinationFiles: vi.fn(async () => [] as string[]),
+  revealOutputFile: vi.fn(async () => {}),
+  takeOpenedFiles: vi.fn(async () => [] as string[]),
+}));
+vi.mock("../services/files", () => filesMocks);
+
+type OpenFilesHandler = (event: { payload: OpenFilesEvent }) => void;
+
+function openFilesHandler(): OpenFilesHandler | undefined {
+  const calls = vi.mocked(listen).mock.calls as unknown as [string, OpenFilesHandler][];
+  return calls.find(([event]) => event === "open-files")?.[1];
+}
+
+function mediaFromPath(path: string) {
+  return mediaFixture(path.split("/").pop() ?? "clip.mov");
+}
 
 function QueueProbe() {
   const queue = useEncodingQueue({
@@ -223,6 +242,43 @@ describe("useEncodingQueue", () => {
     expect(parsePendingQueue(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY))?.entries)
       .toHaveLength(1);
     tree.unmount();
+  });
+
+  it("adds files opened from Finder on launch", async () => {
+    filesMocks.takeOpenedFiles.mockResolvedValue(["/Users/casey/Movies/finder.mov"]);
+    encodingMocks.probeMedia.mockImplementation(async (path: string) => mediaFromPath(path));
+
+    let tree: ReturnType<typeof mount> | undefined;
+    await act(async () => {
+      tree = mount(<QueueProbe />);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(filesMocks.takeOpenedFiles).toHaveBeenCalledOnce();
+    expect(tree?.text()).toContain("1 in the queue: finder.mov");
+    tree?.unmount();
+  });
+
+  it("adds files opened while running and ignores duplicates", async () => {
+    filesMocks.takeOpenedFiles.mockResolvedValue([]);
+    encodingMocks.probeMedia.mockImplementation(async (path: string) => mediaFromPath(path));
+
+    let tree: ReturnType<typeof mount> | undefined;
+    await act(async () => {
+      tree = mount(<QueueProbe />);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const handler = openFilesHandler();
+    expect(handler).toBeDefined();
+    await act(async () => {
+      handler?.({ payload: { paths: ["/Users/casey/Movies/live.mov", "/Users/casey/Movies/live.mov"] } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(encodingMocks.probeMedia).toHaveBeenCalledTimes(1);
+    expect(tree?.text()).toContain("1 in the queue: live.mov");
+    tree?.unmount();
   });
 
   it("discards saved work without adding it to the live queue", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConvertView } from "../components/convert/ConvertView";
 import { AppErrorBoundary } from "../components/error/AppErrorBoundary";
 import { FailureState } from "../components/error/FailureState";
@@ -80,6 +80,7 @@ export default function App() {
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(initialProfile.id);
   const { status, isReady } = useFfmpegStatus();
   const quality = QUALITY_LEVELS[qualityIndex];
+  const hasActiveJobsRef = useRef(false);
   const queue = useEncodingQueue({
     isReady,
     quality,
@@ -89,7 +90,13 @@ export default function App() {
     audioMode,
     outputResolution,
     advancedSettings,
+    onExternalFilesAdded: (count) => {
+      // Files opened from Finder join the selection. Show them unless a
+      // conversion is running, which must not be disturbed.
+      if (count > 0 && !hasActiveJobsRef.current) setView("convert");
+    },
   });
+  hasActiveJobsRef.current = queue.hasActiveJobs;
   const history = useConversionHistory();
   const runtimeFailure = useRuntimeFailure();
   const activity = conversionActivity(queue.items);

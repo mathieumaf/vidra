@@ -166,7 +166,7 @@ fn color_tag_arguments(primaries: &str, transfer: &str, matrix: &str, range: &st
 }
 
 fn color_tag_filter(arguments: &[String]) -> Option<String> {
-    let values = arguments.chunks_exact(2).filter_map(|pair| {
+    let values = arguments.as_chunks::<2>().0.iter().filter_map(|pair| {
         let option = match pair[0].as_str() {
             "-color_primaries" => "color_primaries",
             "-color_trc" => "color_trc",

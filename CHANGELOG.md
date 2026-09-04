@@ -6,6 +6,7 @@ All notable changes to Vidra are documented in this file.
 
 ### Added
 
+- Open supported videos from Finder with Open With: Vidra launches with the file ready to convert, or appends it to the current selection without disturbing a running conversion.
 - Add automatic, light, and dark appearance modes, follow system theme changes live by default, and remember explicit theme choices.
 - Estimate how much destination space a conversion needs, warn before queuing when a volume may not have enough room, and let the user proceed anyway.
 - Offer to restore or discard the waiting queue after a restart, keep the saved conversion settings, and explain sources that can no longer be read, without starting encoding.
