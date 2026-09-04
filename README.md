@@ -13,7 +13,7 @@ Current capabilities:
 
 - local media inspection with FFprobe;
 - HDR, color-space, color-range, and bit-depth inspection with automatic HDR-to-SDR tone mapping or HDR preservation;
-- multi-file selection and native drag and drop;
+- multi-file selection, native drag and drop, and Finder Open With;
 - MP4 and MKV output with H.264, H.265, or AV1 video;
 - AV1 software encoding in either container, with an explicit `av01` tag for MP4;
 - orientation-aware output resolution limits from 360p to 4K without upscaling;

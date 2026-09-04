@@ -136,6 +136,10 @@ export type EncodePauseChanged = {
   paused: boolean;
 };
 
+export type OpenFilesEvent = {
+  paths: string[];
+};
+
 export type QueuedEncode = {
   jobId: string;
   inputPath: string;

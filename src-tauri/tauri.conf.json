@@ -34,6 +34,14 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts"],
+        "name": "Video files",
+        "description": "Video files Vidra can convert",
+        "role": "Viewer"
+      }
+    ],
     "externalBin": [
       "binaries/ffmpeg",
       "binaries/ffprobe"

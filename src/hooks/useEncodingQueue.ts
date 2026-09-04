@@ -35,7 +35,7 @@ import {
   setEncodePaused,
   startEncodeQueue,
 } from "../services/encoding";
-import { listDestinationFiles, revealOutputFile } from "../services/files";
+import { listDestinationFiles, revealOutputFile, takeOpenedFiles } from "../services/files";
 import type {
   AudioMode,
   EncodingSpeed,
@@ -45,6 +45,7 @@ import type {
   EncodeProgress,
   EncodeQueueItem,
   EncodeStarted,
+  OpenFilesEvent,
   OutputContainer,
   OutputResolution,
   QueuedEncode,
@@ -52,6 +53,8 @@ import type {
   VideoCodec,
 } from "../types/media";
 
+// Keep in sync with SUPPORTED_VIDEO_EXTENSIONS in src-tauri/src/open_files.rs
+// and with fileAssociations in src-tauri/tauri.conf.json.
 const supportedExtensions = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts"]);
 const WORKING_JOB_STATUSES = new Set(["queued", "encoding", "paused"]);
 const INSUFFICIENT_DISK_SPACE = "insufficient_disk_space";
@@ -83,7 +86,13 @@ type EncodingQueueOptions = {
   audioMode: AudioMode;
   outputResolution: OutputResolution;
   advancedSettings: AdvancedEncodingSettings;
+  onExternalFilesAdded?: (count: number) => void;
 };
+
+// A file opened while the interface subscribes and drains the pending files
+// would otherwise be collected twice, once through the event and once
+// through the drain. Paths seen within this window are skipped.
+const OPENED_DEDUP_WINDOW_MS = 5000;
 
 export function useEncodingQueue({
   isReady,
@@ -94,6 +103,7 @@ export function useEncodingQueue({
   audioMode,
   outputResolution,
   advancedSettings,
+  onExternalFilesAdded,
 }: EncodingQueueOptions) {
   // Restored so recovering from an interface failure keeps the queue in view
   // while the conversions themselves keep running in the background.
@@ -108,6 +118,11 @@ export function useEncodingQueue({
   ));
   const [isRestoring, setIsRestoring] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const recentlyOpenedRef = useRef(new Map<string, number>());
+  const onExternalFilesAddedRef = useRef(onExternalFilesAdded);
+  useEffect(() => {
+    onExternalFilesAddedRef.current = onExternalFilesAdded;
+  }, [onExternalFilesAdded]);
   const defaultSettingsRef = useRef<EncodingSettings>({
     quality: quality.id,
     container: outputContainer,
@@ -220,6 +235,22 @@ export function useEncodingQueue({
     return () => void listener.then((unlisten) => unlisten());
   }, []);
 
+  useEffect(() => {
+    // Files opened from Finder arrive here: pending launch files are drained
+    // once, then files opened while running arrive through the event.
+    const listener = listen<OpenFilesEvent>("open-files", ({ payload }) => {
+      void addOpenedPaths(payload.paths);
+    });
+    takeOpenedFiles().then(
+      (paths) => {
+        if (paths.length > 0) void addOpenedPaths(paths);
+      },
+      () => {},
+    );
+
+    return () => void listener.then((unlisten) => unlisten());
+  }, []);
+
   const readyItems = items.filter((item) => item.status === "ready");
   const activeItems = items.filter((item) => (
     item.status === "queued" || item.status === "encoding" || item.status === "paused"
@@ -297,6 +328,18 @@ export function useEncodingQueue({
     } finally {
       setIsProbing(false);
     }
+  }
+
+  async function addOpenedPaths(openedPaths: string[]): Promise<number> {
+    const now = Date.now();
+    const fresh = [...new Set(openedPaths)].filter((path) => (
+      (recentlyOpenedRef.current.get(path) ?? 0) + OPENED_DEDUP_WINDOW_MS < now
+    ));
+    if (fresh.length === 0) return 0;
+    fresh.forEach((path) => recentlyOpenedRef.current.set(path, now));
+    const added = await addVideoPaths(fresh);
+    if (added > 0) onExternalFilesAddedRef.current?.(added);
+    return added;
   }
 
   async function restorePendingQueue(): Promise<number> {
