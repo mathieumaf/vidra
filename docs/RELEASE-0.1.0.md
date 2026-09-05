@@ -5,10 +5,24 @@ Status: preparation only. This checklist does not announce a published release. 
 ## Scope
 
 - First official release for macOS on Apple Silicon.
-- Existing conversion and desktop capabilities from `v0.1.0-beta.5`, with the release policy documented in [ROADMAP.md](ROADMAP.md).
+- Conversion and desktop capabilities from the validated 0.1.0 prereleases, with the release policy documented in [ROADMAP.md](ROADMAP.md).
 - Stable and Beta update channels, with Stable selected by default and the choice stored locally.
 - No Windows, Linux, or Intel Mac installers in this release.
 - Application version `0.1.0`; intended release tag `v0.1.0`, with no beta suffix.
+
+## Prerelease validation
+
+The next planned test release is `v0.1.0-beta.6`. Its changelog date is the intended publication date; adjust it before tagging if publication moves to a later day. The application bundle version remains `0.1.0`. Complete the release steps separately after the beta preparation PR is merged.
+
+- [ ] Review the beta.6 changelog and run `pnpm check`, `pnpm release:check -- v0.1.0-beta.6`, and `git diff --check` on the reviewed source.
+- [ ] Build beta.6 with the signed-tag release workflow in [RELEASING.md](RELEASING.md). Verify the signed and notarized DMG, updater archive and signature, source archives, and checksums. Confirm the draft is marked as a prerelease and its manifest version is `0.1.0-beta.6`.
+- [ ] Install the beta.6 DMG manually on a second Apple Silicon Mac, including an upgrade from beta.5. Verify the exact release identity, retained local data, conversions, queue behavior, cancellation, and source preservation.
+- [ ] Verify Stable is selected by default, switching to Beta persists after restart, and manual checks work on both channels. A channel must not offer to reinstall the current beta.6 build.
+- [ ] Publish beta.6 as a prerelease after artifact validation. Confirm `beta.json` advances to `0.1.0-beta.6` while the rolling `latest.json` stays unchanged. Save the before/after versions and artifact checks in the release review.
+- [ ] After beta.6 validation, prepare and publish `v0.1.0-rc.1` through the same reviewed release process. From beta.6, confirm Beta offers rc.1 and Stable ignores it; switching back to Stable must clear the Beta install action.
+- [ ] On Beta, verify installation of rc.1 is blocked while conversions are queued or running, then complete the signed update and restart. Confirm local data is retained, the exact release identity is `v0.1.0-rc.1`, and a short conversion succeeds.
+
+Beta.5 and earlier have no channel selector and require manual installation of beta.6. The beta.5 updater uses the legacy `latest.json` endpoint, which may still name beta.5 before the first official publication; Stable in beta.6 must ignore it. Publishing beta.6 alone validates distribution and channel selection, while the subsequent release candidate exercises a complete update through the new Beta channel.
 
 ## Preparation review
 
@@ -37,8 +51,8 @@ Follow [RELEASING.md](RELEASING.md). Complete these steps when the release is au
 - [ ] Review the draft notes against the 0.1.0 changelog and clearly state the supported platform and known limitations.
 - [ ] Publish the draft as an official GitHub release and mark it as the latest release.
 - [ ] Confirm the updater publication workflow points `latest.json` (Stable) to `v0.1.0` and `beta.json` (Beta) to `v0.1.0` or an already-published newer prerelease.
-- [ ] From the signed `v0.1.0-beta.5` build on the second Mac, confirm the update prompt, blocked installation while conversions are queued or running, successful update and restart, the exact `v0.1.0` release identity, retained local data, and a short conversion.
+- [ ] Verify the official update from the legacy signed `v0.1.0-beta.5` build and from a channel-aware prerelease (beta.6 or rc.1), checking Stable and Beta eligibility. Confirm the update prompt, blocked installation while conversions are queued or running, successful update and restart, the exact `v0.1.0` release identity, retained local data, and a short conversion.
 
-The previous beta and 0.1.0 share the macOS bundle version `0.1.0`. The update check must compare their full release identities (`0.1.0-beta.5` and `0.1.0`), so testing only the displayed bundle version is insufficient.
+The betas, release candidate, and official release share the macOS bundle version `0.1.0`. The update check must compare their full release identities (for example, `0.1.0-beta.6`, `0.1.0-rc.1`, and `0.1.0`), so testing only the displayed bundle version is insufficient.
 
 Record validation evidence in the release PR or release review, including the tested commit or tag, machine and operating-system version, checks performed, and unresolved limitations. Leave checks incomplete until there is evidence for them. If a published artifact is defective, follow the rollback policy and publish a new version; do not replace its files.
