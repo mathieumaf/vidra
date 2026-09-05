@@ -47,6 +47,13 @@
         "sha256": "c7b13c4a84bd3751aa35fcc72be13e6875467e7c2216879251a486e5b1e4e740",
         "license": "BSD-3-Clause and Alliance for Open Media Patent License 1.0"
       },
+      "dav1d": {
+        "version": "1.5.3",
+        "archiveName": "dav1d-1.5.3.tar.xz",
+        "url": "https://downloads.videolan.org/pub/videolan/dav1d/1.5.3/dav1d-1.5.3.tar.xz",
+        "sha256": "732010aa5ef461fa93355ed2c6c5fedb48ddc4b74e697eaabe8907eaeb943011",
+        "license": "BSD-2-Clause"
+      },
       "opus": {
         "version": "1.5.2",
         "archiveName": "opus-1.5.2.tar.gz",

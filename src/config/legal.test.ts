@@ -23,6 +23,7 @@ describe("legal product information", () => {
       x264: "GPL-2.0-or-later",
       x265: "GPL-2.0-or-later",
       "SVT-AV1": "BSD-3-Clause",
+      dav1d: "BSD-2-Clause",
       Opus: "BSD-3-Clause",
       zimg: "WTFPL v2",
     });

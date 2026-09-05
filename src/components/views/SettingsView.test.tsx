@@ -119,7 +119,7 @@ describe("SettingsView application information", () => {
     tree.click("View notices");
 
     expect(tree.container.querySelector("[role=dialog]")).not.toBeNull();
-    for (const component of ["FFmpeg and FFprobe", "x264", "x265", "SVT-AV1", "Opus", "zimg"]) {
+    for (const component of ["FFmpeg and FFprobe", "x264", "x265", "SVT-AV1", "dav1d", "Opus", "zimg"]) {
       expect(tree.text()).toContain(component);
     }
     expect(tree.text()).toContain("GPL-2.0-or-later");

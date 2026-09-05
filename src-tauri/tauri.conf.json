@@ -34,6 +34,9 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
+    "resources": {
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
     "fileAssociations": [
       {
         "ext": ["mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts"],
