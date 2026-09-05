@@ -23,3 +23,17 @@
 .update-notice-dismiss { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; color: #69736d; background: transparent; cursor: pointer; }
 .update-notice-dismiss:hover { color: var(--ink); background: #eef2ef; }
 .update-notice-dismiss svg { width: var(--icon-small); height: var(--icon-small); }
+.settings-channel-row select {
+  flex: 0 0 auto;
+  min-height: 32px;
+  min-width: 110px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  color: var(--ink);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: var(--text-small);
+}
+
+.settings-channel-row select:disabled { opacity: 0.5; cursor: not-allowed; }

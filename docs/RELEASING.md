@@ -62,9 +62,24 @@ The release workflow then:
 
 Download the draft artifacts and test installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback on a second Apple Silicon Mac. Confirm that `latest.json` names the release tag and that its `darwin-aarch64` URL and signature match the attached updater bundle. Replace the default draft description with the release's changelog notes, supported platforms, and known limitations. Publish the draft only after those checks pass; mark a new official release as latest on GitHub.
 
-Publishing an official versioned release triggers the publishing job in `publish-updater.yml`. That job copies its `latest.json` asset to the rolling `updater-manifest` prerelease. The rolling release is only a manifest container; its prerelease label does not describe the application version it points to. Do not manually publish an older official version after a newer one: the job replaces the shared pointer with the just-published version.
+## Update channels
 
-Published application prereleases are skipped by this job. From 0.1.0 onward, the shared feed is reserved for official releases so existing installations are not offered future beta or release-candidate builds. Those test builds remain manual downloads until separate update channels are implemented. Already-installed betas use the same endpoint and can update to a newer official release.
+Publishing a versioned release triggers `publish-updater.yml`. The job runs the publication scripts from the default branch, validates the release tag, GitHub prerelease flag, and attached `latest.json` version, then promotes manifests in the rolling `updater-manifest` release:
+
+| Channel | Rolling asset | Eligible versions |
+| --- | --- | --- |
+| Stable | `latest.json` | Official releases only. Preserves the endpoint used by older Vidra builds. |
+| Beta | `beta.json` | Official releases and prereleases, including betas and release candidates. |
+
+The rolling release is only a manifest container; its GitHub prerelease label does not describe the versions in those files. An official release advances both channels when it is newer than their current versions. A prerelease advances only Beta. For example, publishing `0.1.1` updates Stable without replacing Beta's `0.2.0-beta.1`; publishing `0.2.0` subsequently updates both. Equal or older versions never replace an existing channel manifest, and build metadata does not affect version precedence.
+
+Each versioned release still carries its own immutable `latest.json`, updater archive, and signature. Channel publication copies the selected manifest without changing its download URLs or signatures. The workflow must never publish a draft as an update. Malformed manifests or inconsistent release flags fail publication instead of silently changing a channel.
+
+In the app, Stable is the default even for a manually installed test build. The channel preference is stored locally and used for startup checks, manual checks, and installation rechecks. Users opt into Beta in Settings. Switching back to Stable does not reinstall an older version; it waits for a newer official release. The Rust boundary rejects prereleases on Stable independently of the feed contents, and both channels require a newer semantic version and a valid update signature.
+
+Before the first `beta.json` exists, Beta falls back to the legacy `latest.json` endpoint. The legacy endpoint may still name `0.1.0-beta.5` until the first official publication; new Stable clients ignore that prerelease. Already-installed betas continue to use the legacy endpoint and can upgrade to 0.1.0, after which they can select a channel. Creating or merging the channel implementation does not modify existing GitHub release assets.
+
+## Verify an application update
 
 After an official publication, use the previous signed Vidra release on a second Apple Silicon Mac to complete the end-to-end updater check. For 0.1.0, start from `v0.1.0-beta.5`:
 
@@ -75,4 +90,4 @@ After an official publication, use the previous signed Vidra release on a second
 
 ## Rollback
 
-Do not replace artifacts attached to a published versioned release. If a release is defective, mark it clearly in the release notes, publish a fixed version with a new tag, and leave the original source and checksums available for auditability. The `updater-manifest` release is the only mutable release: its `latest.json` asset is a pointer to the newest approved versioned release.
+Do not replace artifacts attached to a published versioned release. If a release is defective, mark it clearly in the release notes, publish a fixed version with a new tag, and leave the original source and checksums available for auditability. The `updater-manifest` release is the only mutable release: its `latest.json` and `beta.json` assets point to the newest approved versions for their channels.

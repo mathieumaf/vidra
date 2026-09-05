@@ -1,29 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import { check } from "@tauri-apps/plugin-updater";
+import type { AvailableApplicationUpdate, UpdateChannel } from "../types/applicationUpdate";
 
-export type AvailableApplicationUpdate = {
-  currentVersion: string;
-  version: string;
-  date: string | null;
-  notes: string | null;
-};
-
-export async function checkForApplicationUpdate(): Promise<AvailableApplicationUpdate | null> {
-  const update = await check();
-  if (!update) return null;
-
-  try {
-    return {
-      currentVersion: update.currentVersion,
-      version: update.version,
-      date: update.date ?? null,
-      notes: update.body ?? null,
-    };
-  } finally {
-    await update.close();
-  }
+export function checkForApplicationUpdate(
+  channel: UpdateChannel,
+): Promise<AvailableApplicationUpdate | null> {
+  return invoke("check_application_update", { channel });
 }
 
-export function installApplicationUpdate(expectedVersion: string): Promise<void> {
-  return invoke("install_application_update", { expectedVersion });
+export function installApplicationUpdate(expectedVersion: string, channel: UpdateChannel): Promise<void> {
+  return invoke("install_application_update", { expectedVersion, channel });
 }

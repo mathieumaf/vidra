@@ -19,7 +19,7 @@ One version sequence covers the product across platforms. A new platform can fir
 - Use patch releases for corrections and minor releases for new capabilities or intentional behavior changes during 0.x development. Document changes to saved settings or profiles and preserve user data where possible.
 - Use suffixes such as `0.2.0-beta.1` or `1.0.0-rc.1` for test builds. An official 0.x release has no prerelease suffix and is not marked as a prerelease on GitHub.
 - Keep application version metadata aligned across the JavaScript, Tauri, and Cargo manifests. A beta suffix may exist only in the release tag; the updater uses that full tag to order releases.
-- Publish official releases to the shared application update feed. Beta and release-candidate builds are manual downloads until separate update channels are designed and implemented.
+- Offer two update channels: Stable (the default) for official releases, and Beta for official releases plus prereleases, including release candidates. Users explicitly opt into Beta in Settings. Both channels only offer newer versions; switching channels never downgrades an installation.
 - Never replace the contents of a published version. Ship a new version for corrections.
 
 These conventions use [Semantic Versioning](https://semver.org/) as a basis. The platform requirements for 1.0 are Vidra's product milestone, not a requirement imposed by SemVer.

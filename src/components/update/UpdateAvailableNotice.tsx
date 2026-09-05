@@ -1,4 +1,4 @@
-import type { AvailableApplicationUpdate } from "../../services/updates";
+import type { AvailableApplicationUpdate } from "../../types/applicationUpdate";
 import { Icon } from "../ui/Icon";
 
 type UpdateAvailableNoticeProps = {
