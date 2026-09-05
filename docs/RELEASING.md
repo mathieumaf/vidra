@@ -32,6 +32,12 @@ Do not replace the public key directly. Key rotation requires a transition relea
 
 ## Prepare a release
 
+Source builds of the release engine require these native build tools:
+
+```sh
+brew install autoconf automake libtool cmake meson ninja pkgconf nasm
+```
+
 1. Update the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` when the application version changes.
 2. Prepare the relevant entries in `CHANGELOG.md` under an `Unreleased` heading. Before tagging, replace it with the intended release date and align the README status and installation instructions with the release. Preserve the earlier beta history.
 3. Run `pnpm check`, `VIDRA_FFMPEG_MODE=release pnpm ffmpeg:prepare`, and `pnpm release:check -- <tag>` on an Apple Silicon Mac, using the intended tag such as `v0.1.0`.
@@ -52,7 +58,8 @@ The tag after the leading `v` must be a valid semantic version. A prerelease tag
 The release workflow then:
 
 - runs the complete frontend and Rust checks;
-- builds GPL-enabled FFmpeg and FFprobe, including the zimg color-conversion library, from pinned, checksum-verified sources;
+- builds GPL-enabled FFmpeg and FFprobe, including the dav1d software AV1 decoder and zimg color-conversion library, from pinned, checksum-verified sources;
+- verifies AV1 inspection, software decoding, and re-encoding with generated 8-bit and 10-bit MP4/MKV inputs before packaging the engine;
 - rejects FFmpeg sidecars that depend on libraries outside the macOS system paths;
 - builds, signs, and notarizes the Apple Silicon application and DMG;
 - creates a signed `.app.tar.gz` updater bundle and its `.sig` signature;

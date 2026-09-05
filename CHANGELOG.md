@@ -4,6 +4,11 @@ All notable changes to Vidra are documented in this file.
 
 ## 0.1.0 - Unreleased
 
+### Fixed
+
+- Decode AV1 input in software with bundled dav1d, allowing conversion on Apple Silicon Macs without relying on a hardware AV1 decoder.
+- Verify software AV1 decoding and re-encoding for 8-bit and 10-bit MP4/MKV inputs during release engine preparation.
+
 ### Release scope
 
 - Prepare the first official release for macOS on Apple Silicon, building on the validated 0.1.0 prereleases. Windows, Linux, and Intel Mac builds are not included.

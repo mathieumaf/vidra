@@ -15,8 +15,9 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { verifyAv1Decoding } from "./verify-av1.mjs";
 
-const BUILD_RECIPE_VERSION = 5;
+const BUILD_RECIPE_VERSION = 6;
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
@@ -72,7 +73,7 @@ await Promise.all([
   mkdir(assetDirectory, { recursive: true }),
 ]);
 
-for (const command of ["curl", "tar", "make", "cmake", "pkg-config", "autoreconf", "codesign", "strip", "ditto", "otool"]) {
+for (const command of ["curl", "tar", "make", "cmake", "meson", "ninja", "pkg-config", "autoreconf", "codesign", "strip", "ditto", "otool"]) {
   requireCommand(command);
 }
 
@@ -102,6 +103,7 @@ if (
   buildOpus(sources.opus);
   buildX265(sources.x265);
   buildSvtAv1(sources.svtAv1);
+  buildDav1d(sources.dav1d);
   buildZimg(sources.zimg);
   buildFfmpeg(sources.ffmpeg);
   await writeFile(markerPath, `${JSON.stringify({ fingerprint: recipeFingerprint }, null, 2)}\n`);
@@ -124,6 +126,7 @@ verifyReleaseFfmpeg(releaseFfmpeg);
 verifyReleaseFfprobe(releaseFfprobe);
 verifySystemDependencies(releaseFfmpeg);
 verifySystemDependencies(releaseFfprobe);
+await verifyAv1Decoding(releaseFfmpeg, releaseFfprobe);
 await packageCorrespondingSources();
 console.log(`Release FFmpeg ${release.sources.ffmpeg.version} is ready for ${target}.`);
 
@@ -213,6 +216,24 @@ function buildSvtAv1(source) {
   run("cmake", ["--install", build]);
 }
 
+function buildDav1d(source) {
+  const build = join(buildDirectory, "dav1d");
+  run("meson", [
+    "setup", build, source,
+    `--prefix=${prefixDirectory}`,
+    "--libdir=lib",
+    "--buildtype=release",
+    "--default-library=static",
+    "--wrap-mode=nodownload",
+    "-Denable_tools=false",
+    "-Denable_tests=false",
+    "-Denable_examples=false",
+    "-Denable_docs=false",
+  ]);
+  run("meson", ["compile", "-C", build, "-j", jobs]);
+  run("meson", ["install", "-C", build]);
+}
+
 function buildZimg(source) {
   const build = join(buildDirectory, "zimg");
   copySourceTree(source, build);
@@ -255,6 +276,7 @@ function ffmpegConfiguration() {
     "--enable-libx264",
     "--enable-libx265",
     "--enable-libsvtav1",
+    "--enable-libdav1d",
     "--enable-libopus",
     "--enable-libzimg",
     "--enable-pthreads",
@@ -304,6 +326,10 @@ function copySourceTree(source, destination) {
 }
 
 function verifyReleaseFfmpeg(ffmpeg) {
+  const decoders = run(ffmpeg, ["-hide_banner", "-decoders"], { capture: true });
+  if (!decoders.split("\n").some((line) => line.trim().split(/\s+/)[1] === "libdav1d")) {
+    throw new Error("Release FFmpeg is missing the required libdav1d software AV1 decoder.");
+  }
   const encoders = run(ffmpeg, ["-hide_banner", "-encoders"], { capture: true });
   for (const encoder of [
     "libx264",

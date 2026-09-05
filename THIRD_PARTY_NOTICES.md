@@ -15,12 +15,43 @@ The release build currently links these optional libraries statically:
 - x264, licensed under GPL version 2 or later;
 - x265, licensed under GPL version 2 or later;
 - SVT-AV1, licensed under the BSD 3-Clause License;
+- dav1d, licensed under the BSD 2-Clause License (full notice below);
 - Opus, licensed under the BSD 3-Clause License;
 - zimg, licensed under the Do What The Fuck You Want To Public License version 2.
 
 The default local development bootstrap still uses artifacts from [OSXExperts](https://www.osxexperts.net/). Those artifacts are development-only, are not committed, and must not be used for a public Vidra release.
 
 See [FFmpeg's legal and license documentation](https://ffmpeg.org/legal.html).
+
+### dav1d
+
+dav1d provides software AV1 decoding. Its source archive is included with every release.
+
+```text
+Copyright © 2018-2025, VideoLAN and dav1d authors
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
 
 ## Tauri
 

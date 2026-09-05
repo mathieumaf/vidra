@@ -49,6 +49,11 @@ export const THIRD_PARTY_NOTICE_GROUPS: ThirdPartyNoticeGroup[] = [
         detail: "AV1 video encoding.",
       },
       {
+        name: "dav1d",
+        license: "BSD-2-Clause",
+        detail: "Software AV1 video decoding.",
+      },
+      {
         name: "Opus",
         license: "BSD-3-Clause",
         detail: "Opus audio encoding.",
