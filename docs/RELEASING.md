@@ -1,6 +1,6 @@
 # Releasing Vidra
 
-Vidra currently distributes beta builds for macOS on Apple Silicon and is preparing its first official release, 0.1.0. Public builds must be created by the GitHub release workflow; development FFmpeg binaries must never be distributed.
+Vidra distributes official releases and optional prereleases for macOS on Apple Silicon. The first official release is 0.1.0. Public builds must be created by the GitHub release workflow; development FFmpeg binaries must never be distributed.
 
 See [ROADMAP.md](ROADMAP.md) for the version policy and 1.0 acceptance criteria, and [RELEASE-0.1.0.md](RELEASE-0.1.0.md) for the first official release checklist. An official 0.x release has a defined, usable scope while the product continues to evolve; it does not imply Windows or Linux support.
 
@@ -88,7 +88,7 @@ Before the first `beta.json` exists, Beta falls back to the legacy `latest.json`
 
 ## Verify an application update
 
-The next planned prerelease is `v0.1.0-rc.1`, which fixes software AV1 decoding and lets beta.6 users test a full update through the Beta channel. Follow the [prerelease validation checklist](RELEASE-0.1.0.md#prerelease-validation), including manual installation of beta.6 from beta.5 or earlier.
+The `v0.1.0-rc.1` prerelease validated software AV1 decoding and a full update from beta.6 through the Beta channel. Follow the [prerelease validation checklist](RELEASE-0.1.0.md#prerelease-validation), including manual installation of beta.6 from beta.5 or earlier.
 
 After an official publication, use the previous signed Vidra releases on a second Apple Silicon Mac to complete the end-to-end updater check. For 0.1.0, cover both the legacy `v0.1.0-beta.5` build and a channel-aware prerelease (beta.6 or rc.1):
 
