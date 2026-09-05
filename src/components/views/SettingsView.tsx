@@ -6,6 +6,7 @@ import { qualityLevel } from "../../config/quality";
 import { outputResolutionLabel } from "../../config/resolution";
 import type { ApplicationUpdaterState } from "../../hooks/useApplicationUpdater";
 import type { ThemePreference } from "../../lib/theme";
+import type { UpdateChannel } from "../../types/applicationUpdate";
 import type { FfmpegStatus } from "../../types/media";
 import { Icon } from "../ui/Icon";
 
@@ -29,6 +30,7 @@ type SettingsViewProps = {
   onOpenSource: () => void;
   onOpenRelease: () => void;
   onCheckForUpdates: () => void;
+  onUpdateChannelChange: (channel: UpdateChannel) => void;
   onInstallUpdate: () => void;
 };
 
@@ -52,6 +54,7 @@ export function SettingsView({
   onOpenSource,
   onOpenRelease,
   onCheckForUpdates,
+  onUpdateChannelChange,
   onInstallUpdate,
 }: SettingsViewProps) {
   const [showNotices, setShowNotices] = useState(false);
@@ -169,6 +172,26 @@ export function SettingsView({
                 {appVersion ?? "Version unavailable"}
               </span>
             </div>
+            <div className="settings-row settings-channel-row">
+              <div>
+                <strong>Update channel</strong>
+                <p>{updaterState.channel === "stable"
+                  ? "Official releases only. Recommended for everyday use."
+                  : "Official releases, betas, and release candidates. Test builds may have issues."}</p>
+                {updaterState.channel === "stable" && releaseTag?.includes("-") && (
+                  <p>Your test build will stay installed until a newer stable release is available.</p>
+                )}
+              </div>
+              <select
+                aria-label="Update channel"
+                value={updaterState.channel}
+                disabled={updaterState.phase === "installing"}
+                onChange={(event) => onUpdateChannelChange(event.target.value as UpdateChannel)}
+              >
+                <option value="stable">Stable</option>
+                <option value="beta">Beta</option>
+              </select>
+            </div>
             <div className="settings-row settings-update-row">
               <div>
                 <strong>Application updates</strong>
@@ -284,7 +307,7 @@ function UpdateAction({
 }
 
 function updateDescription(state: ApplicationUpdaterState, isBlocked: boolean): string {
-  if (state.phase === "checking") return "Looking for a newer signed release…";
+  if (state.phase === "checking") return `Checking the ${state.channel === "stable" ? "Stable" : "Beta"} channel…`;
   if (state.phase === "installing") return "Downloading, verifying, and installing the update…";
   if (state.error) return state.error;
   if (state.phase === "available" && state.update) {
@@ -293,7 +316,9 @@ function updateDescription(state: ApplicationUpdaterState, isBlocked: boolean): 
     }
     return `Version ${state.update.version} is available and ready to install.`;
   }
-  if (state.phase === "up-to-date") return "Vidra is up to date.";
+  if (state.phase === "up-to-date") {
+    return `No newer release is available on the ${state.channel === "stable" ? "Stable" : "Beta"} channel.`;
+  }
   return "Signed releases are checked automatically when Vidra starts.";
 }
 

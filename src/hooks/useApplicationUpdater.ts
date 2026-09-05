@@ -1,68 +1,90 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../lib/format";
+import { readUpdateChannel, storeUpdateChannel } from "../lib/updateChannel";
+import type { AvailableApplicationUpdate, UpdateChannel } from "../types/applicationUpdate";
 import {
   checkForApplicationUpdate,
   installApplicationUpdate,
-  type AvailableApplicationUpdate,
 } from "../services/updates";
 
 export type ApplicationUpdaterState = {
+  channel: UpdateChannel;
   phase: "idle" | "checking" | "up-to-date" | "available" | "installing" | "error";
   update: AvailableApplicationUpdate | null;
   error: string | null;
 };
 
-const INITIAL_STATE: ApplicationUpdaterState = {
-  phase: "idle",
-  update: null,
-  error: null,
-};
-
-export function useApplicationUpdater() {
-  const [state, setState] = useState(INITIAL_STATE);
+export function useApplicationUpdater(checkOnStartup = __VIDRA_RELEASE_TAG__ !== null) {
+  const [state, setState] = useState<ApplicationUpdaterState>(() => ({
+    channel: readUpdateChannel(),
+    phase: "idle",
+    update: null,
+    error: null,
+  }));
+  const stateRef = useRef(state);
   const checkId = useRef(0);
 
+  const updateState = useCallback((next: ApplicationUpdaterState) => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
+
   const checkForUpdates = useCallback(async () => {
+    if (stateRef.current.phase === "installing") return;
+    const { channel } = stateRef.current;
     const currentCheck = ++checkId.current;
-    setState((current) => ({ ...current, phase: "checking", error: null }));
+    updateState({ channel, phase: "checking", update: null, error: null });
     try {
-      const update = await checkForApplicationUpdate();
+      const update = await checkForApplicationUpdate(channel);
       if (currentCheck !== checkId.current) return;
-      setState({
+      updateState({
+        channel,
         phase: update ? "available" : "up-to-date",
         update,
         error: null,
       });
     } catch (cause) {
       if (currentCheck !== checkId.current) return;
-      setState({
+      updateState({
+        channel,
         phase: "error",
         update: null,
         error: `Vidra could not check for updates: ${errorMessage(cause)}`,
       });
     }
-  }, []);
+  }, [updateState]);
+
+  const setChannel = useCallback((channel: UpdateChannel) => {
+    if (stateRef.current.phase === "installing" || stateRef.current.channel === channel) return;
+    checkId.current += 1;
+    storeUpdateChannel(channel);
+    updateState({ channel, phase: "idle", update: null, error: null });
+    void checkForUpdates();
+  }, [checkForUpdates, updateState]);
 
   useEffect(() => {
-    if (__VIDRA_RELEASE_TAG__ !== null) void checkForUpdates();
+    if (checkOnStartup) void checkForUpdates();
     return () => {
       checkId.current += 1;
     };
-  }, [checkForUpdates]);
+  }, [checkForUpdates, checkOnStartup]);
 
   const installUpdate = useCallback(async () => {
-    if (!state.update || state.phase === "installing") return;
-    setState((current) => ({ ...current, phase: "installing", error: null }));
+    const current = stateRef.current;
+    if (!current.update || (current.phase !== "available" && current.phase !== "error")) return;
+    const installationId = ++checkId.current;
+    updateState({ ...current, phase: "installing", error: null });
     try {
-      await installApplicationUpdate(state.update.version);
+      await installApplicationUpdate(current.update.version, current.channel);
     } catch (cause) {
-      setState((current) => ({
+      if (installationId !== checkId.current) return;
+      updateState({
         ...current,
         phase: "error",
         error: `Vidra could not install the update: ${errorMessage(cause)}`,
-      }));
+      });
     }
-  }, [state.phase, state.update]);
+  }, [updateState]);
 
-  return { state, checkForUpdates, installUpdate };
+  return { state, setChannel, checkForUpdates, installUpdate };
 }

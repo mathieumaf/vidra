@@ -532,6 +532,7 @@ export default function App() {
                 onOpenSource={() => { void applicationInfo.openSource(); }}
                 onOpenRelease={() => { void applicationInfo.openRelease(); }}
                 onCheckForUpdates={() => { void applicationUpdater.checkForUpdates(); }}
+                onUpdateChannelChange={applicationUpdater.setChannel}
                 onInstallUpdate={() => { void applicationUpdater.installUpdate(); }}
               />
             )}

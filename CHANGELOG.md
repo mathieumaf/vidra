@@ -14,7 +14,8 @@ All notable changes to Vidra are documented in this file.
 ### Changed
 
 - Define the 0.x release policy and the core workflow and platform criteria for 1.0.
-- Reserve the shared application update feed for official releases. Future beta and release-candidate builds remain available as manual downloads without being offered to official-release users.
+- Add a persistent update channel choice in Settings: Stable defaults to official releases; Beta also receives newer prereleases, including release candidates. Changing channels never downgrades the installed version.
+- Publish separate Stable and Beta update manifests, keep both channels moving forward, and validate the selected channel again before installation.
 
 This release is in preparation. Artifact verification and publication are tracked in [the 0.1.0 release checklist](docs/RELEASE-0.1.0.md). The sections below retain the detailed beta release history.
 

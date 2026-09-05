@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "../../test/dom";
 import { SettingsView } from "./SettingsView";
@@ -15,7 +16,7 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsView>[0]> =
     appVersion: "1.2.3",
     releaseTag: "v1.2.3-beta.1",
     applicationError: null,
-    updaterState: { phase: "up-to-date", update: null, error: null },
+    updaterState: { channel: "stable", phase: "up-to-date", update: null, error: null },
     isUpdateBlocked: false,
     profiles: [],
     defaultProfileId: null,
@@ -29,6 +30,7 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsView>[0]> =
     onOpenSource: vi.fn(),
     onOpenRelease: vi.fn(),
     onCheckForUpdates: vi.fn(),
+    onUpdateChannelChange: vi.fn(),
     onInstallUpdate: vi.fn(),
     ...overrides,
   };
@@ -53,7 +55,7 @@ describe("SettingsView application information", () => {
       notes: "Improves update safety.",
     };
     const available = renderSettings({
-      updaterState: { phase: "available", update, error: null },
+      updaterState: { channel: "stable", phase: "available", update, error: null },
     });
 
     available.tree.click("Install and restart");
@@ -62,7 +64,7 @@ describe("SettingsView application information", () => {
     available.tree.unmount();
 
     const blocked = renderSettings({
-      updaterState: { phase: "available", update, error: null },
+      updaterState: { channel: "stable", phase: "available", update, error: null },
       isUpdateBlocked: true,
     });
     expect(blocked.tree.button("Install and restart").disabled).toBe(true);
@@ -89,6 +91,26 @@ describe("SettingsView application information", () => {
 
     expect(props.onThemePreferenceChange).toHaveBeenCalledWith("dark");
     tree.unmount();
+  });
+
+  it("offers two channels, explains beta opt-in, and locks the choice during installation", () => {
+    const stable = renderSettings();
+    const select = stable.tree.container.querySelector<HTMLSelectElement>('select[aria-label="Update channel"]')!;
+    expect(select.value).toBe("stable");
+    expect([...select.options].map((option) => option.text)).toEqual(["Stable", "Beta"]);
+    expect(stable.tree.text()).toContain("Official releases only");
+    expect(stable.tree.text()).toContain("until a newer stable release is available");
+    act(() => {
+      select.value = "beta";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(stable.props.onUpdateChannelChange).toHaveBeenCalledWith("beta");
+    stable.tree.unmount();
+
+    const beta = renderSettings({ updaterState: { channel: "beta", phase: "installing", update: null, error: null } });
+    expect(beta.tree.text()).toContain("Test builds may have issues");
+    expect(beta.tree.container.querySelector<HTMLSelectElement>('select[aria-label="Update channel"]')!.disabled).toBe(true);
+    beta.tree.unmount();
   });
 
   it("keeps all principal third-party notices inside the application", () => {

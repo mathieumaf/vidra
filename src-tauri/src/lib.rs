@@ -19,11 +19,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(
-            tauri_plugin_updater::Builder::new()
-                .default_version_comparator(application_update::is_newer_release)
-                .build(),
-        )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // A file opened while Vidra is already running must join the
             // current selection instead of starting a second instance.
@@ -59,6 +55,7 @@ pub fn run() {
             commands::list_destination_files,
             commands::save_diagnostic_report,
             open_files::take_opened_files,
+            application_update::check_application_update,
             application_update::install_application_update
         ])
         .build(tauri::generate_context!())

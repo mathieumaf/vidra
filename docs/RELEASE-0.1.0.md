@@ -6,6 +6,7 @@ Status: preparation only. This checklist does not announce a published release. 
 
 - First official release for macOS on Apple Silicon.
 - Existing conversion and desktop capabilities from `v0.1.0-beta.5`, with the release policy documented in [ROADMAP.md](ROADMAP.md).
+- Stable and Beta update channels, with Stable selected by default and the choice stored locally.
 - No Windows, Linux, or Intel Mac installers in this release.
 - Application version `0.1.0`; intended release tag `v0.1.0`, with no beta suffix.
 
@@ -29,12 +30,13 @@ Follow [RELEASING.md](RELEASING.md). Complete these steps when the release is au
 - [ ] Verify media inspection, H.264/H.265/AV1 conversion, MP4/MKV output, compatible audio and subtitle handling, HDR-to-SDR conversion, HDR preservation, and output playback.
 - [ ] Verify multiple queued jobs, pause/resume, cancellation, restart recovery, failure cleanup, and source-file preservation, including existing destination filenames.
 - [ ] Verify Finder Open With, drag and drop, appearance persistence, history, and destination-space warnings.
+- [ ] Verify the Stable default, Beta opt-in, persisted channel after restart, manual checks on each channel, and the channel selector being unavailable during installation. Confirm switching back to Stable never offers a downgrade or leaves a stale Beta install action.
 
 ## Publication and update verification
 
 - [ ] Review the draft notes against the 0.1.0 changelog and clearly state the supported platform and known limitations.
 - [ ] Publish the draft as an official GitHub release and mark it as the latest release.
-- [ ] Confirm the updater publication workflow points the shared manifest to `v0.1.0`.
+- [ ] Confirm the updater publication workflow points `latest.json` (Stable) to `v0.1.0` and `beta.json` (Beta) to `v0.1.0` or an already-published newer prerelease.
 - [ ] From the signed `v0.1.0-beta.5` build on the second Mac, confirm the update prompt, blocked installation while conversions are queued or running, successful update and restart, the exact `v0.1.0` release identity, retained local data, and a short conversion.
 
 The previous beta and 0.1.0 share the macOS bundle version `0.1.0`. The update check must compare their full release identities (`0.1.0-beta.5` and `0.1.0`), so testing only the displayed bundle version is insufficient.
