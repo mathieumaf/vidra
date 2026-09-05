@@ -4,10 +4,11 @@ Vidra is an open-source desktop application for local video conversion and encod
 
 ## Project status
 
-> [!WARNING]
-> Vidra is prerelease software. There are no stable releases yet; features, encoding profiles, and file compatibility may change. Beta builds are intended for testing, and users should always keep the original copy of important media.
+Vidra is preparing **0.1.0**, its first official release for **macOS on Apple Silicon**. Until it is published, the available downloads are prerelease builds intended for testing.
 
-The project currently targets macOS on Apple Silicon. Windows, Linux, and additional architectures will follow once the core workflow is stable.
+The 0.x series will develop and refine the core conversion workflow. Windows and Linux are planned; they are not supported by the current release builds. Version 1.0 will mark a reliable core workflow across macOS, Windows, and Linux. See the [roadmap](docs/ROADMAP.md) for the release milestones and acceptance criteria.
+
+Keep the original copy of important media. Vidra preserves source files, and features, encoding profiles, and file compatibility may evolve during 0.x development.
 
 Current capabilities:
 
@@ -33,7 +34,7 @@ Current capabilities:
 
 ## Installation
 
-Beta installers will be published on the [GitHub Releases page](https://github.com/mathieumaf/vidra/releases). Download the Apple Silicon DMG and its SHA-256 checksum, verify the checksum, then move Vidra to the Applications folder. Only signed and notarized release artifacts are intended for distribution.
+Installers are available on the [GitHub Releases page](https://github.com/mathieumaf/vidra/releases). Until 0.1.0 is published, choose a beta only if you want to test Vidra. Download the Apple Silicon DMG and its SHA-256 checksum, verify the checksum, then move Vidra to the Applications folder. Only signed and notarized release artifacts are intended for distribution.
 
 ## Privacy
 

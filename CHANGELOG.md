@@ -2,6 +2,22 @@
 
 All notable changes to Vidra are documented in this file.
 
+## 0.1.0 - Unreleased
+
+### Release scope
+
+- Prepare the first official release for macOS on Apple Silicon, building on 0.1.0-beta.5. Windows, Linux, and Intel Mac builds are not included.
+- Carry forward local video inspection, MP4 and MKV conversion with H.264, H.265, and AV1, compatible audio preservation, HDR handling, encoding profiles, and a sequential conversion queue.
+- Include Finder Open With, appearance preferences, queue restoration, destination-space estimates, conversion history, diagnostic reports, and signed application updates introduced during the beta series.
+- Keep all media processing on the device and preserve source files.
+
+### Changed
+
+- Define the 0.x release policy and the core workflow and platform criteria for 1.0.
+- Reserve the shared application update feed for official releases. Future beta and release-candidate builds remain available as manual downloads without being offered to official-release users.
+
+This release is in preparation. Artifact verification and publication are tracked in [the 0.1.0 release checklist](docs/RELEASE-0.1.0.md). The sections below retain the detailed beta release history.
+
 ## 0.1.0-beta.5 - 2026-09-04
 
 ### Added

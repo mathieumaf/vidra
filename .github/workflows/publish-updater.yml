@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event.release.tag_name != 'updater-manifest'
+    if: github.event.release.tag_name != 'updater-manifest' && !github.event.release.prerelease
     runs-on: ubuntu-latest
     steps:
       - name: Download the published release manifest

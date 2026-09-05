@@ -1,6 +1,8 @@
 # Releasing Vidra
 
-Vidra is currently distributed as a prerelease for macOS on Apple Silicon. Public builds must be created by the GitHub release workflow; development FFmpeg binaries must never be distributed.
+Vidra currently distributes beta builds for macOS on Apple Silicon and is preparing its first official release, 0.1.0. Public builds must be created by the GitHub release workflow; development FFmpeg binaries must never be distributed.
+
+See [ROADMAP.md](ROADMAP.md) for the version policy and 1.0 acceptance criteria, and [RELEASE-0.1.0.md](RELEASE-0.1.0.md) for the first official release checklist. An official 0.x release has a defined, usable scope while the product continues to evolve; it does not imply Windows or Linux support.
 
 ## One-time Apple setup
 
@@ -28,24 +30,24 @@ Never commit the private key, its password, or an unencrypted recovery copy. Git
 
 Do not replace the public key directly. Key rotation requires a transition release signed by the current key that ships trust for the replacement key before subsequent releases use it.
 
-## Prepare a beta
+## Prepare a release
 
 1. Update the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` when the application version changes.
-2. Move the relevant entries in `CHANGELOG.md` under a dated release heading.
-3. Run `pnpm check`, `VIDRA_FFMPEG_MODE=release pnpm ffmpeg:prepare`, and `pnpm release:check` on an Apple Silicon Mac.
+2. Prepare the relevant entries in `CHANGELOG.md` under an `Unreleased` heading. Before tagging, replace it with the intended release date and align the README status and installation instructions with the release. Preserve the earlier beta history.
+3. Run `pnpm check`, `VIDRA_FFMPEG_MODE=release pnpm ffmpeg:prepare`, and `pnpm release:check -- <tag>` on an Apple Silicon Mac, using the intended tag such as `v0.1.0`.
 4. Review the dependency and codec licenses in `THIRD_PARTY_NOTICES.md`.
-5. Commit the release changes through the normal pull-request process.
+5. Commit the release changes through the normal pull-request process. Merge the reviewed changes before creating a release tag from `main`.
 
 ## Build and publish
 
-Create and push a signed tag. A prerelease tag may add a suffix without changing the application bundle version:
+Once the release is authorized and preparation is merged, create and push a signed tag from the reviewed `main` commit. For the first official release:
 
 ```sh
-git tag -s v0.1.0-beta.3 -m "Vidra 0.1.0 beta 3"
-git push origin v0.1.0-beta.3
+git tag -s v0.1.0 -m "Vidra 0.1.0"
+git push origin v0.1.0
 ```
 
-The tag after the leading `v` must be a valid semantic version. Its complete value, including a prerelease suffix such as `beta.3`, becomes the updater version even when the macOS bundle continues to display `0.1.0`.
+The tag after the leading `v` must be a valid semantic version. A prerelease tag may add a suffix, such as `v0.2.0-beta.1`, without changing the corresponding application bundle version `0.2.0`. Its complete value becomes the updater version. An official tag such as `v0.1.0` has no prerelease suffix.
 
 The release workflow then:
 
@@ -56,13 +58,15 @@ The release workflow then:
 - creates a signed `.app.tar.gz` updater bundle and its `.sig` signature;
 - creates `latest.json`, validates its platform URLs and signatures, and records the exact release tag as its version;
 - verifies the final application with `codesign` and Gatekeeper;
-- creates a draft prerelease containing the DMG, updater artifacts and manifest, its checksum, FFmpeg corresponding sources, and build configuration.
+- creates a draft containing the DMG, updater artifacts and manifest, its checksum, FFmpeg corresponding sources, and build configuration. Tags with a prerelease suffix produce a prerelease draft; tags without one produce an official release draft.
 
-Download the draft artifacts and test installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback on a second Apple Silicon Mac. Confirm that `latest.json` names the release tag and that its `darwin-aarch64` URL and signature match the attached updater bundle. Publish the draft only after those checks pass.
+Download the draft artifacts and test installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback on a second Apple Silicon Mac. Confirm that `latest.json` names the release tag and that its `darwin-aarch64` URL and signature match the attached updater bundle. Replace the default draft description with the release's changelog notes, supported platforms, and known limitations. Publish the draft only after those checks pass; mark a new official release as latest on GitHub.
 
-Publishing the versioned release triggers `publish-updater.yml`. That workflow copies its `latest.json` asset to the rolling `updater-manifest` prerelease. Release builds check the stable rolling asset URL, which lets prereleases participate in updates without relying on GitHub's latest-stable-release redirect.
+Publishing an official versioned release triggers the publishing job in `publish-updater.yml`. That job copies its `latest.json` asset to the rolling `updater-manifest` prerelease. The rolling release is only a manifest container; its prerelease label does not describe the application version it points to. Do not manually publish an older official version after a newer one: the job replaces the shared pointer with the just-published version.
 
-After publication, use the previous signed Vidra release on a second Apple Silicon Mac to complete the end-to-end updater check:
+Published application prereleases are skipped by this job. From 0.1.0 onward, the shared feed is reserved for official releases so existing installations are not offered future beta or release-candidate builds. Those test builds remain manual downloads until separate update channels are implemented. Already-installed betas use the same endpoint and can update to a newer official release.
+
+After an official publication, use the previous signed Vidra release on a second Apple Silicon Mac to complete the end-to-end updater check. For 0.1.0, start from `v0.1.0-beta.5`:
 
 1. launch the previous release and confirm that the new version prompt appears;
 2. start or queue a conversion and confirm that installation is unavailable;
