@@ -4,7 +4,7 @@ Vidra is an open-source desktop application for local video conversion and encod
 
 ## Project status
 
-Vidra is preparing **0.1.0**, its first official release for **macOS on Apple Silicon**. Until it is published, the available downloads are prerelease builds intended for testing.
+Vidra **0.1.0** is the first official release for **macOS on Apple Silicon**. Download the signed and notarized installer from the [0.1.0 release](https://github.com/mathieumaf/vidra/releases/tag/v0.1.0).
 
 The 0.x series will develop and refine the core conversion workflow. Windows and Linux are planned; they are not supported by the current release builds. Version 1.0 will mark a reliable core workflow across macOS, Windows, and Linux. See the [roadmap](docs/ROADMAP.md) for the release milestones and acceptance criteria.
 
@@ -16,7 +16,7 @@ Current capabilities:
 - HDR, color-space, color-range, and bit-depth inspection with automatic HDR-to-SDR tone mapping or HDR preservation;
 - multi-file selection, native drag and drop, and Finder Open With;
 - MP4 and MKV output with H.264, H.265, or AV1 video;
-- AV1 software encoding in either container, with an explicit `av01` tag for MP4;
+- AV1 software decoding and encoding, with MP4 and MKV output and an explicit `av01` tag for MP4;
 - orientation-aware output resolution limits from 360p to 4K without upscaling;
 - an optional advanced mode for frame rate, fine quality, audio, track, and source-information controls;
 - built-in and personal encoding profiles stored locally on the device;
@@ -34,7 +34,7 @@ Current capabilities:
 
 ## Installation
 
-Installers are available on the [GitHub Releases page](https://github.com/mathieumaf/vidra/releases). Until 0.1.0 is published, choose a beta or release candidate only if you want to test Vidra. Download the Apple Silicon DMG and its SHA-256 checksum, verify the checksum, then move Vidra to the Applications folder. Only signed and notarized release artifacts are intended for distribution.
+Installers are available on the [GitHub Releases page](https://github.com/mathieumaf/vidra/releases). Choose the latest official release for everyday use; beta and release candidate builds are intended for testing. Download the Apple Silicon DMG and its SHA-256 checksum, verify the checksum, then move Vidra to the Applications folder. Only signed and notarized release artifacts are intended for distribution.
 
 Starting with 0.1.0-beta.6, Settings includes an **Update channel** choice. **Stable** is the default and offers official releases only. **Beta** also offers newer test builds, including release candidates. The choice is saved locally and applies to automatic and manual checks. Switching back to Stable keeps the installed version until a newer official release is available; it does not downgrade the app.
 

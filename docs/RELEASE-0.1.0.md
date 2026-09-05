@@ -1,6 +1,6 @@
 # Vidra 0.1.0 release checklist
 
-Status: preparation only. This checklist does not announce a published release. The preparation pull request does not create a tag, build release artifacts, or publish a GitHub release.
+Status: official 0.1.0 release authorized after rc.1 validation and maintainer acceptance. Artifact and updater results are recorded in the release preparation PR; unchecked items below retain their verification requirements.
 
 ## Scope
 
@@ -12,10 +12,10 @@ Status: preparation only. This checklist does not announce a published release. 
 
 ## Prerelease validation
 
-Beta.6 is published. The next planned test release is `v0.1.0-rc.1`, including the software AV1 decoding fix. Its changelog date is the intended publication date; adjust it before tagging if publication moves to a later day. The application bundle version remains `0.1.0`. Complete release preparation through the normal PR process before tagging. The beta.6 checklist below retains validation requirements; an unchecked item is not evidence of completion.
+Beta.6 and rc.1 are published. [PR #75](https://github.com/mathieumaf/vidra/pull/75) records signed artifact verification, the beta.6-to-rc.1 update and restart, channel filtering, installation blocking during encoding, and AV1 HDR conversion after the update on an Apple M4 Mac running macOS 26.6.2. The maintainer subsequently confirmed rc.1 works and authorized 0.1.0. The application bundle version remains `0.1.0`. The checklist below retains verification requirements; a second physical Mac was not independently available during the automated validation.
 
-- [ ] Review the rc.1 changelog and run `pnpm check`, `pnpm ffmpeg:release`, `pnpm release:check -- v0.1.0-rc.1`, and `git diff --check`.
-- [ ] Verify rc.1 signatures, notarization, corresponding sources (including dav1d), checksums, and the exact updater manifest version `0.1.0-rc.1`.
+- [x] Review the rc.1 changelog and run `pnpm check`, `pnpm ffmpeg:release`, `pnpm release:check -- v0.1.0-rc.1`, and `git diff --check`.
+- [x] Verify rc.1 signatures, notarization, corresponding sources (including dav1d), checksums, and the exact updater manifest version `0.1.0-rc.1`.
 - [ ] Verify AV1 input conversion with the signed rc.1 app, including 8-bit SDR and 10-bit HDR sources.
 
 - [ ] Review the beta.6 changelog and run `pnpm check`, `pnpm release:check -- v0.1.0-beta.6`, and `git diff --check` on the reviewed source.
@@ -23,7 +23,7 @@ Beta.6 is published. The next planned test release is `v0.1.0-rc.1`, including t
 - [ ] Install the beta.6 DMG manually on a second Apple Silicon Mac, including an upgrade from beta.5. Verify the exact release identity, retained local data, conversions, queue behavior, cancellation, and source preservation.
 - [ ] Verify Stable is selected by default, switching to Beta persists after restart, and manual checks work on both channels. A channel must not offer to reinstall the current beta.6 build.
 - [ ] Publish beta.6 as a prerelease after artifact validation. Confirm `beta.json` advances to `0.1.0-beta.6` while the rolling `latest.json` stays unchanged. Save the before/after versions and artifact checks in the release review.
-- [ ] After beta.6 validation, prepare and publish `v0.1.0-rc.1` through the same reviewed release process. From beta.6, confirm Beta offers rc.1 and Stable ignores it; switching back to Stable must clear the Beta install action.
+- [x] After beta.6 validation, prepare and publish `v0.1.0-rc.1` through the same reviewed release process. From beta.6, confirm Beta offers rc.1 and Stable ignores it; switching back to Stable must clear the Beta install action.
 - [ ] On Beta, verify installation of rc.1 is blocked while conversions are queued or running, then complete the signed update and restart. Confirm local data is retained, the exact release identity is `v0.1.0-rc.1`, and a short conversion succeeds.
 
 Beta.5 and earlier have no channel selector and require manual installation of beta.6. The beta.5 updater uses the legacy `latest.json` endpoint, which may still name beta.5 before the first official publication; Stable in beta.6 must ignore it. Publishing beta.6 alone validates distribution and channel selection, while the subsequent release candidate exercises a complete update through the new Beta channel.
