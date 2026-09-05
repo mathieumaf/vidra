@@ -4,11 +4,6 @@ All notable changes to Vidra are documented in this file.
 
 ## 0.1.0 - Unreleased
 
-### Fixed
-
-- Decode AV1 input in software with bundled dav1d, allowing conversion on Apple Silicon Macs without relying on a hardware AV1 decoder.
-- Verify software AV1 decoding and re-encoding for 8-bit and 10-bit MP4/MKV inputs during release engine preparation.
-
 ### Release scope
 
 - Prepare the first official release for macOS on Apple Silicon, building on the validated 0.1.0 prereleases. Windows, Linux, and Intel Mac builds are not included.
@@ -17,6 +12,24 @@ All notable changes to Vidra are documented in this file.
 - Keep all media processing on the device and preserve source files.
 
 This release is in preparation. Artifact verification and publication are tracked in [the 0.1.0 release checklist](docs/RELEASE-0.1.0.md). The sections below retain the detailed beta release history.
+
+## 0.1.0-rc.1 - 2026-09-05
+
+### Fixed
+
+- Decode AV1 input in software with bundled dav1d, allowing conversion on Apple Silicon Macs without relying on a hardware AV1 decoder.
+- Verify software AV1 decoding and re-encoding for 8-bit and 10-bit MP4/MKV inputs during release engine preparation.
+
+### Changed
+
+- Include the full dav1d license with the application and list the decoder in third-party notices.
+
+### Installation and testing
+
+- This release candidate targets macOS on Apple Silicon. Windows, Linux, and Intel Mac installers are not included.
+- From beta.6, select Beta in Settings and check for updates to install rc.1. Stable does not offer this prerelease. From beta.5 or earlier, install the DMG manually.
+- Validate the signed beta.6-to-rc.1 update, restart, retained local data, and AV1 conversion before the official 0.1.0 release. Installation must remain unavailable while conversions are queued or running.
+- The macOS bundle version remains 0.1.0; the full release identity is v0.1.0-rc.1.
 
 ## 0.1.0-beta.6 - 2026-09-05
 

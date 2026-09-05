@@ -88,7 +88,7 @@ Before the first `beta.json` exists, Beta falls back to the legacy `latest.json`
 
 ## Verify an application update
 
-The next planned prerelease is `v0.1.0-beta.6`, followed by a release candidate to test a full update through the Beta channel. Follow the [prerelease validation checklist](RELEASE-0.1.0.md#prerelease-validation), including manual installation of beta.6 from beta.5 or earlier.
+The next planned prerelease is `v0.1.0-rc.1`, which fixes software AV1 decoding and lets beta.6 users test a full update through the Beta channel. Follow the [prerelease validation checklist](RELEASE-0.1.0.md#prerelease-validation), including manual installation of beta.6 from beta.5 or earlier.
 
 After an official publication, use the previous signed Vidra releases on a second Apple Silicon Mac to complete the end-to-end updater check. For 0.1.0, cover both the legacy `v0.1.0-beta.5` build and a channel-aware prerelease (beta.6 or rc.1):
 

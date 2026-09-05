@@ -12,7 +12,11 @@ Status: preparation only. This checklist does not announce a published release. 
 
 ## Prerelease validation
 
-The next planned test release is `v0.1.0-beta.6`. Its changelog date is the intended publication date; adjust it before tagging if publication moves to a later day. The application bundle version remains `0.1.0`. Complete the release steps separately after the beta preparation PR is merged.
+Beta.6 is published. The next planned test release is `v0.1.0-rc.1`, including the software AV1 decoding fix. Its changelog date is the intended publication date; adjust it before tagging if publication moves to a later day. The application bundle version remains `0.1.0`. Complete release preparation through the normal PR process before tagging. The beta.6 checklist below retains validation requirements; an unchecked item is not evidence of completion.
+
+- [ ] Review the rc.1 changelog and run `pnpm check`, `pnpm ffmpeg:release`, `pnpm release:check -- v0.1.0-rc.1`, and `git diff --check`.
+- [ ] Verify rc.1 signatures, notarization, corresponding sources (including dav1d), checksums, and the exact updater manifest version `0.1.0-rc.1`.
+- [ ] Verify AV1 input conversion with the signed rc.1 app, including 8-bit SDR and 10-bit HDR sources.
 
 - [ ] Review the beta.6 changelog and run `pnpm check`, `pnpm release:check -- v0.1.0-beta.6`, and `git diff --check` on the reviewed source.
 - [ ] Build beta.6 with the signed-tag release workflow in [RELEASING.md](RELEASING.md). Verify the signed and notarized DMG, updater archive and signature, source archives, and checksums. Confirm the draft is marked as a prerelease and its manifest version is `0.1.0-beta.6`.

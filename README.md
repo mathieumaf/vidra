@@ -34,9 +34,9 @@ Current capabilities:
 
 ## Installation
 
-Installers are available on the [GitHub Releases page](https://github.com/mathieumaf/vidra/releases). Until 0.1.0 is published, choose a beta only if you want to test Vidra. Download the Apple Silicon DMG and its SHA-256 checksum, verify the checksum, then move Vidra to the Applications folder. Only signed and notarized release artifacts are intended for distribution.
+Installers are available on the [GitHub Releases page](https://github.com/mathieumaf/vidra/releases). Until 0.1.0 is published, choose a beta or release candidate only if you want to test Vidra. Download the Apple Silicon DMG and its SHA-256 checksum, verify the checksum, then move Vidra to the Applications folder. Only signed and notarized release artifacts are intended for distribution.
 
-Starting with 0.1.0, Settings includes an **Update channel** choice. **Stable** is the default and offers official releases only. **Beta** also offers newer test builds, including release candidates. The choice is saved locally and applies to automatic and manual checks. Switching back to Stable keeps the installed version until a newer official release is available; it does not downgrade the app.
+Starting with 0.1.0-beta.6, Settings includes an **Update channel** choice. **Stable** is the default and offers official releases only. **Beta** also offers newer test builds, including release candidates. The choice is saved locally and applies to automatic and manual checks. Switching back to Stable keeps the installed version until a newer official release is available; it does not downgrade the app.
 
 ## Privacy
 
