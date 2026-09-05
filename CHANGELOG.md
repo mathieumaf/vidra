@@ -6,18 +6,34 @@ All notable changes to Vidra are documented in this file.
 
 ### Release scope
 
-- Prepare the first official release for macOS on Apple Silicon, building on 0.1.0-beta.5. Windows, Linux, and Intel Mac builds are not included.
+- Prepare the first official release for macOS on Apple Silicon, building on the validated 0.1.0 prereleases. Windows, Linux, and Intel Mac builds are not included.
 - Carry forward local video inspection, MP4 and MKV conversion with H.264, H.265, and AV1, compatible audio preservation, HDR handling, encoding profiles, and a sequential conversion queue.
 - Include Finder Open With, appearance preferences, queue restoration, destination-space estimates, conversion history, diagnostic reports, and signed application updates introduced during the beta series.
 - Keep all media processing on the device and preserve source files.
 
+This release is in preparation. Artifact verification and publication are tracked in [the 0.1.0 release checklist](docs/RELEASE-0.1.0.md). The sections below retain the detailed beta release history.
+
+## 0.1.0-beta.6 - 2026-09-05
+
+### Added
+
+- Add an Update channel choice in Settings. Stable is the default and offers official releases only; Beta also offers newer prereleases, including release candidates.
+- Remember the selected channel across restarts and use it for both automatic and manual update checks.
+
 ### Changed
 
+- Check the selected channel again before installation, reject prereleases on Stable, and only offer newer versions. Switching back to Stable keeps the installed version until a newer official release is available.
+- Clear available updates when switching channels, ignore late responses from the previous channel, and prevent channel changes during installation.
+- Publish separate Stable and Beta update manifests. Older releases and stable hotfixes no longer replace a newer version already offered on a channel.
+- Update `tauri-plugin-shell` from 2.3.5 to 2.3.6.
 - Define the 0.x release policy and the core workflow and platform criteria for 1.0.
-- Add a persistent update channel choice in Settings: Stable defaults to official releases; Beta also receives newer prereleases, including release candidates. Changing channels never downgrades the installed version.
-- Publish separate Stable and Beta update manifests, keep both channels moving forward, and validate the selected channel again before installation.
 
-This release is in preparation. Artifact verification and publication are tracked in [the 0.1.0 release checklist](docs/RELEASE-0.1.0.md). The sections below retain the detailed beta release history.
+### Installation and testing
+
+- This prerelease targets macOS on Apple Silicon. Windows, Linux, and Intel Mac installers are not included.
+- Install the beta.6 DMG manually when upgrading from beta.5 or earlier. The beta.5 updater uses the legacy update feed, which is now reserved for official releases and will not advertise beta.6.
+- Choose Beta in Settings to receive future test builds. Selecting Beta does not reinstall beta.6 when it is already installed.
+- Validate the signed beta.6 installer and both channel choices before the next release candidate. A later `0.1.0-rc.1` will let beta.6 users test an actual update on Beta while Stable ignores that prerelease. See the [prerelease validation checklist](docs/RELEASE-0.1.0.md#prerelease-validation).
 
 ## 0.1.0-beta.5 - 2026-09-04
 
