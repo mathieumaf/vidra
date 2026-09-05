@@ -1,4 +1,4 @@
-name: Release macOS beta
+name: Release macOS
 
 on:
   push:
