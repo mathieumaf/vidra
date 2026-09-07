@@ -1,10 +1,14 @@
 name: CI
 
+# PRs targeting main only. `main` is squash-only, so the merge commit's tree
+# is the PR head that `validate` just checked — a `push: [main]` trigger would
+# only pay to re-run it, on a macOS runner billed at 10×. Pushes to a branch
+# with no open PR run nothing, by design.
 on:
   pull_request:
-  push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
