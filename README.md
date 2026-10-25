@@ -26,6 +26,8 @@ Current capabilities:
 - MKV subtitle, chapter, and metadata preservation;
 - a sequential batch queue with reordering, pending-job removal, pause and resume, and current-job cancellation;
 - numbered batch output names that never replace files already present in the destination folder;
+- replacement of an existing file only after a successful conversion, and only when that same file was already present and replacement was confirmed;
+- a finished video saved under the next free numbered name when the requested name was taken, instead of deleting the conversion;
 - new videos can be prepared and appended while another job is running;
 - per-job progress with ETA and persistent local conversion history;
 - structured, path-redacted FFmpeg diagnostic reports that can be copied or saved after failures;

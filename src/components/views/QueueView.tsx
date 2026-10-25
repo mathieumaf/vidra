@@ -222,6 +222,9 @@ export function QueueView({
                     />
                   </div>
                 )}
+                {item.status === "completed" && item.error && (
+                  <p className="queue-item-output">{item.error}</p>
+                )}
                 {item.status === "failed" && item.error && <p className="queue-error">{item.error}</p>}
                 {item.status === "failed" && item.diagnostic && (
                   <DiagnosticDetails diagnostic={item.diagnostic} sourceName={item.media.name} />

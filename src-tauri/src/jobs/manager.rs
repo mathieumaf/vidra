@@ -1,10 +1,12 @@
 use super::{process, ActiveJob, CancelledJob, DiskSpaceReservation, PendingJob, ReservedJob};
 use crate::{
     error::{ApiError, ApiResult},
+    output::partial::{discard_partial, PartialOutput},
     power::SleepPreventer,
 };
 use std::{
     collections::{HashSet, VecDeque},
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Mutex,
@@ -95,43 +97,83 @@ impl JobManager {
             let pending = state
                 .pending
                 .iter()
-                .map(|job| {
-                    (
-                        job.request.output_path.clone(),
-                        job.estimated_output_bytes,
-                        job.request.replace_existing,
-                    )
-                })
+                .map(|job| (job.request.output_path.clone(), job.estimated_output_bytes))
                 .collect::<Vec<_>>();
             let running = state
                 .active
                 .iter()
                 .chain(state.suspended.iter())
-                .map(|job| (job.output_path.clone(), job.estimated_output_bytes))
+                .map(|job| {
+                    (
+                        job.output_path.clone(),
+                        job.estimated_output_bytes,
+                        job.partial.as_ref().map(|partial| partial.path.clone()),
+                    )
+                })
                 .collect::<Vec<_>>();
             (pending, running)
         };
+        // An existing destination stays on disk until publish, so a pending job
+        // still needs room for the whole new file.
         let mut reservations = pending
             .into_iter()
-            .map(|(output_path, estimated_bytes, replace_existing)| {
-                let recoverable_bytes = if replace_existing {
-                    file_size(&output_path)
-                } else {
-                    0
-                };
-                DiskSpaceReservation {
-                    output_path,
-                    remaining_bytes: estimated_bytes.saturating_sub(recoverable_bytes),
-                }
+            .map(|(output_path, estimated_bytes)| DiskSpaceReservation {
+                output_path,
+                remaining_bytes: estimated_bytes,
             })
             .collect::<Vec<_>>();
-        reservations.extend(running.into_iter().map(|(output_path, estimated_bytes)| {
-            DiskSpaceReservation {
-                remaining_bytes: estimated_bytes.saturating_sub(file_size(&output_path)),
-                output_path,
-            }
-        }));
+        reservations.extend(running.into_iter().map(
+            |(output_path, estimated_bytes, partial_path)| {
+                let written = partial_path.as_deref().map(file_size).unwrap_or(0);
+                DiskSpaceReservation {
+                    remaining_bytes: estimated_bytes.saturating_sub(written),
+                    output_path,
+                }
+            },
+        ));
         Ok(reservations)
+    }
+
+    pub fn reserved_output_paths(&self) -> ApiResult<Vec<PathBuf>> {
+        let state = self.lock()?;
+        let mut paths = state
+            .pending
+            .iter()
+            .map(|job| PathBuf::from(&job.request.output_path))
+            .collect::<Vec<_>>();
+        for job in state.active.iter().chain(state.suspended.iter()) {
+            paths.push(PathBuf::from(&job.output_path));
+            if let Some(partial) = &job.partial {
+                paths.push(partial.path.clone());
+            }
+        }
+        Ok(paths)
+    }
+
+    pub fn set_partial(&self, job_id: &str, partial: PartialOutput) -> ApiResult<()> {
+        let mut state = self.lock()?;
+        let active = state.active.as_mut().ok_or_else(|| {
+            ApiError::new(
+                "job_state_error",
+                "The reserved encoding job is unavailable.",
+            )
+        })?;
+        if active.id != job_id {
+            return Err(ApiError::new(
+                "job_state_error",
+                "The reserved encoding job changed unexpectedly.",
+            ));
+        }
+        active.partial = Some(partial);
+        Ok(())
+    }
+
+    pub fn clear_partial(&self, job_id: &str) -> ApiResult<()> {
+        let mut state = self.lock()?;
+        if let Some(active) = state.active.as_mut().filter(|job| job.id == job_id) {
+            active.partial = None;
+        }
+        Ok(())
     }
 
     pub fn reserve_next(&self) -> ApiResult<Option<ReservedJob>> {
@@ -164,6 +206,7 @@ impl JobManager {
                 child: None,
                 process_id: None,
                 paused: false,
+                partial: None,
             });
             return Ok(Some(ReservedJob::Pending(Box::new(job))));
         }
@@ -408,10 +451,10 @@ impl JobManager {
                     eprintln!("Unable to stop FFmpeg during shutdown: {error}");
                 }
             }
-            if let Err(error) = std::fs::remove_file(&job.output_path) {
-                if error.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!("Unable to remove an incomplete output during shutdown: {error}");
-                }
+            // The destination is published only after success. Shutdown may
+            // remove the partial file and must leave that destination alone.
+            if let Some(partial) = job.partial.take() {
+                discard_partial(&partial);
             }
         }
         self.sleep_preventer.deactivate();
@@ -424,7 +467,7 @@ impl JobManager {
     }
 }
 
-fn file_size(path: &str) -> u64 {
+fn file_size(path: &Path) -> u64 {
     std::fs::metadata(path)
         .ok()
         .filter(|metadata| metadata.is_file())

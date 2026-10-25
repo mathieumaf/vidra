@@ -19,7 +19,6 @@ struct VolumeSpace {
 struct VolumeRequirement {
     available_bytes: u64,
     estimated_bytes: u64,
-    recoverable_bytes: u64,
     all_overridden: bool,
 }
 
@@ -47,23 +46,15 @@ fn ensure_available_with(
             .or_insert_with(|| VolumeRequirement {
                 available_bytes: space.available_bytes,
                 estimated_bytes: 0,
-                recoverable_bytes: 0,
                 all_overridden: true,
             });
         requirement.available_bytes = requirement.available_bytes.min(space.available_bytes);
+        // The existing destination stays until publish, so its bytes are not
+        // free space for the new file.
         requirement.estimated_bytes = requirement
             .estimated_bytes
             .saturating_add(estimated_output_bytes(request, media));
         requirement.all_overridden &= request.allow_insufficient_disk_space;
-        if request.replace_existing {
-            requirement.recoverable_bytes = requirement.recoverable_bytes.saturating_add(
-                output
-                    .metadata()
-                    .ok()
-                    .filter(|metadata| metadata.is_file())
-                    .map_or(0, |metadata| metadata.len()),
-            );
-        }
     }
 
     for reservation in reservations {
@@ -76,7 +67,6 @@ fn ensure_available_with(
             .or_insert_with(|| VolumeRequirement {
                 available_bytes: space.available_bytes,
                 estimated_bytes: 0,
-                recoverable_bytes: 0,
                 all_overridden: true,
             });
         requirement.available_bytes = requirement.available_bytes.min(space.available_bytes);
@@ -86,21 +76,14 @@ fn ensure_available_with(
     }
 
     if let Some(requirement) = volumes.values().find(|requirement| {
-        !requirement.all_overridden
-            && requirement.estimated_bytes
-                > requirement
-                    .available_bytes
-                    .saturating_add(requirement.recoverable_bytes)
+        !requirement.all_overridden && requirement.estimated_bytes > requirement.available_bytes
     }) {
-        let available = requirement
-            .available_bytes
-            .saturating_add(requirement.recoverable_bytes);
         return Err(ApiError::new(
             "insufficient_disk_space",
             format!(
                 "This conversion may need about {}, but the destination has about {} available. Free up space, choose another destination, or proceed anyway.",
                 format_bytes(requirement.estimated_bytes),
-                format_bytes(available),
+                format_bytes(requirement.available_bytes),
             ),
         ));
     }
@@ -537,5 +520,41 @@ mod tests {
 
         assert_eq!(error.code, "unsupported_platform");
         assert!(error.message.contains("not supported on this platform"));
+    }
+
+    #[test]
+    fn replacing_an_existing_file_still_needs_space_for_the_new_copy() {
+        let directory = std::env::temp_dir().join(format!(
+            "vidra-disk-space-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the system clock should be after the Unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).expect("the test directory should be created");
+        let output = directory.join("output.mp4");
+        std::fs::write(&output, vec![0_u8; 10_000]).expect("the existing file should be written");
+
+        let source = media();
+        let mut settings = request();
+        settings.output_path = output.to_string_lossy().into_owned();
+        settings.replace_existing = true;
+        let estimated = estimated_output_bytes(&settings, &source);
+        let result = ensure_available_with(&[(settings, source)], &[], |_| {
+            Ok(Some(VolumeSpace {
+                id: 7,
+                available_bytes: estimated.saturating_sub(100),
+            }))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::metadata(&output)
+                .expect("the existing file should remain")
+                .len(),
+            10_000
+        );
+        std::fs::remove_dir_all(directory).expect("the test directory should be removed");
     }
 }

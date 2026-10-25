@@ -23,7 +23,7 @@ pub(super) fn validate_input(path: &str) -> ApiResult<PathBuf> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ExistingOutput {
+pub(crate) enum ExistingOutput {
     Reject,
     Replace,
 }
@@ -76,6 +76,14 @@ pub(super) fn validate_output(
     let file_name = output
         .file_name()
         .ok_or_else(|| ApiError::invalid_input("The output filename is invalid."))?;
+    if file_name
+        .to_str()
+        .is_some_and(crate::output::partial::is_partial_name)
+    {
+        return Err(ApiError::invalid_input(
+            "This output name is reserved for an unfinished Vidra video. Choose another name.",
+        ));
+    }
     let normalized_output = canonical_parent.join(file_name);
 
     let existing_metadata = fs::symlink_metadata(&normalized_output).ok();
@@ -128,7 +136,7 @@ pub(super) fn validate_output(
     Ok(normalized_output)
 }
 
-fn same_existing_file(left: &Path, right: &Path) -> ApiResult<bool> {
+pub(crate) fn same_existing_file(left: &Path, right: &Path) -> ApiResult<bool> {
     let (Ok(left_metadata), Ok(right_metadata)) = (fs::metadata(left), fs::metadata(right)) else {
         return Ok(false);
     };
@@ -275,6 +283,16 @@ mod tests {
         .expect("a confirmed replacement should be accepted");
 
         assert_eq!(resolved.file_name(), output.file_name());
+
+        let partial_name = directory.join(".vidra-partial-job-1-abc123.mp4");
+        let reserved_name = validate_output(
+            path_text(&partial_name),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Replace,
+        )
+        .expect_err("an unfinished video name should be rejected");
+        assert!(reserved_name.message.contains("unfinished"));
         fs::remove_dir_all(directory).expect("the test directory should be removed");
     }
 

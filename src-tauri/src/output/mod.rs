@@ -4,6 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub(crate) mod partial;
+
 pub fn reveal(path: &str) -> ApiResult<()> {
     let output = validate(path)?;
     reveal_on_platform(&output)

@@ -1,4 +1,5 @@
 use crate::ffmpeg::{EncodeRequest, MediaInfo};
+use crate::output::partial::PartialOutput;
 use tauri_plugin_shell::process::CommandChild;
 
 pub struct PendingJob {
@@ -16,6 +17,7 @@ pub struct ActiveJob {
     pub child: Option<CommandChild>,
     pub process_id: Option<u32>,
     pub paused: bool,
+    pub partial: Option<PartialOutput>,
 }
 
 #[derive(Debug, Clone)]
