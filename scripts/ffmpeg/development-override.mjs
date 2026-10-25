@@ -5,8 +5,7 @@ const SIDECAR_NAMES = ["ffmpeg", "ffprobe"];
 
 /**
  * Copy a local ffmpeg and ffprobe into Tauri's sidecar filenames.
- * This is a development and CI override for targets that do not yet have a
- * pinned sidecar. It is not a release build.
+ * This is an opt-in development and CI override for any target. Release builds reject it.
  */
 export async function installDevelopmentSidecars({ sourceDirectory, target, binaryDirectory }) {
   await mkdir(binaryDirectory, { recursive: true });

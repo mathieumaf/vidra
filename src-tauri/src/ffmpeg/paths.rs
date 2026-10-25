@@ -93,7 +93,25 @@ pub(super) fn validate_output(
     }
 
     for input in inputs {
-        if &normalized_output == input || same_existing_file(&normalized_output, input)? {
+        if &normalized_output == input {
+            return Err(ApiError::invalid_input(
+                "The output file must be different from every input file.",
+            ));
+        }
+    }
+
+    // Without file identity, an unconfirmed destination can be refused by name.
+    // The encode will not run, so this does not need to prove the file is distinct.
+    #[cfg(not(unix))]
+    if existing_metadata.is_some() && existing == ExistingOutput::Reject {
+        return Err(ApiError::new(
+            "output_exists",
+            "Another file already uses this name in the destination folder.",
+        ));
+    }
+
+    for input in inputs {
+        if same_existing_file(&normalized_output, input)? {
             return Err(ApiError::invalid_input(
                 "The output file must be different from every input file.",
             ));
@@ -314,6 +332,29 @@ mod tests {
 
         assert_eq!(error.code, "unsupported_platform");
         assert!(error.message.contains("not supported on this platform"));
+        fs::remove_dir_all(directory).expect("the test directory should be removed");
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn rejecting_an_existing_name_does_not_require_file_identity() {
+        let directory = test_directory("reject-existing-name");
+        let input = directory.join("input.mp4");
+        let output = directory.join("output.mp4");
+        fs::write(&input, b"source").expect("the input should be written");
+        fs::write(&output, b"other").expect("the output should be written");
+        let inputs = vec![input.canonicalize().expect("the input should resolve")];
+
+        let error = validate_output(
+            path_text(&output),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Reject,
+        )
+        .expect_err("an existing name is refused before file identity is required");
+
+        assert_eq!(error.code, "output_exists");
+        assert!(error.message.contains("destination folder"));
         fs::remove_dir_all(directory).expect("the test directory should be removed");
     }
 

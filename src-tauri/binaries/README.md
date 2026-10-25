@@ -2,7 +2,7 @@
 
 This directory is populated by `pnpm ffmpeg:prepare`.
 
-Prepared executables are intentionally ignored by Git. Tauri expects each executable to use its Rust target triple, for example:
+Prepared executables are intentionally ignored by Git. Each sidecar is named `<name>-<target-triple>`, for example:
 
 - `ffmpeg-aarch64-apple-darwin`
 - `ffprobe-aarch64-apple-darwin`
