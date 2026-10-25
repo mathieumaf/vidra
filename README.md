@@ -10,6 +10,8 @@ Vidra is an open-source desktop app that converts and encodes video on your comp
 
 ![Settings, with encoding profiles, appearance, the update channel, and license notices.](docs/screenshots/settings.png)
 
+These screenshots are the real interface rendered in a browser with sample media data, not the packaged app.
+
 ## Privacy and safety
 
 - Inspection and encoding run on the device. Vidra has no accounts, no telemetry, and no network conversion.
@@ -28,7 +30,7 @@ Vidra is an open-source desktop app that converts and encodes video on your comp
 | Windows | Planned. Later 0.x releases will add it progressively. The work is not tied to a specific version or date. Version 1.0 includes validated Windows distribution. |
 | Linux | Planned, on the same terms as Windows. Linux can already compile the Rust crate and run the portable checks. That development setup is not a Linux release. |
 
-Release builds ship the pinned Apple Silicon FFmpeg recipe. A system FFmpeg install is not used for those builds. Details and the 1.0 acceptance criteria are in the [roadmap](docs/ROADMAP.md).
+Each public release ships the Apple Silicon FFmpeg recipe pinned for that release. A system FFmpeg install is not used. Details and the 1.0 acceptance criteria are in the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
@@ -45,7 +47,7 @@ Release builds ship the pinned Apple Silicon FFmpeg recipe. A system FFmpeg inst
 - Videos that were waiting and had not started can be restored after Vidra restarts. Restoring does not start encoding by itself.
 - Finished, failed, and cancelled jobs stay in a local history.
 - A failed job can show a diagnostic report with source and output paths redacted. The report can be copied or saved.
-- Appearance follows the system, or can be set to light or dark. Settings show the app version, the bundled FFmpeg version, source and release links, and third-party notices.
+- Appearance follows the system, or can be set to light or dark. Settings show the application version and the FFmpeg version bundled with that build, plus source and release links and third-party notices. Vidra 0.1.0 ships FFmpeg 8.1.2. A build from current main reports 8.1.3 when its pinned engine is ready.
 
 Fast encoding uses Apple VideoToolbox for H.264 and H.265. Efficient encoding, and every AV1 encode, uses the bundled software encoders. AV1 input is decoded in software with dav1d.
 
@@ -104,7 +106,7 @@ pnpm ffmpeg:prepare
 pnpm tauri dev
 ```
 
-`pnpm tauri dev` runs icon preparation and `pnpm ffmpeg:prepare` before the app starts. On Apple Silicon, `pnpm ffmpeg:prepare` downloads the development archive pinned in `scripts/ffmpeg/dev-archive.json`. It checks the archive SHA-256, checks that the archive contains the corresponding sources, and checks that FFmpeg and FFprobe report the pinned release version, **8.1.3**. It ad-hoc signs the tools for local use. It does not compile FFmpeg. macOS pull-request CI uses the same download.
+`pnpm tauri dev` runs icon preparation and `pnpm ffmpeg:prepare` before the app starts. On Apple Silicon, `pnpm ffmpeg:prepare` downloads the development archive pinned in `scripts/ffmpeg/dev-archive.json`. It checks the archive SHA-256, checks that the archive contains the corresponding sources, and checks that FFmpeg and FFprobe report the version pinned on main, **8.1.3**. The published 0.1.0 app shipped 8.1.2. Prepare ad-hoc signs the tools for local use. It does not compile FFmpeg. macOS pull-request CI uses the same download.
 
 To compile the pinned release recipe on the machine instead:
 
@@ -113,7 +115,7 @@ brew install autoconf automake libtool cmake meson ninja pkgconf nasm
 pnpm ffmpeg:prepare -- --build
 ```
 
-`VIDRA_FFMPEG_DIR` may name a directory that contains `ffmpeg` and `ffprobe` for a development or CI build, including on Apple Silicon. Release builds reject that override. Vidra treats the engine as ready only when both tools report 8.1.3. A different build can still satisfy the sidecar filenames, and the app explains that it is not the pinned engine.
+`VIDRA_FFMPEG_DIR` may name a directory that contains `ffmpeg` and `ffprobe` for a development or CI build, including on Apple Silicon. Release builds reject that override. A build from this tree treats the engine as ready only when both tools report 8.1.3. A different build can still satisfy the sidecar filenames, and the app explains that it is not the pinned engine.
 
 Linux can compile the Rust crate and run the portable checks before a Linux port exists. Install the Tauri Linux dependencies and a local FFmpeg, then run:
 
@@ -138,7 +140,7 @@ Copyright (C) 2026 Mathieu Mafille.
 
 Vidra is licensed under [GPL-3.0-or-later](LICENSE). The application notice is in [COPYRIGHT](COPYRIGHT).
 
-The bundled engine is FFmpeg and FFprobe **8.1.3**, built with GPL components (x264 and x265) plus SVT-AV1, dav1d, Opus, and zimg. Public macOS builds compile those tools from the checksum-pinned sources in `scripts/ffmpeg/sources.json`. The corresponding sources are attached to each GitHub release. The Apple Silicon development archive is built from that same recipe and is not a substitute for the published application build.
+Vidra 0.1.0 ships FFmpeg and FFprobe 8.1.2. Main and upcoming builds pin 8.1.3. That newer pin is not in the 0.1.0 installer. The changelog still requires a beta or release candidate to re-validate the 8.1.3 engine before publication. The engine is built with GPL components (x264 and x265) plus SVT-AV1, dav1d, Opus, and zimg, from the checksum-pinned sources in `scripts/ffmpeg/sources.json` for that release. The corresponding sources are attached to each GitHub release. The Apple Silicon development archive on main follows the 8.1.3 recipe and is not a substitute for a published application build.
 
 Other dependencies keep their own licenses. The notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and in the app.
 
