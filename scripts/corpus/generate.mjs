@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { hostTargetTriple } from "../ffmpeg/target.mjs";
 
@@ -12,52 +12,65 @@ const rootDirectory = resolve(scriptDirectory, "..", "..");
 const FRAME_SIZE = "64x64";
 const FRAME_RATE = "12";
 const DURATION = "0.5";
-const SDR_COLOR = [
-  "-color_primaries", "bt709",
-  "-color_trc", "bt709",
-  "-colorspace", "bt709",
-  "-color_range", "tv",
-];
+const FFMPEG_TIMEOUT_MS = 180_000;
+export const CORPUS_GENERATOR_ID = "vidra-corpus";
 
-// The Apple Silicon FFmpeg 8 sidecar accepts the color options above, but
-// libx264 and libx265 still leave the bitstream video-usability information
-// unspecified. FFprobe then reports no transfer. Encoder parameters and the
-// built-in metadata bitstream filters write the values Vidra reads.
+// From FFmpeg 7 on, output options such as -color_trc are overwritten by the
+// frame's own tags, and lavfi frames carry none. setparams writes the tags
+// onto the frames, which is the same filter Vidra uses when it encodes.
+export function setparamsFilter({ primaries, transfer, matrix, range = "tv" }) {
+  const fields = [`color_primaries=${primaries}`];
+  if (transfer) {
+    fields.push(`color_trc=${transfer}`);
+  }
+  fields.push(`colorspace=${matrix}`, `range=${range}`);
+  return `setparams=${fields.join(":")}`;
+}
+
 export function h264SdrArguments() {
   return [
+    "-vf", setparamsFilter({ primaries: "bt709", transfer: "bt709", matrix: "bt709" }),
     "-c:v", "libx264",
     "-preset", "ultrafast",
     "-pix_fmt", "yuv420p",
-    "-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709",
-    ...SDR_COLOR,
-    "-bsf:v", "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1:video_full_range_flag=0",
   ];
 }
 
-export function hevcColorArguments(transfer) {
-  const transferId = transfer === "smpte2084" ? 16 : transfer === "arib-std-b67" ? 18 : 2;
-  const params = ["log-level=error", "colorprim=bt2020", "colormatrix=bt2020nc", "range=limited"];
-  if (transfer) {
-    params.push(`transfer=${transfer}`);
+export function hevcColorArguments(transfer, masteringDisplay = false) {
+  const params = ["log-level=error"];
+  if (masteringDisplay) {
+    params.push(
+      "master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)",
+      "max-cll=1000,400",
+    );
   }
-  const options = [
+  return [
+    "-vf", setparamsFilter({ primaries: "bt2020", transfer, matrix: "bt2020nc" }),
     "-c:v", "libx265",
     "-preset", "ultrafast",
     "-pix_fmt", "yuv420p10le",
     "-x265-params", params.join(":"),
-    "-color_primaries", "bt2020",
   ];
-  if (transfer) {
-    options.push("-color_trc", transfer);
-  }
-  options.push(
-    "-colorspace", "bt2020nc",
-    "-color_range", "tv",
-    "-bsf:v",
-    `hevc_metadata=colour_primaries=9:transfer_characteristics=${transferId}:matrix_coefficients=9:video_full_range_flag=0`,
-  );
-  return options;
 }
+
+const OWNED_FILE_NAMES = new Set([
+  "manifest.json",
+  "sdr-h264-aac.mp4",
+  "hdr10-hevc.mp4",
+  "hlg-hevc.mp4",
+  "rotated-base.mp4",
+  "rotated-h264.mp4",
+  "vfr-fast.mp4",
+  "vfr-slow.mp4",
+  "vfr-list.txt",
+  "variable-frame-rate.mp4",
+  "corpus.srt",
+  "mov-subtitles.mov",
+  "audio-only.m4a",
+  "corrupt.mp4",
+  "unknown-transfer.mp4",
+  "dolby-vision.mp4",
+]);
 
 // libx265 accepts a Dolby Vision profile, but the profile only becomes a
 // DOVI configuration record when an RPU bitstream is supplied. lavfi cannot
@@ -120,9 +133,59 @@ export function masteringDisplayBoxes() {
   return Buffer.concat([mdcv, clli]);
 }
 
-export async function generateCorpus(outputDirectory, sidecars = resolveSidecars()) {
-  await rm(outputDirectory, { recursive: true, force: true });
+export async function prepareOutputDirectory(outputDirectory) {
   await mkdir(outputDirectory, { recursive: true });
+  const entries = await readdir(outputDirectory, { withFileTypes: true });
+  if (entries.length === 0) {
+    return;
+  }
+  const directory = resolve(outputDirectory);
+  if (entries.some((entry) => entry.isSymbolicLink() || !entry.isFile())) {
+    throw new Error(
+      `Refusing to replace ${directory}: it contains a subdirectory or link. Choose an empty folder.`,
+    );
+  }
+  const names = entries.map((entry) => entry.name);
+  if (!names.includes("manifest.json")) {
+    throw new Error(
+      `Refusing to replace ${directory}: it is not empty and has no Vidra corpus manifest. Choose an empty folder.`,
+    );
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"));
+  } catch {
+    throw new Error(`Refusing to replace ${directory}: manifest.json is not a Vidra corpus manifest.`);
+  }
+  if (manifest?.generator !== CORPUS_GENERATOR_ID) {
+    throw new Error(
+      `Refusing to replace ${directory}: manifest.json was not written by the Vidra corpus generator.`,
+    );
+  }
+  const owned = new Set(OWNED_FILE_NAMES);
+  for (const clip of manifest.clips ?? []) {
+    const clipPath = clip?.path;
+    if (typeof clipPath !== "string" || clipPath.length === 0) {
+      continue;
+    }
+    const resolvedClip = resolve(clipPath);
+    if (dirname(resolvedClip) === directory) {
+      owned.add(basename(resolvedClip));
+    }
+  }
+  const unexpected = names.filter((name) => !owned.has(name));
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Refusing to replace ${directory}: it contains files this generator did not write (${unexpected.join(", ")}).`,
+    );
+  }
+  for (const name of names) {
+    await rm(join(directory, name), { force: true });
+  }
+}
+
+export async function generateCorpus(outputDirectory, sidecars = resolveSidecars()) {
+  await prepareOutputDirectory(outputDirectory);
 
   const clips = [];
   const unavailable = [];
@@ -145,8 +208,10 @@ export async function generateCorpus(outputDirectory, sidecars = resolveSidecars
   }
 
   const manifest = {
+    generator: CORPUS_GENERATOR_ID,
     ffmpeg: sidecars.ffmpeg,
     ffprobe: sidecars.ffprobe,
+    ffmpegVersion: ffmpegVersionLine(sidecars.ffmpeg),
     sidecarSource: sidecars.source,
     clips,
     unavailable,
@@ -176,7 +241,7 @@ async function writeHdr(sidecars, directory, id, transfer) {
   run(sidecars.ffmpeg, [
     ...lavfiVideo(),
     ...lavfiAudio(),
-    ...hevcColorArguments(transfer),
+    ...hevcColorArguments(transfer, transfer === "smpte2084"),
     "-c:a", "aac",
     "-shortest",
     path,
@@ -186,6 +251,9 @@ async function writeHdr(sidecars, directory, id, transfer) {
   assertEqual(video.pix_fmt, "yuv420p10le", `${id} pixel format`);
   assertEqual(video.color_transfer, transfer, `${id} transfer`);
   assertEqual(video.color_primaries, "bt2020", `${id} primaries`);
+  if (transfer === "smpte2084" && !hasStaticHdrMetadata(video.side_data_list) && !hasStaticHdrMetadata(firstFrameSideData(sidecars.ffprobe, path))) {
+    throw new Error("HDR10 clip is missing mastering display and content light metadata.");
+  }
   return clip(id, path, transfer === "smpte2084" ? "hdr10" : "hlg");
 }
 
@@ -348,7 +416,7 @@ async function tryDolbyVision(sidecars, directory) {
     "-colorspace", "bt2020nc",
     "-color_range", "tv",
     path,
-  ], { encoding: "utf8", timeout: 60_000 });
+  ], { encoding: "utf8", timeout: FFMPEG_TIMEOUT_MS });
   if (result.error || result.status !== 0) {
     await rm(path, { force: true });
     const detail = (result.stderr || result.error?.message || "FFmpeg failed").trim().split("\n").at(-1);
@@ -500,6 +568,37 @@ function probeFrames(ffprobe, path) {
   return JSON.parse(result).frames ?? [];
 }
 
+function ffmpegVersionLine(ffmpeg) {
+  const result = spawnSync(ffmpeg, ["-hide_banner", "-version"], { encoding: "utf8", timeout: FFMPEG_TIMEOUT_MS });
+  const line = `${result.stdout ?? ""}\n${result.stderr ?? ""}`
+    .split("\n")
+    .map((entry) => entry.trim())
+    .find(Boolean);
+  return line || "unknown";
+}
+
+function hasStaticHdrMetadata(sideData) {
+  const text = (sideData ?? [])
+    .map((entry) => entry.side_data_type ?? "")
+    .join(" ")
+    .toLowerCase();
+  return text.includes("mastering display metadata") && text.includes("content light level metadata");
+}
+
+function firstFrameSideData(ffprobe, path) {
+  const result = run(ffprobe, [
+    "-v", "error",
+    "-select_streams", "v:0",
+    "-read_intervals", "%+#1",
+    "-show_frames",
+    "-show_entries", "frame=side_data_list",
+    "-of", "json",
+    path,
+  ], { encode: false });
+  const frames = JSON.parse(result).frames ?? [];
+  return frames[0]?.side_data_list ?? [];
+}
+
 function videoStream(document) {
   const video = (document.streams ?? []).find((stream) => stream.codec_type === "video");
   if (!video) {
@@ -515,7 +614,7 @@ function toolText(ffmpeg, flag) {
 
 function run(binary, args, { encode = true } = {}) {
   const prefix = encode ? ["-hide_banner", "-loglevel", "error", "-nostdin", "-y"] : ["-hide_banner"];
-  const result = spawnSync(binary, [...prefix, ...args], { encoding: "utf8", timeout: 60_000 });
+  const result = spawnSync(binary, [...prefix, ...args], { encoding: "utf8", timeout: FFMPEG_TIMEOUT_MS });
   if (result.error || result.status !== 0) {
     const detail = result.error?.message ?? result.stderr?.trim() ?? `exit ${result.status}`;
     throw new Error(`${binary} failed: ${detail}`);

@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  CORPUS_GENERATOR_ID,
   DOLBY_VISION_SKIP_REASON,
   h264SdrArguments,
   hevcColorArguments,
   masteringDisplayBoxes,
+  prepareOutputDirectory,
   resolveSidecars,
 } from "./generate.mjs";
 
@@ -85,23 +88,76 @@ test("mastering display metadata uses the ISO BMFF box layout", () => {
   assert.equal(contentLight.readUInt16BE(10), 400);
 });
 
-test("writes SDR and HDR color into the bitstream, not only as container options", () => {
+test("tags lavfi frames with setparams before encoding", () => {
   const sdr = h264SdrArguments().join(" ");
-  assert.match(sdr, /colorprim=bt709:transfer=bt709:colormatrix=bt709/);
-  assert.match(sdr, /h264_metadata=colour_primaries=1:transfer_characteristics=1/);
+  assert.match(sdr, /setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv/);
+  assert.doesNotMatch(sdr, /-color_trc/);
+  assert.doesNotMatch(sdr, /h264_metadata/);
 
-  const hdr10 = hevcColorArguments("smpte2084").join(" ");
-  assert.match(hdr10, /transfer=smpte2084/);
-  assert.match(hdr10, /transfer_characteristics=16/);
-  assert.match(hdr10, /-color_trc smpte2084/);
-
-  const hlg = hevcColorArguments("arib-std-b67").join(" ");
-  assert.match(hlg, /transfer_characteristics=18/);
+  const hdr10 = hevcColorArguments("smpte2084", true).join(" ");
+  assert.match(hdr10, /setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=tv/);
+  assert.match(hdr10, /master-display=/);
+  assert.match(hdr10, /max-cll=1000,400/);
+  assert.doesNotMatch(hdr10, /hevc_metadata/);
 
   const unknown = hevcColorArguments().join(" ");
-  assert.match(unknown, /transfer_characteristics=2/);
-  assert.doesNotMatch(unknown, /-color_trc/);
-  assert.doesNotMatch(unknown, /transfer=smpte2084/);
+  assert.match(unknown, /setparams=color_primaries=bt2020:colorspace=bt2020nc:range=tv/);
+  assert.doesNotMatch(unknown, /color_trc/);
+  assert.doesNotMatch(unknown, /master-display/);
+});
+
+test("refuses to wipe a folder that is not a previous corpus", async () => {
+  const root = mkdtempSync(join(tmpdir(), "vidra-corpus-out-"));
+  const output = join(root, "clips");
+  await mkdir(output);
+  await writeFile(join(output, "holiday.mp4"), "keep");
+  try {
+    await assert.rejects(
+      () => prepareOutputDirectory(output),
+      /not empty/,
+    );
+    assert.equal(await readFile(join(output, "holiday.mp4"), "utf8"), "keep");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("replaces only files written by a previous corpus", async () => {
+  const root = mkdtempSync(join(tmpdir(), "vidra-corpus-out-"));
+  const output = join(root, "clips");
+  await mkdir(output);
+  await writeFile(join(output, "manifest.json"), JSON.stringify({
+    generator: CORPUS_GENERATOR_ID,
+    clips: [{ id: "sdr-h264-aac", path: join(output, "sdr-h264-aac.mp4"), role: "representative" }],
+  }));
+  await writeFile(join(output, "sdr-h264-aac.mp4"), "old");
+  try {
+    await prepareOutputDirectory(output);
+    assert.deepEqual(await readdir(output), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("leaves an unrelated file next to a corpus manifest", async () => {
+  const root = mkdtempSync(join(tmpdir(), "vidra-corpus-out-"));
+  const output = join(root, "clips");
+  await mkdir(output);
+  await writeFile(join(output, "manifest.json"), JSON.stringify({
+    generator: CORPUS_GENERATOR_ID,
+    clips: [],
+  }));
+  await writeFile(join(output, "holiday.mp4"), "keep");
+  try {
+    await assert.rejects(
+      () => prepareOutputDirectory(output),
+      /holiday\.mp4/,
+    );
+    assert.equal(await readFile(join(output, "holiday.mp4"), "utf8"), "keep");
+    assert.equal((await readFile(join(output, "manifest.json"), "utf8")).includes(CORPUS_GENERATOR_ID), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("records why a synthetic Dolby Vision clip is not normally available", () => {

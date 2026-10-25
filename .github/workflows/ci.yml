@@ -162,10 +162,11 @@ jobs:
       - name: Test Rust
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      # The system FFmpeg package may lack SVT-AV1, x265, or zscale. Those
-      # combinations are skipped with a message instead of failing the job.
-      # Hardware Fast export is expected to return unsupported_platform.
-      - name: Test conversion corpus
+      # Ubuntu's FFmpeg 6.1 is older than the Apple Silicon sidecar. Missing
+      # encoders are skipped with a message. Static HDR metadata that this
+      # build only attaches to frames is reported, not failed. Hardware Fast
+      # export is expected to return unsupported_platform.
+      - name: Test conversion corpus (older FFmpeg smoke test)
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture
         env:
           VIDRA_CORPUS_REQUIRED: "1"

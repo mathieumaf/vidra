@@ -244,10 +244,18 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
     parse_media_info(&output.stdout, &input)
 }
 
+/// Parsed media plus the video stream's side-data names from the same FFprobe
+/// document. Vidra classifies HDR from those names; tests use them directly.
+#[cfg(test)]
+pub(super) struct ProbedMedia {
+    pub media: MediaInfo,
+    pub video_side_data: Vec<String>,
+}
+
 /// Runs the same FFprobe arguments and parser as [`media`] against a binary
 /// path. The application uses the Tauri sidecar; tests use the prepared binary.
 #[cfg(test)]
-pub(super) fn probe_with_binary(ffprobe: &Path, path: &str) -> ApiResult<MediaInfo> {
+pub(super) fn probe_with_binary(ffprobe: &Path, path: &str) -> ApiResult<ProbedMedia> {
     let input = validate_input(path)?;
     let output = std::process::Command::new(ffprobe)
         .args(PROBE_ARGUMENTS)
@@ -262,7 +270,24 @@ pub(super) fn probe_with_binary(ffprobe: &Path, path: &str) -> ApiResult<MediaIn
             message
         }));
     }
-    parse_media_info(&output.stdout, &input)
+    let probe: ProbeOutput = serde_json::from_slice(&output.stdout)
+        .map_err(|error| ApiError::ffmpeg(format!("Unable to parse FFprobe output: {error}")))?;
+    let video_side_data = probe
+        .streams
+        .iter()
+        .find(|stream| stream.codec_type.as_deref() == Some("video"))
+        .map(|stream| {
+            stream
+                .side_data_list
+                .iter()
+                .filter_map(|data| data.side_data_type.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(ProbedMedia {
+        media: parse_media_info(&output.stdout, &input)?,
+        video_side_data,
+    })
 }
 
 fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {

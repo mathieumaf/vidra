@@ -36,6 +36,8 @@ use std::{
 struct Manifest {
     ffmpeg: String,
     ffprobe: String,
+    #[serde(rename = "ffmpegVersion", default)]
+    ffmpeg_version: String,
     clips: Vec<Clip>,
     unavailable: Vec<Unavailable>,
 }
@@ -71,10 +73,22 @@ struct Stats {
     encoded: u32,
     rejected: u32,
     skipped: Vec<String>,
+    reported: Vec<String>,
     profiles: HashSet<&'static str>,
     qualities: Vec<QualityLevel>,
     codecs: Vec<VideoCodec>,
     containers: Vec<OutputContainer>,
+}
+
+#[test]
+fn labels_ffmpeg_6_as_an_older_smoke_test() {
+    assert_eq!(
+        ffmpeg_major("ffmpeg version 6.1.1-3ubuntu5 Copyright"),
+        Some(6)
+    );
+    assert_eq!(ffmpeg_major("ffmpeg version n8.1.3 Copyright"), Some(8));
+    assert!(ffmpeg_major("ffmpeg version 6.1.1").is_some_and(|major| major < 7));
+    assert!(ffmpeg_major("ffmpeg version 8.1.3").is_some_and(|major| major >= 7));
 }
 
 #[test]
@@ -99,7 +113,7 @@ fn reads_ffmpeg_capability_names() {
     assert!(!names.contains("H.264"));
 
     let filters = capability_names(
-        " T.. zscale            V->V       Apply resizing\n ... tonemap           V->V       Tone map\n",
+        " T.. zscale            V->V       Apply resizing\n ... tonemap           V->V       Tone map\n TS zscale            V->V       Apply resizing\n .S tonemap           V->V       Tone map\n",
     );
     assert!(filters.contains("zscale"));
     assert!(filters.contains("tonemap"));
@@ -203,6 +217,7 @@ fn conversion_corpus() {
         encoded: 0,
         rejected: 0,
         skipped: Vec::new(),
+        reported: Vec::new(),
         profiles: HashSet::new(),
         qualities: Vec::new(),
         codecs: Vec::new(),
@@ -220,18 +235,23 @@ fn conversion_corpus() {
             assert_source_unchanged(&source_hashes);
             continue;
         }
-        let media = probe_with_binary(&ffprobe, &clip.path).unwrap_or_else(|error| {
+        let probed = probe_with_binary(&ffprobe, &clip.path).unwrap_or_else(|error| {
             panic!("{}: FFprobe parsing failed: {}", clip.id, error.message);
         });
         for case in cases_for(&clip.role, full) {
             record_case(&mut stats, &case);
             run_case(
-                &clip.id,
-                &media,
-                case,
-                &ffmpeg,
-                &ffprobe,
-                &capabilities,
+                CaseInput {
+                    clip_id: &clip.id,
+                    media: &probed.media,
+                    source_side_data: &probed.video_side_data,
+                    case,
+                },
+                &EncodeTools {
+                    ffmpeg: &ffmpeg,
+                    ffprobe: &ffprobe,
+                    capabilities: &capabilities,
+                },
                 &mut stats,
             );
             assert_source_unchanged(&source_hashes);
@@ -248,8 +268,19 @@ fn conversion_corpus() {
     }
 
     let elapsed = started.elapsed().as_secs_f64();
+    let older_ffmpeg = ffmpeg_major(&manifest.ffmpeg_version).is_some_and(|major| major < 7);
+    let ffmpeg_label = if manifest.ffmpeg_version.is_empty() {
+        "unknown".to_owned()
+    } else {
+        manifest.ffmpeg_version.clone()
+    };
+    let smoke = if older_ffmpeg {
+        " | older-FFmpeg smoke test"
+    } else {
+        ""
+    };
     eprintln!(
-        "Corpus matrix: {} | encodes: {} | clean rejections: {} | skipped: {} | elapsed: {elapsed:.1}s",
+        "Corpus matrix: {} | FFmpeg: {ffmpeg_label}{smoke} | encodes: {} | clean rejections: {} | skipped: {} | elapsed: {elapsed:.1}s",
         if full { "full" } else { "reduced" },
         stats.encoded,
         stats.rejected,
@@ -257,6 +288,9 @@ fn conversion_corpus() {
     );
     for skip in &stats.skipped {
         eprintln!("skipped: {skip}");
+    }
+    for note in &stats.reported {
+        eprintln!("reported: {note}");
     }
 }
 
@@ -329,15 +363,26 @@ fn remove_corpus_dir(path: &Path) {
     let _ = fs::remove_dir_all(path);
 }
 
-fn run_case(
-    clip_id: &str,
-    media: &MediaInfo,
+struct CaseInput<'a> {
+    clip_id: &'a str,
+    media: &'a MediaInfo,
+    source_side_data: &'a [String],
     case: Case,
-    ffmpeg: &Path,
-    ffprobe: &Path,
-    capabilities: &Capabilities,
-    stats: &mut Stats,
-) {
+}
+
+struct EncodeTools<'a> {
+    ffmpeg: &'a Path,
+    ffprobe: &'a Path,
+    capabilities: &'a Capabilities,
+}
+
+fn run_case(input: CaseInput<'_>, tools: &EncodeTools<'_>, stats: &mut Stats) {
+    let CaseInput {
+        clip_id,
+        media,
+        source_side_data,
+        case,
+    } = input;
     let label = case_label(clip_id, case);
     let output_directory = output_directory_for(&media.path);
     fs::create_dir_all(&output_directory).expect("the output directory should exist");
@@ -387,7 +432,7 @@ fn run_case(
         "{label}: encode arguments did not request progress on standard output"
     );
 
-    if let Some(reason) = skip_reason(case, media, capabilities) {
+    if let Some(reason) = skip_reason(case, media, tools.capabilities) {
         assert_cleanup(&label, discard_partial(&partial));
         assert_absent(&label, &normalized);
         if strict_encoders() {
@@ -397,7 +442,8 @@ fn run_case(
         return;
     }
 
-    let ran = run_ffmpeg(ffmpeg, &arguments).unwrap_or_else(|error| panic!("{label}: {error}"));
+    let ran =
+        run_ffmpeg(tools.ffmpeg, &arguments).unwrap_or_else(|error| panic!("{label}: {error}"));
     if !ran.status.success() {
         let finalized = finalize_failed(&partial, &normalized, &input);
         assert_eq!(finalized.cleanup, PartialCleanup::Resolved, "{label}");
@@ -439,9 +485,20 @@ fn run_case(
         .unwrap_or_else(|| panic!("{label}: success did not publish a file"));
     assert_eq!(saved, normalized, "{label}: published an unexpected path");
     assert_no_partials(&output_directory, &label);
-    let output = probe_with_binary(ffprobe, saved.to_str().expect("published path is UTF-8"))
-        .unwrap_or_else(|error| panic!("{label}: output probe: {}", error.message));
-    assert_output(&label, case, media, &output);
+    let output = probe_with_binary(
+        tools.ffprobe,
+        saved.to_str().expect("published path is UTF-8"),
+    )
+    .unwrap_or_else(|error| panic!("{label}: output probe: {}", error.message));
+    assert_output(&label, case, media, &output.media);
+    report_static_hdr_metadata(
+        &label,
+        case,
+        media,
+        source_side_data,
+        &output.video_side_data,
+        stats,
+    );
     stats.encoded += 1;
 }
 
@@ -562,12 +619,81 @@ fn assert_output(label: &str, case: Case, source: &MediaInfo, output: &MediaInfo
         .iter()
         .any(|subtitle| subtitle.codec.eq_ignore_ascii_case("mov_text"))
     {
+        let expected = match case.container {
+            OutputContainer::Mp4 => "mov_text",
+            OutputContainer::Mkv => "subrip",
+        };
         assert!(
-            !output.subtitles.is_empty(),
-            "{label}: subtitle track was dropped"
+            output
+                .subtitles
+                .iter()
+                .any(|subtitle| subtitle.codec.eq_ignore_ascii_case(expected)),
+            "{label}: expected a {expected} subtitle, got {:?}",
+            output
+                .subtitles
+                .iter()
+                .map(|subtitle| subtitle.codec.as_str())
+                .collect::<Vec<_>>()
         );
     }
     assert_hdr(label, case.codec, source_video, output_video);
+}
+
+fn report_static_hdr_metadata(
+    label: &str,
+    case: Case,
+    source: &MediaInfo,
+    source_side_data: &[String],
+    output_side_data: &[String],
+    stats: &mut Stats,
+) {
+    let hdr10 = source
+        .video
+        .as_ref()
+        .is_some_and(|video| video.hdr_format == Some(HdrFormat::Hdr10));
+    if !hdr10 || !matches!(case.codec, VideoCodec::H265 | VideoCodec::Av1) {
+        return;
+    }
+    let (source_mastering, source_light) = static_hdr_metadata(source_side_data);
+    let (output_mastering, output_light) = static_hdr_metadata(output_side_data);
+    if source_mastering && source_light && output_mastering && output_light {
+        return;
+    }
+    let detail = format!(
+        "{label}: stream-level static HDR metadata (source mastering={source_mastering}, content light={source_light}; output mastering={output_mastering}, content light={output_light}; source side data: {}; output side data: {})",
+        side_data_list(source_side_data),
+        side_data_list(output_side_data),
+    );
+    if strict_encoders() {
+        panic!(
+            "{detail}. The macOS sidecar must keep mastering display and content light on the video stream through H.265 and AV1 re-encoding, because that is what Vidra reads."
+        );
+    }
+    stats.reported.push(format!(
+        "{detail}. This older FFmpeg build often attaches that metadata only to frames, so the smoke test does not fail."
+    ));
+}
+
+fn static_hdr_metadata(side_data: &[String]) -> (bool, bool) {
+    let text = side_data.join(" ").to_ascii_lowercase();
+    (
+        text.contains("mastering display metadata"),
+        text.contains("content light level metadata"),
+    )
+}
+
+fn side_data_list(side_data: &[String]) -> String {
+    if side_data.is_empty() {
+        "none".to_owned()
+    } else {
+        side_data.join(", ")
+    }
+}
+
+fn ffmpeg_major(version: &str) -> Option<u32> {
+    let token = version.split_whitespace().nth(2)?;
+    let token = token.trim_start_matches('n');
+    token.split(['.', '-']).next()?.parse().ok()
 }
 
 fn assert_hdr(label: &str, codec: VideoCodec, source: &VideoStream, output: &VideoStream) {
@@ -1067,7 +1193,8 @@ fn capability_names(text: &str) -> HashSet<String> {
         .filter_map(|line| {
             let mut parts = line.split_whitespace();
             let flags = parts.next()?;
-            if !(3..=6).contains(&flags.len())
+            // FFmpeg 6 prints three filter flags. FFmpeg 8 prints two.
+            if !(2..=6).contains(&flags.len())
                 || !flags
                     .chars()
                     .all(|character| character == '.' || character.is_ascii_alphabetic())

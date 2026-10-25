@@ -128,7 +128,7 @@ fn subtitle_codec_arguments(
                 .enumerate()
                 .flat_map(|(index, stream)| {
                     let codec = if stream.codec.eq_ignore_ascii_case("mov_text") {
-                        "srt"
+                        "subrip"
                     } else {
                         "copy"
                     };
@@ -438,7 +438,9 @@ mod tests {
 
         let arguments = mapping_arguments(&request, &subtitles);
 
-        assert!(arguments.windows(2).any(|pair| pair == ["-c:s:0", "srt"]));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c:s:0", "subrip"]));
         assert!(arguments.windows(2).any(|pair| pair == ["-c:s:1", "copy"]));
         assert!(!arguments.windows(2).any(|pair| pair == ["-c:s", "copy"]));
     }
