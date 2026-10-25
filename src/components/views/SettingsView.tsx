@@ -5,6 +5,7 @@ import type { EncodingProfile } from "../../config/profiles";
 import { qualityLevel } from "../../config/quality";
 import { outputResolutionLabel } from "../../config/resolution";
 import type { ApplicationUpdaterState } from "../../hooks/useApplicationUpdater";
+import { localComputerPhrase } from "../../lib/platform";
 import type { ThemePreference } from "../../lib/theme";
 import type { UpdateChannel } from "../../types/applicationUpdate";
 import type { FfmpegStatus } from "../../types/media";
@@ -67,7 +68,7 @@ export function SettingsView({
       <div className="settings-scroll" inert={showNotices}>
         <section className="settings-section">
           <div className="settings-section-heading">
-            <div><strong>Encoding profiles</strong><p>Reusable conversion settings stored on this Mac.</p></div>
+            <div><strong>Encoding profiles</strong><p>Reusable conversion settings stored on {localComputerPhrase()}.</p></div>
             <span>{userProfiles.length} personal</span>
           </div>
 

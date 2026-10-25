@@ -1,5 +1,6 @@
 import { Icon } from "../ui/Icon";
 import vidraMark from "../../assets/vidra-mark.svg";
+import { localFilesPrivacyNote } from "../../lib/platform";
 import type { FfmpegStatus, View } from "../../types/media";
 import { DragRegion } from "./DragRegion";
 
@@ -59,7 +60,7 @@ export function Sidebar({
         <Icon name="shield" />
         <span>
           <strong>Private by design</strong>
-          Files stay on this Mac
+          {localFilesPrivacyNote()}
         </span>
       </div>
       <div className={`engine-status ${isReady ? "ready" : "unavailable"}`}>
