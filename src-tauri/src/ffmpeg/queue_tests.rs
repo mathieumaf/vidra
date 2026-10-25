@@ -360,13 +360,19 @@ fn enqueue_checks_disk_space_after_probe_and_does_not_queue_a_rejected_batch() {
 fn enqueue_rejects_an_output_already_reserved_by_the_queue() {
     let directory = TempDir::new("reserved");
     let input = write_source(directory.path(), "clip.mov");
-    let output = directory.path().join("clip-vidra.mp4");
+    // A queued job stores the canonical output. macOS reaches the temp
+    // directory through /var, which resolves to /private/var.
+    let stored = directory
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("clip-vidra.mp4");
     let jobs = JobManager::default();
-    jobs.append(vec![pending_job("waiting", &input, &output)])
+    jobs.append(vec![pending_job("waiting", &input, &stored)])
         .unwrap();
     let trace = trace_enqueue(
         &jobs,
-        vec![request(&input, &output)],
+        vec![request(&input, &directory.path().join("clip-vidra.mp4"))],
         |path| Ok(media_info(Path::new(path))),
         |_, _| Ok(()),
     );
