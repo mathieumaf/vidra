@@ -63,8 +63,11 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         match event {
+            // Finder delivers files opened with a running Vidra as URLs.
+            // This event exists only on macOS; other platforms pass files as
+            // process arguments through the single-instance handler above.
+            #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => {
-                // Finder delivers files opened with a running Vidra as URLs.
                 open_files::store_and_emit(app_handle, open_files::paths_from_urls(&urls));
             }
             tauri::RunEvent::ExitRequested { .. } => {

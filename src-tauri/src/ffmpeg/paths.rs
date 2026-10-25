@@ -92,13 +92,12 @@ pub(super) fn validate_output(
         }
     }
 
-    if inputs
-        .iter()
-        .any(|input| normalized_output == *input || same_existing_file(&normalized_output, input))
-    {
-        return Err(ApiError::invalid_input(
-            "The output file must be different from every input file.",
-        ));
+    for input in inputs {
+        if &normalized_output == input || same_existing_file(&normalized_output, input)? {
+            return Err(ApiError::invalid_input(
+                "The output file must be different from every input file.",
+            ));
+        }
     }
 
     if existing_metadata.is_some() && existing == ExistingOutput::Reject {
@@ -111,22 +110,28 @@ pub(super) fn validate_output(
     Ok(normalized_output)
 }
 
-fn same_existing_file(left: &Path, right: &Path) -> bool {
+fn same_existing_file(left: &Path, right: &Path) -> ApiResult<bool> {
     let (Ok(left_metadata), Ok(right_metadata)) = (fs::metadata(left), fs::metadata(right)) else {
-        return false;
+        return Ok(false);
     };
     same_file_identity(&left_metadata, &right_metadata)
 }
 
 #[cfg(unix)]
-fn same_file_identity(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+fn same_file_identity(left: &fs::Metadata, right: &fs::Metadata) -> ApiResult<bool> {
     use std::os::unix::fs::MetadataExt;
-    left.dev() == right.dev() && left.ino() == right.ino()
+    Ok(left.dev() == right.dev() && left.ino() == right.ino())
 }
 
+/// Windows file identity is not implemented yet. Returning `false` here would
+/// treat an existing hard link as a different file and let an encode replace
+/// the source, so the check fails closed until that implementation exists.
 #[cfg(not(unix))]
-fn same_file_identity(_left: &fs::Metadata, _right: &fs::Metadata) -> bool {
-    false
+fn same_file_identity(_left: &fs::Metadata, _right: &fs::Metadata) -> ApiResult<bool> {
+    Err(ApiError::new(
+        "unsupported_platform",
+        "Checking whether an output file is the same as a source file is not supported on this platform yet.",
+    ))
 }
 
 #[cfg(test)]
@@ -286,6 +291,50 @@ mod tests {
         )
         .expect_err("a hard-link output matching an input should be rejected");
         assert!(hard_error.message.contains("every input file"));
+        fs::remove_dir_all(directory).expect("the test directory should be removed");
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn an_existing_output_is_rejected_until_file_identity_exists() {
+        let directory = test_directory("unsupported-identity");
+        let input = directory.join("input.mp4");
+        let output = directory.join("output.mp4");
+        fs::write(&input, b"source").expect("the input should be written");
+        fs::write(&output, b"other").expect("the output should be written");
+        let inputs = vec![input.canonicalize().expect("the input should resolve")];
+
+        let error = validate_output(
+            path_text(&output),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Replace,
+        )
+        .expect_err("an existing output must not skip the file-identity check");
+
+        assert_eq!(error.code, "unsupported_platform");
+        assert!(error.message.contains("not supported on this platform"));
+        fs::remove_dir_all(directory).expect("the test directory should be removed");
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn a_new_output_path_does_not_require_file_identity() {
+        let directory = test_directory("new-output-identity");
+        let input = directory.join("input.mp4");
+        fs::write(&input, b"source").expect("the input should be written");
+        let inputs = vec![input.canonicalize().expect("the input should resolve")];
+        let output = directory.join("output.mp4");
+
+        let resolved = validate_output(
+            path_text(&output),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Reject,
+        )
+        .expect("a path that does not exist yet is not the source file");
+
+        assert_eq!(resolved.file_name(), output.file_name());
         fs::remove_dir_all(directory).expect("the test directory should be removed");
     }
 }
