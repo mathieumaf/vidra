@@ -1,7 +1,9 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State, Url};
+#[cfg(target_os = "macos")]
+use tauri::Url;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Video extensions Vidra can open from the operating system.
 ///
@@ -65,8 +67,12 @@ pub fn paths_from_args(args: &[String]) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Keep file URLs delivered by the operating system that point at supported
-/// video files. Non-file URLs are ignored.
+/// Keep file URLs delivered by Finder that point at supported video files.
+/// Non-file URLs are ignored.
+///
+/// `RunEvent::Opened` exists only on macOS, so other platforms never receive
+/// these URLs. They get opened files from process arguments instead.
+#[cfg(target_os = "macos")]
 pub fn paths_from_urls(urls: &[Url]) -> Vec<PathBuf> {
     urls.iter()
         .filter_map(|url| url.to_file_path().ok())
@@ -111,7 +117,9 @@ fn drain_to_strings(state: &OpenedFiles) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_supported_video_path, paths_from_args, paths_from_urls, OpenedFiles, Url};
+    use super::{is_supported_video_path, paths_from_args, OpenedFiles};
+    #[cfg(target_os = "macos")]
+    use super::{paths_from_urls, Url};
     use std::path::PathBuf;
 
     #[test]
@@ -145,6 +153,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn opened_urls_keep_only_supported_files() {
         let urls = [

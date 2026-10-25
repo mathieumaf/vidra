@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { EncodingProfile } from "../../config/profiles";
+import { localComputerPhrase } from "../../lib/platform";
 
 type ProfileBarProps = {
   profiles: EncodingProfile[];
@@ -82,7 +83,9 @@ export function ProfileBar({
             </select>
             <p>
               {selectedProfile?.description
-                ?? (selectedProfile ? "Personal profile stored on this Mac" : "Current conversion settings")}
+                ?? (selectedProfile
+                  ? `Personal profile stored on ${localComputerPhrase()}`
+                  : "Current conversion settings")}
               {selectedProfile?.isBuiltIn && <span className="profile-read-only"> · Built-in · Read only</span>}
               {selectedProfile && isModified && <strong> · Modified</strong>}
             </p>

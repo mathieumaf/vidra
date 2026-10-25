@@ -33,13 +33,13 @@ pub(super) fn ensure_available(
 fn ensure_available_with(
     requests: &[(EncodeRequest, MediaInfo)],
     reservations: &[DiskSpaceReservation],
-    mut space_for: impl FnMut(&Path) -> Option<VolumeSpace>,
+    mut space_for: impl FnMut(&Path) -> ApiResult<Option<VolumeSpace>>,
 ) -> ApiResult<()> {
     let mut volumes = HashMap::<u64, VolumeRequirement>::new();
 
     for (request, media) in requests {
         let output = PathBuf::from(&request.output_path);
-        let Some(space) = space_for(&output) else {
+        let Some(space) = space_for(&output)? else {
             continue;
         };
         let requirement = volumes
@@ -68,7 +68,7 @@ fn ensure_available_with(
 
     for reservation in reservations {
         let output = Path::new(&reservation.output_path);
-        let Some(space) = space_for(output) else {
+        let Some(space) = space_for(output)? else {
             continue;
         };
         let requirement = volumes
@@ -280,7 +280,12 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 #[cfg(unix)]
-fn destination_space(output: &Path) -> Option<VolumeSpace> {
+fn destination_space(output: &Path) -> ApiResult<Option<VolumeSpace>> {
+    Ok(measured_destination_space(output))
+}
+
+#[cfg(unix)]
+fn measured_destination_space(output: &Path) -> Option<VolumeSpace> {
     use std::{
         ffi::CString,
         mem::MaybeUninit,
@@ -304,14 +309,21 @@ fn destination_space(output: &Path) -> Option<VolumeSpace> {
     })
 }
 
+/// A missing platform implementation must not look like "space could not be
+/// measured". Callers skip `Ok(None)` and would otherwise queue the encode
+/// without a disk check.
 #[cfg(not(unix))]
-fn destination_space(_output: &Path) -> Option<VolumeSpace> {
-    None
+fn destination_space(_output: &Path) -> ApiResult<Option<VolumeSpace>> {
+    Err(ApiError::new(
+        "unsupported_platform",
+        "Checking available disk space is not supported on this platform yet.",
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_available_with, estimated_output_bytes, VolumeSpace};
+    use super::{destination_space, ensure_available_with, estimated_output_bytes, VolumeSpace};
+    use crate::error::ApiError;
     use crate::ffmpeg::{
         AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodeRequest, EncodingSpeed,
         MediaInfo, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
@@ -412,10 +424,10 @@ mod tests {
     fn rejects_an_obviously_impossible_batch_before_it_is_queued() {
         let jobs = vec![(request(), media()), (request(), media())];
         let error = ensure_available_with(&jobs, &[], |_| {
-            Some(VolumeSpace {
+            Ok(Some(VolumeSpace {
                 id: 7,
                 available_bytes: 1024,
-            })
+            }))
         })
         .expect_err("the batch should not fit");
 
@@ -432,19 +444,19 @@ mod tests {
         let estimated = estimated_output_bytes(&settings, &source);
         let jobs = vec![(settings.clone(), source.clone())];
         assert!(ensure_available_with(&jobs, &[], |_| {
-            Some(VolumeSpace {
+            Ok(Some(VolumeSpace {
                 id: 7,
                 available_bytes: estimated.saturating_mul(2),
-            })
+            }))
         })
         .is_ok());
 
         settings.allow_insufficient_disk_space = true;
         assert!(ensure_available_with(&[(settings, source)], &[], |_| {
-            Some(VolumeSpace {
+            Ok(Some(VolumeSpace {
                 id: 7,
                 available_bytes: 0,
-            })
+            }))
         })
         .is_ok());
     }
@@ -458,10 +470,10 @@ mod tests {
 
         let result = ensure_available_with(&jobs, &[], |path: &Path| {
             assert_eq!(path, Path::new("/destination/output.mp4"));
-            Some(VolumeSpace {
+            Ok(Some(VolumeSpace {
                 id: 42,
                 available_bytes: one_output.saturating_add(1),
-            })
+            }))
         });
 
         assert!(result.is_err());
@@ -478,12 +490,52 @@ mod tests {
         }];
 
         let result = ensure_available_with(&[(settings, source)], &reservations, |_| {
-            Some(VolumeSpace {
+            Ok(Some(VolumeSpace {
                 id: 42,
                 available_bytes: one_output.saturating_add(1),
-            })
+            }))
         });
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn an_unmeasured_destination_does_not_fail_the_batch() {
+        assert!(ensure_available_with(&[(request(), media())], &[], |_| Ok(None)).is_ok());
+    }
+
+    #[test]
+    fn an_unsupported_disk_check_is_reported_instead_of_skipped() {
+        let error = ensure_available_with(&[(request(), media())], &[], |_| {
+            Err(ApiError::new(
+                "unsupported_platform",
+                "Checking available disk space is not supported on this platform yet.",
+            ))
+        })
+        .expect_err("an unsupported disk check must not be treated as enough space");
+
+        assert_eq!(error.code, "unsupported_platform");
+        assert!(error.message.contains("not supported on this platform"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_space_reads_a_real_volume() {
+        let output = std::env::temp_dir().join("vidra-space-check.mp4");
+        let space = destination_space(&output)
+            .expect("unix volumes can be measured")
+            .expect("the temporary directory should report free space");
+
+        assert!(space.available_bytes > 0);
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn destination_space_is_unsupported_on_this_platform() {
+        let error = destination_space(Path::new("/tmp/output.mp4"))
+            .expect_err("disk space checks are not implemented on this platform");
+
+        assert_eq!(error.code, "unsupported_platform");
+        assert!(error.message.contains("not supported on this platform"));
     }
 }

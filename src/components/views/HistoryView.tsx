@@ -1,6 +1,7 @@
 import { confirm } from "@tauri-apps/plugin-dialog";
 import type { HistoryEntry } from "../../types/media";
 import { historyDescription, historySummary } from "../../lib/history";
+import { localComputerPhrase } from "../../lib/platform";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
 import { DiagnosticDetails } from "./DiagnosticDetails";
@@ -68,7 +69,7 @@ export function HistoryView({
         <div>
           <span className="section-label">CONVERSION HISTORY</span>
           <strong>{items.length} saved {items.length === 1 ? "conversion" : "conversions"}</strong>
-          <p>Stored only on this Mac. Removing entries never deletes media.</p>
+          <p>Stored only on {localComputerPhrase()}. Removing entries never deletes media.</p>
         </div>
         {items.length > 0 && (
           <button className="secondary-button" type="button" onClick={() => void clearHistory()}>
