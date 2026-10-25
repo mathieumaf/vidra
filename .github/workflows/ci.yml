@@ -41,8 +41,27 @@ jobs:
       - name: Install Rust checks
         run: rustup component add clippy rustfmt
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      # Development sidecars only. prepare.mjs reuses a sidecar when its
+      # checksum marker matches scripts/ffmpeg/sources.json. The release build
+      # is a separate command and is not cached here.
+      - name: Cache development FFmpeg sidecars
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .cache/ffmpeg
+            src-tauri/binaries/ffmpeg-aarch64-apple-darwin
+            src-tauri/binaries/ffprobe-aarch64-apple-darwin
+            src-tauri/binaries/.ffmpeg-aarch64-apple-darwin.sha256
+            src-tauri/binaries/.ffprobe-aarch64-apple-darwin.sha256
+          key: ffmpeg-dev-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ffmpeg/sources.json', 'scripts/ffmpeg/prepare.mjs') }}
 
       - name: Prepare FFmpeg sidecars
         run: pnpm ffmpeg:prepare
