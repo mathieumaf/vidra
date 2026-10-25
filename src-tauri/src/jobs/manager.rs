@@ -208,7 +208,7 @@ impl JobManager {
                 id: job.id.clone(),
                 output_path: job.request.output_path.clone(),
                 estimated_output_bytes: job.estimated_output_bytes,
-                child: None,
+                process: None,
                 process_id: None,
                 paused: false,
                 partial: None,
@@ -243,9 +243,16 @@ impl JobManager {
     }
 
     pub fn attach_child(&self, job_id: &str, child: CommandChild) -> ApiResult<()> {
-        // Cache the PID before FFmpeg can be suspended. On macOS, querying the
-        // shell child after SIGSTOP can block behind its internal wait lock.
-        let process_id = child.pid();
+        let process = process::RunningProcess::from_shell(child);
+        self.attach_running(job_id, process)
+    }
+
+    pub(crate) fn attach_running(
+        &self,
+        job_id: &str,
+        process: process::RunningProcess,
+    ) -> ApiResult<()> {
+        let process_id = process.process_id();
         let mut state = self.lock()?;
         let active = state.active.as_mut().ok_or_else(|| {
             ApiError::new(
@@ -261,7 +268,7 @@ impl JobManager {
             ));
         }
 
-        active.child = Some(child);
+        active.process = Some(process);
         active.process_id = Some(process_id);
         Ok(())
     }
@@ -343,34 +350,39 @@ impl JobManager {
 
         if state.active.as_ref().map(|job| job.id.as_str()) == Some(job_id) {
             let active = state.active.as_mut().expect("the active job was checked");
-            let process_id = active.process_id.ok_or_else(|| {
-                ApiError::new("job_state_error", "The encoding process is still starting.")
-            })?;
-            let child = active.child.take().ok_or_else(|| {
+            if active.process_id.is_none() {
+                return Err(ApiError::new(
+                    "job_state_error",
+                    "The encoding process is still starting.",
+                ));
+            }
+            let process = active.process.take().ok_or_else(|| {
                 ApiError::new("job_state_error", "The encoding process is still starting.")
             })?;
             state.cancelled.insert(job_id.to_owned());
-            return Ok(CancelledJob::Active { child, process_id });
+            return Ok(CancelledJob::Active { process });
         }
 
         if let Some(index) = state.suspended.iter().position(|job| job.id == job_id) {
-            let (process_id, child) = {
+            let process = {
                 let suspended = state
                     .suspended
                     .get_mut(index)
                     .expect("the suspended job was located");
-                let process_id = suspended.process_id.ok_or_else(|| {
+                if suspended.process_id.is_none() {
+                    return Err(ApiError::new(
+                        "job_state_error",
+                        "The encoding process is unavailable.",
+                    ));
+                }
+                suspended.process.take().ok_or_else(|| {
                     ApiError::new("job_state_error", "The encoding process is unavailable.")
-                })?;
-                let child = suspended.child.take().ok_or_else(|| {
-                    ApiError::new("job_state_error", "The encoding process is unavailable.")
-                })?;
-                (process_id, child)
+                })?
             };
             state.suspended.remove(index);
             state.waiting_order.retain(|id| id != job_id);
             state.cancelled.insert(job_id.to_owned());
-            return Ok(CancelledJob::Active { child, process_id });
+            return Ok(CancelledJob::Active { process });
         }
 
         let Some(index) = state.pending.iter().position(|job| job.id == job_id) else {
@@ -433,26 +445,26 @@ impl JobManager {
     }
 
     pub fn shutdown(&self) {
-        let running = match self.lock() {
-            Ok(mut state) => {
-                let mut running = state.active.take().into_iter().collect::<Vec<_>>();
-                running.extend(state.suspended.drain(..));
-                state.pending.clear();
-                state.waiting_order.clear();
-                state.cancelled.clear();
-                state.update_in_progress = false;
-                running
-            }
-            Err(error) => {
-                eprintln!("Unable to stop the encoding queue during shutdown: {error}");
-                self.sleep_preventer.deactivate();
-                return;
-            }
+        // A poisoned lock still holds the running encoders. Leaving them
+        // running would keep writing a partial file after the application
+        // exits. `reserved_output_paths` recovers the same lock.
+        let running = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut running = state.active.take().into_iter().collect::<Vec<_>>();
+            running.extend(state.suspended.drain(..));
+            state.pending.clear();
+            state.waiting_order.clear();
+            state.cancelled.clear();
+            state.update_in_progress = false;
+            running
         };
 
         for mut job in running {
-            if let (Some(process_id), Some(child)) = (job.process_id, job.child.take()) {
-                if let Err(error) = process::terminate(process_id, child) {
+            if let Some(process) = job.process.take() {
+                if let Err(error) = process.stop() {
                     eprintln!("Unable to stop FFmpeg during shutdown: {error}");
                 }
             }
