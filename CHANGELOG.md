@@ -2,9 +2,9 @@
 
 All notable changes to Vidra are documented in this file.
 
-## Unreleased
+## 0.2.0-beta.1 - 2026-10-25
 
-Intended prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.1`. Before tagging, replace this heading with `0.2.0-beta.1` and the release date. Windows, Linux, and Intel Mac builds are not included.
+Prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.1`. Windows, Linux, and Intel Mac builds are not included.
 
 ### Fixed
 
