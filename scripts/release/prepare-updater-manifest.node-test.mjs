@@ -18,6 +18,7 @@ test("uses the exact prerelease tag as the updater version", () => {
 
 test("rejects tags and manifests that the updater cannot use", () => {
   assert.throws(() => versionFromReleaseTag("v0.1-beta"), /semantic version/);
+  assert.throws(() => versionFromReleaseTag("ffmpeg-dev-8.1.3-r6"), /semantic version/);
   assert.throws(() => versionFromReleaseTag("v0.1.0-beta.03"), /semantic version/);
   assert.throws(() => prepareUpdaterManifest({ platforms: {} }, "v0.1.0"), /platform/);
 });

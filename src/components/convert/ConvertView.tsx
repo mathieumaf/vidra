@@ -151,7 +151,7 @@ export function ConvertView({
           </button>
         </div>
         {error && <div className="error-message" role="alert">{error}</div>}
-        {status && !status.ready && <EngineUnavailable />}
+        {status && !status.ready && <EngineUnavailable message={status.error} />}
       </div>
     );
   }
@@ -325,7 +325,7 @@ export function ConvertView({
           )}
         </div>
       </div>
-      {status && !status.ready && <EngineUnavailable />}
+      {status && !status.ready && <EngineUnavailable message={status.error} />}
     </div>
   );
 }
@@ -418,10 +418,14 @@ function EncodingProgress({ progress, isPaused }: { progress: EncodeProgress; is
   );
 }
 
-function EngineUnavailable() {
+function EngineUnavailable({ message }: { message?: string | null }) {
   return (
     <div className="error-message" role="alert">
-      FFmpeg is not available. Run <code>pnpm ffmpeg:prepare</code> and restart Vidra.
+      {message || (
+        <>
+          FFmpeg is not available. Run <code>pnpm ffmpeg:prepare</code> and restart Vidra.
+        </>
+      )}
     </div>
   );
 }

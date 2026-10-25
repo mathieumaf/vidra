@@ -13,7 +13,9 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event.release.tag_name != 'updater-manifest'
+    # Application tags start with v. The FFmpeg development archive uses a
+    # different tag and must not publish updater manifests.
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     steps:
       - name: Check out the publication scripts

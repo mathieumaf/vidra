@@ -27,6 +27,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Require Apple Silicon runner
+        run: test "$(uname -m)" = "arm64"
+
       - name: Install pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
@@ -49,19 +52,19 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      # Development sidecars only. prepare.mjs reuses a sidecar when its
-      # checksum marker matches scripts/ffmpeg/sources.json. The release build
-      # is a separate command and is not cached here.
-      - name: Cache development FFmpeg sidecars
+      # Development sidecars are downloaded from the checksum in
+      # scripts/ffmpeg/dev-archive.json. While that checksum is the
+      # placeholder, prepare fails on purpose and this job does not compile
+      # FFmpeg. After the archive is published, the same step downloads it.
+      - name: Cache development FFmpeg archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .cache/ffmpeg
+            .cache/ffmpeg/aarch64-apple-darwin
             src-tauri/binaries/ffmpeg-aarch64-apple-darwin
             src-tauri/binaries/ffprobe-aarch64-apple-darwin
-            src-tauri/binaries/.ffmpeg-aarch64-apple-darwin.sha256
-            src-tauri/binaries/.ffprobe-aarch64-apple-darwin.sha256
-          key: ffmpeg-dev-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ffmpeg/sources.json', 'scripts/ffmpeg/prepare.mjs') }}
+            src-tauri/binaries/.ffmpeg-dev-archive-aarch64-apple-darwin.sha256
+          key: ffmpeg-dev-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ffmpeg/dev-archive.json', 'scripts/ffmpeg/prepare.mjs', 'scripts/ffmpeg/dev-archive.mjs') }}
 
       - name: Prepare FFmpeg sidecars
         run: pnpm ffmpeg:prepare
