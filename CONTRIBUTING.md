@@ -29,7 +29,7 @@ Install that same cargo-deny version so the result matches CI. The command reads
 
 - Keep source code, UI text, documentation, tests, and commit messages in English.
 - Add focused tests for behavior changes, especially queue state, FFmpeg arguments, path validation, and parsers.
-- Preserve source media and remove incomplete outputs after failure or cancellation.
+- Preserve source media. Remove an unfinished temporary output after failure or cancellation. Replace an existing destination file only after explicit confirmation and a successful conversion.
 - Review licensing and distribution implications before adding dependencies or codecs. Run `cargo deny check --manifest-path src-tauri/Cargo.toml --locked` when Rust dependencies change.
 - Run `pnpm check` and `git diff --check` before requesting review.
 

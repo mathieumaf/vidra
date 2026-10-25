@@ -263,7 +263,11 @@ export function ConvertView({
           {!isActive && result?.status === "completed" && (
             <div className="success-message">
               <span>✓</span>
-              <div><strong>Encoding complete</strong><p>{result.outputPath}</p></div>
+              <div>
+                <strong>Encoding complete</strong>
+                <p>{result.outputPath}</p>
+                {result.error && <p>{result.error}</p>}
+              </div>
             </div>
           )}
           {!isActive && result?.status === "cancelled" && (

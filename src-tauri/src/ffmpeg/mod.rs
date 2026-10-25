@@ -1,7 +1,7 @@
 pub mod binary;
 mod disk_space;
 pub mod encode;
-mod paths;
+pub(crate) mod paths;
 pub mod probe;
 mod progress;
 pub mod queue;

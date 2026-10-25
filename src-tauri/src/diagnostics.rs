@@ -52,10 +52,11 @@ pub fn failure_report(
     job: &PendingJob,
     log: BoundedLog,
     exit_code: Option<i32>,
+    partial_path: Option<&str>,
 ) -> DiagnosticReport {
     let raw_log = log.finish();
     let (code, summary) = classify_failure(&raw_log);
-    let redacted_log = redact_paths(&raw_log, job);
+    let redacted_log = redact_paths(&raw_log, job, partial_path);
     let command = crate::ffmpeg::encode::redacted_command(job)
         .unwrap_or_else(|_| "ffmpeg <command unavailable>".to_owned());
     let report = format!(
@@ -198,10 +199,21 @@ fn contains_any(value: &str, patterns: &[&str]) -> bool {
     patterns.iter().any(|pattern| value.contains(pattern))
 }
 
-fn redact_paths(value: &str, job: &PendingJob) -> String {
-    let redacted = value
-        .replace(&job.request.input_path, "<source>")
-        .replace(&job.request.output_path, "<output>");
+fn redact_paths(value: &str, job: &PendingJob, partial_path: Option<&str>) -> String {
+    let mut redacted = value.to_owned();
+    let mut paths = vec![
+        (job.request.input_path.as_str(), "<source>"),
+        (job.request.output_path.as_str(), "<output>"),
+    ];
+    if let Some(partial) = partial_path {
+        paths.push((partial, "<output>"));
+    }
+    paths.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
+    for (path, token) in paths {
+        if !path.is_empty() {
+            redacted = redacted.replace(path, token);
+        }
+    }
     let Some(home) = std::env::var_os("HOME") else {
         return redacted;
     };
@@ -386,16 +398,18 @@ mod tests {
     fn reports_are_bounded_and_redact_media_paths() {
         let job = pending_job();
         let mut log = BoundedLog::default();
+        let partial_path = "/Users/private/Exports/.vidra-partial-diagnostic-test-abc123.mp4";
         log.push(&format!(
-            "{}: Permission denied while writing {}",
-            job.request.input_path, job.request.output_path
+            "{}: Permission denied while writing {} ({partial_path})",
+            job.request.input_path, job.request.output_path,
         ));
 
-        let diagnostic = failure_report(&job, log, Some(1));
+        let diagnostic = failure_report(&job, log, Some(1), Some(partial_path));
 
         assert_eq!(diagnostic.code, "permission_denied");
         assert!(!diagnostic.report.contains(&job.request.input_path));
         assert!(!diagnostic.report.contains(&job.request.output_path));
+        assert!(!diagnostic.report.contains(".vidra-partial-"));
         assert!(!diagnostic.report.contains("/Users/private"));
         assert!(diagnostic.report.contains("ffmpeg -hide_banner"));
         assert!(diagnostic.report.contains("<source>"));

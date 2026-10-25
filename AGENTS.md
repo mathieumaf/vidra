@@ -42,6 +42,7 @@ This file applies to the entire repository.
 - Keep queue orchestration, process events, and sequential execution in `src-tauri/src/ffmpeg/queue.rs`.
 - Keep synchronized job state and queue mutations in `src-tauri/src/jobs/`.
 - Keep FFprobe parsing in `src-tauri/src/ffmpeg/probe.rs` and progress parsing in `src-tauri/src/ffmpeg/progress.rs`.
+- Keep destination publication and unfinished temporary outputs in `src-tauri/src/output/`.
 - Return structured `ApiError` values with stable codes and useful English messages. Do not expose avoidable implementation details to the UI.
 - Never hold a mutex across an async await point or a long-running process operation.
 - Run one FFmpeg encoding process at a time unless parallel encoding is explicitly designed and approved.
@@ -53,7 +54,7 @@ This file applies to the entire repository.
 - When audio conversion is required, never raise a known source bitrate.
 - Keep container-specific stream mapping explicit. MKV should preserve compatible subtitles, chapters, metadata, and tracks; MP4 must use compatible mappings and codec tags.
 - Validate all input and output paths in Rust, even if the frontend already validated them.
-- Remove incomplete output files after cancellation or failure.
+- Encode into a temporary file in the destination directory and move it into place only after success. Failure, cancellation, and shutdown may remove that temporary file and must leave the source unchanged. An existing destination file is replaced only when replacement was confirmed and the conversion succeeds. A successful conversion whose destination name is taken is saved under the next free numbered name instead of being deleted.
 - Keep quality presets stable and covered by tests when changing CRF values or codec behavior.
 - Treat FFmpeg stderr as diagnostic data. Present concise failures to users and avoid unbounded log storage.
 

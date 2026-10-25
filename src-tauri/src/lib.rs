@@ -11,6 +11,7 @@ mod power;
 
 use history::HistoryManager;
 use jobs::JobManager;
+use output::partial::PartialLedger;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -28,6 +29,10 @@ pub fn run() {
         .setup(|app| {
             let history_path = app.path().app_data_dir()?.join("conversion-history.json");
             app.manage(HistoryManager::new(history_path));
+            let partials =
+                PartialLedger::open(app.path().app_data_dir()?.join("partial-outputs.json"));
+            partials.recover_stale();
+            app.manage(partials);
             // Files passed on launch are stored without emitting: the
             // interface collects them through `take_opened_files` once ready.
             if let Some(opened) = app.try_state::<open_files::OpenedFiles>() {
@@ -72,6 +77,7 @@ pub fn run() {
             }
             tauri::RunEvent::ExitRequested { .. } => {
                 app_handle.state::<JobManager>().shutdown();
+                app_handle.state::<PartialLedger>().recover_stale();
             }
             _ => {}
         }

@@ -32,7 +32,9 @@ export function historySummary(entry: HistoryEntry): string {
 }
 
 export function historyDescription(entry: HistoryEntry): string {
-  if (entry.status === "completed") return entry.outputPath;
+  if (entry.status === "completed") {
+    return entry.error ? `${entry.outputPath} — ${entry.error}` : entry.outputPath;
+  }
   if (entry.status === "failed") return entry.error ?? "The conversion could not be completed.";
   return "The conversion was cancelled before an output was created.";
 }

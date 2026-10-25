@@ -10,10 +10,13 @@ use crate::{
     error::{ApiError, ApiResult},
     jobs::PendingJob,
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, ffi::OsString, path::Path};
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
+// `-y` overwrites only the empty partial file created for this job. The
+// destination is never an FFmpeg argument; `-n` cannot be used because that
+// partial file already exists when FFmpeg starts.
 const GLOBAL_ARGUMENTS: [&str; 4] = ["-hide_banner", "-nostdin", "-y", "-i"];
 
 pub(super) fn validate_settings(request: &EncodeRequest, media: &MediaInfo) -> ApiResult<()> {
@@ -116,6 +119,7 @@ fn is_mp4_text_subtitle(codec: &str) -> bool {
 pub(super) fn build_command(
     app: &AppHandle,
     job: &PendingJob,
+    partial_output: &Path,
 ) -> ApiResult<tauri_plugin_shell::process::Command> {
     validate_settings(&job.request, &job.media)?;
     let input = validate_input(&job.request.input_path)?;
@@ -125,17 +129,41 @@ pub(super) fn build_command(
         job.request.container,
         ExistingOutput::for_request(&job.request),
     )?;
-    let command = app
+    crate::output::partial::ensure_partial_target(&output, partial_output)?;
+    let arguments = ffmpeg_arguments(&input, partial_output, &encoding_arguments(job)?);
+    Ok(app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|error| ApiError::ffmpeg(error.to_string()))?
-        .args(GLOBAL_ARGUMENTS)
-        .arg(input.as_os_str())
-        .args(encoding_arguments(job)?);
-
-    Ok(command
-        .arg(output.as_os_str())
+        .args(arguments)
         .env("AV_LOG_FORCE_NOCOLOR", "1"))
+}
+
+#[cfg(test)]
+pub(super) fn command_preview(
+    job: &PendingJob,
+    source: &Path,
+    partial_output: &Path,
+) -> ApiResult<Vec<String>> {
+    validate_settings(&job.request, &job.media)?;
+    crate::output::partial::ensure_partial_target(
+        Path::new(&job.request.output_path),
+        partial_output,
+    )?;
+    let arguments = ffmpeg_arguments(source, partial_output, &encoding_arguments(job)?);
+    Ok(arguments
+        .iter()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect())
+}
+
+fn ffmpeg_arguments(source: &Path, partial_output: &Path, encoding: &[String]) -> Vec<OsString> {
+    let mut arguments = Vec::with_capacity(GLOBAL_ARGUMENTS.len() + encoding.len() + 2);
+    arguments.extend(GLOBAL_ARGUMENTS.iter().copied().map(OsString::from));
+    arguments.push(source.as_os_str().to_os_string());
+    arguments.extend(encoding.iter().map(OsString::from));
+    arguments.push(partial_output.as_os_str().to_os_string());
+    arguments
 }
 
 fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
@@ -246,6 +274,53 @@ mod tests {
     #[test]
     fn ffmpeg_does_not_read_from_the_controlling_terminal() {
         assert!(GLOBAL_ARGUMENTS.contains(&"-nostdin"));
+    }
+
+    #[test]
+    fn both_output_modes_send_ffmpeg_only_the_partial_file() {
+        use std::path::Path;
+
+        let partial = Path::new("/videos/.vidra-partial-job-1-abc123.mkv");
+        let mut settings = request(OutputContainer::Mkv);
+        settings.output_path = "/videos/holiday-vidra.mkv".to_owned();
+        settings.audio_mode = AudioMode::None;
+        settings.audio_stream_indexes.clear();
+        settings.subtitle_stream_indexes.clear();
+        settings.preserve_subtitles = false;
+        let source = Path::new("/videos/holiday.mov");
+
+        let mut rejecting = settings.clone();
+        rejecting.replace_existing = false;
+        let reject_arguments =
+            super::command_preview(&job(rejecting, vec![]), source, partial).unwrap();
+
+        let mut replacing = settings.clone();
+        replacing.replace_existing = true;
+        let replace_arguments =
+            super::command_preview(&job(replacing, vec![]), source, partial).unwrap();
+
+        assert_eq!(reject_arguments, replace_arguments);
+        assert!(reject_arguments.iter().any(|argument| argument == "-y"));
+        assert!(!reject_arguments.iter().any(|argument| argument == "-n"));
+        assert_eq!(
+            reject_arguments.last().map(String::as_str),
+            partial.to_str()
+        );
+        assert!(reject_arguments
+            .windows(2)
+            .any(|pair| pair == ["-i", "/videos/holiday.mov"]));
+        assert!(!reject_arguments
+            .iter()
+            .any(|argument| argument == "/videos/holiday-vidra.mkv"));
+
+        let mut destination_settings = settings;
+        destination_settings.output_path = "/output.mkv".to_owned();
+        let destination = super::command_preview(
+            &job(destination_settings, vec![]),
+            source,
+            Path::new("/output.mkv"),
+        );
+        assert_eq!(destination.unwrap_err().code, "invalid_input");
     }
 
     #[test]

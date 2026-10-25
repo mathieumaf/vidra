@@ -93,6 +93,7 @@ fn a_waiting_job_can_move_ahead_of_a_suspended_job() {
             child: None,
             process_id: None,
             paused: true,
+            partial: None,
         });
         state.waiting_order.push_front("paused".to_owned());
     }
@@ -186,6 +187,7 @@ fn update_rejects_running_and_paused_conversions() {
             child: None,
             process_id: None,
             paused,
+            partial: None,
         };
         let mut state = manager.state.lock().unwrap();
         if paused {
@@ -244,6 +246,7 @@ fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
             child: None,
             process_id: Some(process_id),
             paused: false,
+            partial: None,
         });
     }
 
@@ -260,18 +263,40 @@ fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
 }
 
 #[test]
-fn shutdown_removes_incomplete_outputs_and_clears_the_queue() {
+fn a_poisoned_queue_lock_still_reports_reserved_output_paths() {
+    let manager = JobManager::default();
+    manager.append(vec![pending("waiting")]).unwrap();
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = manager.state.lock().unwrap();
+        panic!("poison the queue lock");
+    }));
+    let reserved = manager.reserved_output_paths().unwrap();
+    assert!(reserved.iter().any(|path| path.ends_with("waiting.mp4")));
+}
+
+#[test]
+fn shutdown_removes_partials_and_keeps_existing_destinations() {
+    use crate::output::partial::create_partial;
+
     let manager = JobManager::default();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let output = std::env::temp_dir().join(format!(
-        "vidra-shutdown-test-{}-{unique}.mp4",
+    let directory = std::env::temp_dir().join(format!(
+        "vidra-shutdown-test-{}-{unique}",
         std::process::id()
     ));
-    fs::write(&output, b"partial output").unwrap();
-    manager.append(vec![pending("waiting")]).unwrap();
+    fs::create_dir_all(&directory).unwrap();
+    let output = directory.join("holiday-vidra.mp4");
+    let waiting_output = directory.join("waiting-vidra.mp4");
+    fs::write(&output, b"original destination").unwrap();
+    fs::write(&waiting_output, b"waiting destination").unwrap();
+    let partial = create_partial(&output, "active", "mp4", &[], &[]).unwrap();
+    fs::write(&partial.path, b"unfinished").unwrap();
+    let mut waiting = pending("waiting");
+    waiting.request.output_path = waiting_output.to_string_lossy().into_owned();
+    manager.append(vec![waiting]).unwrap();
     {
         let mut state = manager.state.lock().unwrap();
         state.active = Some(ActiveJob {
@@ -281,6 +306,7 @@ fn shutdown_removes_incomplete_outputs_and_clears_the_queue() {
             child: None,
             process_id: None,
             paused: false,
+            partial: Some(partial.clone()),
         });
     }
     manager.sleep_preventer.activate().unwrap();
@@ -288,11 +314,67 @@ fn shutdown_removes_incomplete_outputs_and_clears_the_queue() {
 
     manager.shutdown();
 
-    assert!(!output.exists());
+    assert_eq!(fs::read(&output).unwrap(), b"original destination");
+    assert_eq!(fs::read(&waiting_output).unwrap(), b"waiting destination");
+    assert!(!partial.path.exists());
     assert!(!manager.sleep_preventer.is_active());
     let state = manager.state.lock().unwrap();
     assert!(state.active.is_none());
     assert!(state.suspended.is_empty());
     assert!(state.pending.is_empty());
     assert!(state.waiting_order.is_empty());
+    drop(state);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn reservations_count_the_partial_file_and_keep_the_destination_reserved() {
+    use crate::output::partial::PartialOutput;
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "vidra-reservation-test-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let destination = directory.join("holiday-vidra.mp4");
+    let partial_path = directory.join(".vidra-partial-reserved-abc123.mp4");
+    fs::write(&destination, vec![7_u8; 8_000]).unwrap();
+    fs::write(&partial_path, vec![9_u8; 1_000]).unwrap();
+
+    let manager = JobManager::default();
+    let mut job = pending("reserved");
+    job.request.output_path = destination.to_string_lossy().into_owned();
+    job.request.replace_existing = true;
+    job.estimated_output_bytes = 4_096;
+    manager.append(vec![job]).unwrap();
+
+    assert_eq!(
+        manager.disk_space_reservations().unwrap()[0].remaining_bytes,
+        4_096
+    );
+    assert_eq!(
+        pending_id(manager.reserve_next().unwrap().unwrap()),
+        "reserved"
+    );
+    manager
+        .set_partial(
+            "reserved",
+            PartialOutput {
+                path: partial_path,
+                device: 0,
+                inode: 0,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        manager.disk_space_reservations().unwrap()[0].remaining_bytes,
+        3_096
+    );
+    assert_eq!(fs::metadata(&destination).unwrap().len(), 8_000);
+    fs::remove_dir_all(directory).unwrap();
 }
