@@ -5,6 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   DOLBY_VISION_SKIP_REASON,
+  h264SdrArguments,
+  hevcColorArguments,
   masteringDisplayBoxes,
   resolveSidecars,
 } from "./generate.mjs";
@@ -81,6 +83,25 @@ test("mastering display metadata uses the ISO BMFF box layout", () => {
   assert.equal(contentLight.toString("ascii", 4, 8), "clli");
   assert.equal(contentLight.readUInt16BE(8), 1000);
   assert.equal(contentLight.readUInt16BE(10), 400);
+});
+
+test("writes SDR and HDR color into the bitstream, not only as container options", () => {
+  const sdr = h264SdrArguments().join(" ");
+  assert.match(sdr, /colorprim=bt709:transfer=bt709:colormatrix=bt709/);
+  assert.match(sdr, /h264_metadata=colour_primaries=1:transfer_characteristics=1/);
+
+  const hdr10 = hevcColorArguments("smpte2084").join(" ");
+  assert.match(hdr10, /transfer=smpte2084/);
+  assert.match(hdr10, /transfer_characteristics=16/);
+  assert.match(hdr10, /-color_trc smpte2084/);
+
+  const hlg = hevcColorArguments("arib-std-b67").join(" ");
+  assert.match(hlg, /transfer_characteristics=18/);
+
+  const unknown = hevcColorArguments().join(" ");
+  assert.match(unknown, /transfer_characteristics=2/);
+  assert.doesNotMatch(unknown, /-color_trc/);
+  assert.doesNotMatch(unknown, /transfer=smpte2084/);
 });
 
 test("records why a synthetic Dolby Vision clip is not normally available", () => {

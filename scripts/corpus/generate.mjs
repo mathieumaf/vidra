@@ -19,6 +19,46 @@ const SDR_COLOR = [
   "-color_range", "tv",
 ];
 
+// The Apple Silicon FFmpeg 8 sidecar accepts the color options above, but
+// libx264 and libx265 still leave the bitstream video-usability information
+// unspecified. FFprobe then reports no transfer. Encoder parameters and the
+// built-in metadata bitstream filters write the values Vidra reads.
+export function h264SdrArguments() {
+  return [
+    "-c:v", "libx264",
+    "-preset", "ultrafast",
+    "-pix_fmt", "yuv420p",
+    "-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709",
+    ...SDR_COLOR,
+    "-bsf:v", "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1:video_full_range_flag=0",
+  ];
+}
+
+export function hevcColorArguments(transfer) {
+  const transferId = transfer === "smpte2084" ? 16 : transfer === "arib-std-b67" ? 18 : 2;
+  const params = ["log-level=error", "colorprim=bt2020", "colormatrix=bt2020nc", "range=limited"];
+  if (transfer) {
+    params.push(`transfer=${transfer}`);
+  }
+  const options = [
+    "-c:v", "libx265",
+    "-preset", "ultrafast",
+    "-pix_fmt", "yuv420p10le",
+    "-x265-params", params.join(":"),
+    "-color_primaries", "bt2020",
+  ];
+  if (transfer) {
+    options.push("-color_trc", transfer);
+  }
+  options.push(
+    "-colorspace", "bt2020nc",
+    "-color_range", "tv",
+    "-bsf:v",
+    `hevc_metadata=colour_primaries=9:transfer_characteristics=${transferId}:matrix_coefficients=9:video_full_range_flag=0`,
+  );
+  return options;
+}
+
 // libx265 accepts a Dolby Vision profile, but the profile only becomes a
 // DOVI configuration record when an RPU bitstream is supplied. lavfi cannot
 // synthesize that RPU, and Vidra classifies Dolby Vision from FFprobe's
@@ -120,8 +160,7 @@ async function writeSdr(sidecars, directory) {
   run(sidecars.ffmpeg, [
     ...lavfiVideo(),
     ...lavfiAudio(),
-    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-    ...SDR_COLOR,
+    ...h264SdrArguments(),
     "-c:a", "aac",
     "-shortest",
     path,
@@ -137,12 +176,7 @@ async function writeHdr(sidecars, directory, id, transfer) {
   run(sidecars.ffmpeg, [
     ...lavfiVideo(),
     ...lavfiAudio(),
-    "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
-    "-x265-params", "log-level=error",
-    "-color_primaries", "bt2020",
-    "-color_trc", transfer,
-    "-colorspace", "bt2020nc",
-    "-color_range", "tv",
+    ...hevcColorArguments(transfer),
     "-c:a", "aac",
     "-shortest",
     path,
@@ -161,8 +195,7 @@ async function writeRotated(sidecars, directory) {
   run(sidecars.ffmpeg, [
     "-f", "lavfi", "-i", `testsrc2=size=96x64:rate=${FRAME_RATE}:duration=${DURATION}`,
     ...lavfiAudio(),
-    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-    ...SDR_COLOR,
+    ...h264SdrArguments(),
     "-c:a", "aac",
     "-shortest",
     base,
@@ -195,8 +228,7 @@ async function writeVariableFrameRate(sidecars, directory) {
   ]) {
     run(sidecars.ffmpeg, [
       "-f", "lavfi", "-i", `testsrc2=size=${FRAME_SIZE}:rate=${rate}:duration=${duration}`,
-      "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-      ...SDR_COLOR,
+      ...h264SdrArguments(),
       output,
     ]);
   }
@@ -224,8 +256,7 @@ async function writeSubtitledMov(sidecars, directory) {
     ...lavfiVideo(),
     ...lavfiAudio(),
     "-i", subtitles,
-    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-    ...SDR_COLOR,
+    ...h264SdrArguments(),
     "-c:a", "aac",
     "-c:s", "mov_text",
     "-shortest",
@@ -273,11 +304,7 @@ async function writeUnknownTransfer(sidecars, directory) {
   const path = join(directory, "unknown-transfer.mp4");
   run(sidecars.ffmpeg, [
     ...lavfiVideo(),
-    "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
-    "-x265-params", "log-level=error",
-    "-color_primaries", "bt2020",
-    "-colorspace", "bt2020nc",
-    "-color_range", "tv",
+    ...hevcColorArguments(),
     path,
   ]);
   insertStreamHdrMetadata(path);
@@ -287,7 +314,7 @@ async function writeUnknownTransfer(sidecars, directory) {
     .map((entry) => entry.side_data_type ?? "")
     .join(" ")
     .toLowerCase();
-  if (video.color_transfer) {
+  if (isSpecifiedTransfer(video.color_transfer)) {
     throw new Error(`Unknown-transfer clip reported transfer ${video.color_transfer}.`);
   }
   if (!sideData.includes("mastering display metadata")) {
@@ -494,6 +521,10 @@ function run(binary, args, { encode = true } = {}) {
     throw new Error(`${binary} failed: ${detail}`);
   }
   return result.stdout;
+}
+
+function isSpecifiedTransfer(value) {
+  return Boolean(value) && !["unknown", "unspecified", "reserved"].includes(String(value).toLowerCase());
 }
 
 function assertEqual(actual, expected, label) {
