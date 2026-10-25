@@ -1,0 +1,35 @@
+name: Feature request
+description: A change that keeps media on the device.
+title: ""
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vidra converts video locally. It does not upload media, add accounts, or send telemetry. Please discuss a substantial product or architecture change here before opening a pull request. See [CONTRIBUTING.md](https://github.com/mathieumaf/vidra/blob/main/CONTRIBUTING.md) and the [roadmap](https://github.com/mathieumaf/vidra/blob/main/docs/ROADMAP.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is difficult or missing in the current workflow?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should Vidra do, and what should stay on the device?
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS Apple Silicon (supported today)
+        - Intel Mac
+        - Windows
+        - Linux
+        - Any later platform
+    validations:
+      required: true
