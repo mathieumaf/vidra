@@ -1,88 +1,50 @@
-import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { access, chmod, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { installDevelopmentSidecars } from "./development-override.mjs";
-import { developmentEntry, hostTargetTriple, rejectReleaseDevelopmentOverride } from "./target.mjs";
+import {
+  assertDevArchiveMatchesRecipe,
+  assertDevArchivePinned,
+  downloadDevArchive,
+  installDevArchiveBinaries,
+  readDevArchivePin,
+} from "./dev-archive.mjs";
+import { developmentOverrideMarker, installDevelopmentSidecars } from "./development-override.mjs";
+import { developmentEntry, hostTargetTriple, rejectReleaseDevelopmentOverride, releaseEntry } from "./target.mjs";
+import { ffmpegVersionMatches, pinnedReleaseFfmpegVersion } from "./version.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 const overrideDirectory = process.env.VIDRA_FFMPEG_DIR?.trim() ?? "";
+const buildRequested = process.argv.includes("--build") || process.env.VIDRA_FFMPEG_MODE === "release";
 
 rejectReleaseDevelopmentOverride(process.env.VIDRA_FFMPEG_MODE, overrideDirectory);
+if (buildRequested && overrideDirectory) {
+  throw new Error(
+    "VIDRA_FFMPEG_DIR cannot be used when compiling FFmpeg. A source build must use the pinned release recipe.",
+  );
+}
 
-if (process.env.VIDRA_FFMPEG_MODE === "release") {
+if (buildRequested) {
   await import("./build-release.mjs");
   process.exit(0);
 }
 
 const target = hostTargetTriple();
 const binaryDirectory = join(rootDirectory, "src-tauri", "binaries");
+const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
+const expectedVersion = pinnedReleaseFfmpegVersion(manifest);
 
-async function exists(path) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function sha256(path) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) {
-    hash.update(chunk);
-  }
-  return hash.digest("hex");
-}
-
-async function download(url, destination) {
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok || !response.body) {
-    throw new Error(`Unable to download ${url}: HTTP ${response.status}`);
-  }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
-}
-
-async function extractExecutable(archive, executable, destination) {
-  const listing = spawnSync("unzip", ["-Z1", archive], { encoding: "utf8" });
-  if (listing.status !== 0) {
-    throw new Error(`Unable to inspect ${basename(archive)}: ${listing.stderr}`);
-  }
-
-  const entry = listing.stdout
-    .split("\n")
-    .find((candidate) => basename(candidate.trim()) === executable);
-
-  if (!entry) {
-    throw new Error(`${executable} was not found in ${basename(archive)}.`);
-  }
-
-  const temporaryDestination = `${destination}.tmp`;
-  const output = await open(temporaryDestination, "w");
-  const extraction = spawnSync("unzip", ["-p", archive, entry], {
-    stdio: ["ignore", output.fd, "pipe"],
-    encoding: "utf8"
-  });
-  await output.close();
-
-  if (extraction.status !== 0) {
-    await rm(temporaryDestination, { force: true });
-    throw new Error(`Unable to extract ${executable}: ${extraction.stderr}`);
-  }
-
-  await chmod(temporaryDestination, 0o755);
-  await rename(temporaryDestination, destination);
+function versionOutput(binary) {
+  const result = spawnSync(binary, ["-version"], { encoding: "utf8" });
+  if (result.status !== 0) return "";
+  return result.stdout ?? "";
 }
 
 function signExecutable(executable, destination) {
   spawnSync("xattr", ["-cr", destination], { stdio: "ignore" });
   const signing = spawnSync("codesign", ["--force", "--sign", "-", destination], {
-    encoding: "utf8"
+    encoding: "utf8",
   });
   if (signing.status !== 0) {
     throw new Error(`Unable to ad-hoc sign ${executable}: ${signing.stderr}`);
@@ -100,45 +62,65 @@ if (overrideDirectory) {
       signExecutable(name, join(binaryDirectory, `${name}-${target}`));
     }
   }
+  const reports = ["ffmpeg", "ffprobe"].map((name) => versionOutput(join(binaryDirectory, `${name}-${target}`)));
+  if (reports.some((report) => !ffmpegVersionMatches(report, expectedVersion))) {
+    console.warn(
+      `Development FFmpeg override does not match the pinned ${expectedVersion} engine. Vidra will not treat this engine as ready.`,
+    );
+  }
   console.log(`Using local FFmpeg sidecars from ${overrideDirectory} for ${target}.`);
   process.exit(0);
 }
 
-const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
 const development = developmentEntry(manifest, target);
+if (development.version !== expectedVersion) {
+  throw new Error(
+    `Development FFmpeg ${development.version} does not match the release FFmpeg ${expectedVersion}.`,
+  );
+}
+if (development.distribution !== "dev-archive") {
+  throw new Error(`The ${target} development sidecar must be downloaded from the pinned development archive.`);
+}
+
+const pin = await readDevArchivePin();
+assertDevArchivePinned(pin);
+assertDevArchiveMatchesRecipe(pin, releaseEntry(manifest, pin.target));
+if (pin.target !== target) {
+  throw new Error(`The development archive is built for ${pin.target}, not ${target}.`);
+}
+
 const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", target);
-await mkdir(cacheDirectory, { recursive: true });
-await mkdir(binaryDirectory, { recursive: true });
+const archivePath = join(cacheDirectory, pin.archiveName);
+const markerPath = join(binaryDirectory, `.ffmpeg-dev-archive-${target}.sha256`);
+const marker = await readOptional(markerPath);
+const ready = marker === pin.sha256 && ["ffmpeg", "ffprobe"].every((name) => {
+  const binary = join(binaryDirectory, `${name}-${target}`);
+  return ffmpegVersionMatches(versionOutput(binary), expectedVersion);
+});
+if (ready) {
+  console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);
+  process.exit(0);
+}
 
-for (const [name, artifact] of Object.entries(development.binaries)) {
-  const destination = join(binaryDirectory, `${name}-${target}`);
-  const marker = join(binaryDirectory, `.${name}-${target}.sha256`);
-  const markerMatches =
-    (await exists(marker)) &&
-    (await readFile(marker, "utf8")).trim() === artifact.binarySha256;
+await downloadDevArchive(pin, archivePath);
+await rm(developmentOverrideMarker(binaryDirectory, target), { force: true });
+for (const name of ["ffmpeg", "ffprobe"]) {
+  await rm(join(binaryDirectory, `.${name}-${target}.sha256`), { force: true });
+}
+await installDevArchiveBinaries({
+  archivePath,
+  binaryDirectory,
+  target,
+  expectedVersion,
+  sign: process.platform === "darwin" ? signExecutable : async () => {},
+});
+await writeFile(markerPath, `${pin.sha256}\n`);
+console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);
 
-  if ((await exists(destination)) && markerMatches) {
-    console.log(`${name} ${development.version} is ready for ${target}.`);
-    continue;
+async function readOptional(path) {
+  try {
+    return (await readFile(path, "utf8")).trim();
+  } catch {
+    return "";
   }
-
-  const archive = join(cacheDirectory, `${name}-${development.version}.zip`);
-  if (!(await exists(archive))) {
-    console.log(`Downloading ${name} ${development.version} for ${target}...`);
-    await download(artifact.url, archive);
-  }
-
-  await extractExecutable(archive, name, destination);
-  const digest = await sha256(destination);
-  if (digest !== artifact.binarySha256) {
-    await rm(destination, { force: true });
-    await rm(archive, { force: true });
-    throw new Error(
-      `Checksum mismatch for ${name}: expected ${artifact.binarySha256}, received ${digest}.`
-    );
-  }
-
-  signExecutable(name, destination);
-  await writeFile(marker, `${artifact.binarySha256}\n`);
-  console.log(`${name} ${development.version} is ready for ${target}.`);
 }

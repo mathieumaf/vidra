@@ -27,23 +27,26 @@ test("keeps the Apple Silicon development and release recipes under that target"
 
   const development = developmentEntry(manifest, "aarch64-apple-darwin");
   assert.equal(development.developmentOnly, true);
-  assert.equal(development.version, "8.1");
-  assert.equal(
-    development.binaries.ffmpeg.binarySha256,
-    "9a08d61f9328e8164ba560ee7a79958e357307fcfeea6fe626b7d66cdc287028",
-  );
-  assert.equal(
-    development.binaries.ffprobe.binarySha256,
-    "aab17ac7379c1178aaf400c3ef36cdb67db0b75b1a23eeef2cb9f658be8844e6",
-  );
+  assert.equal(development.provider, "Vidra");
+  assert.equal(development.distribution, "dev-archive");
+  assert.equal(development.archive, undefined);
+  assert.equal(development.binaries, undefined);
 
   const release = releaseEntry(manifest, "aarch64-apple-darwin");
   assert.equal(release.target, "aarch64-apple-darwin");
   assert.equal(release.minimumMacOSVersion, "12.0");
-  assert.equal(release.sources.ffmpeg.version, "8.1.2");
+  assert.equal(release.sources.ffmpeg.version, "8.1.3");
+  assert.equal(release.sources.ffmpeg.archiveName, "ffmpeg-8.1.3.tar.xz");
+  assert.equal(release.sources.ffmpeg.url, "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz");
+  assert.equal(
+    release.sources.ffmpeg.sha256,
+    "7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3",
+  );
+  assert.equal(development.version, release.sources.ffmpeg.version);
+  // Release recipe fingerprint. The FFmpeg 8.1.3 source pin changed this hash on purpose.
   assert.equal(
     createHash("sha256").update(JSON.stringify({ version: 6, release })).digest("hex"),
-    "771a67c6fd618817e9a68f2a80982ecea6d052b8557e13cd38000342c24698b4",
+    "27e95ad072130a0e0869b5372b5030a104cdd3bcbddd586468c2b40a845d079b",
   );
 });
 

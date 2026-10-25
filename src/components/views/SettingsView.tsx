@@ -162,7 +162,10 @@ export function SettingsView({
               </div>
             </div>
             <div className="settings-row">
-              <div><strong>Encoding engine</strong><p>Bundled locally with Vidra</p></div>
+              <div>
+                <strong>Encoding engine</strong>
+                <p>{!isReady && status?.error ? status.error : "Bundled locally with Vidra"}</p>
+              </div>
               <span className={`settings-value ${isReady ? "positive" : ""}`}>
                 {isReady ? "Ready" : "Unavailable"}
               </span>

@@ -6,6 +6,7 @@ pub mod probe;
 mod progress;
 pub mod queue;
 mod types;
+mod version;
 
 pub use types::*;
 
