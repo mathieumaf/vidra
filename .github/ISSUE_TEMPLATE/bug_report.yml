@@ -1,0 +1,45 @@
+name: Bug report
+description: A problem in Vidra on macOS Apple Silicon.
+title: ""
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vidra 0.1.0 supports macOS on Apple Silicon. Leave out private media, credentials, and signing material. Report vulnerabilities through [private security advisories](https://github.com/mathieumaf/vidra/security/advisories/new).
+  - type: input
+    id: version
+    attributes:
+      label: Vidra version
+      description: Shown in Settings. Include a beta or release-candidate suffix when you are on one.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Mac and macOS version
+      description: Apple Silicon model and macOS version.
+      placeholder: MacBook Pro (M4), macOS 15.6
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Input container and codecs if you know them, the output container, video codec, and quality you chose, and what you did.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the on-screen message. A path-redacted diagnostic report from the failed job helps. Do not attach the source video.
+    validations:
+      required: true
