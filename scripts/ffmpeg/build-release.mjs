@@ -15,9 +15,13 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { verifyAv1Decoding } from "./verify-av1.mjs";
+import { developmentOverrideMarker } from "./development-override.mjs";
 import { hostTargetTriple, releaseEntry } from "./target.mjs";
+import { verifyAv1Decoding } from "./verify-av1.mjs";
+import { ffmpegVersionMatches, ffmpegVersionToken } from "./version.mjs";
 
+// Recipe 6. The fingerprint also covers the release source object, so a source
+// pin change needs a new fingerprint assertion even when this number stays 6.
 const BUILD_RECIPE_VERSION = 6;
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
@@ -68,23 +72,27 @@ await Promise.all([
   mkdir(assetDirectory, { recursive: true }),
 ]);
 
-for (const command of ["curl", "tar", "make", "cmake", "meson", "ninja", "pkg-config", "autoreconf", "codesign", "strip", "ditto", "otool"]) {
+const builtFfmpeg = join(ffmpegPrefix, "bin", "ffmpeg");
+const builtFfprobe = join(ffmpegPrefix, "bin", "ffprobe");
+const currentMarker = await readJson(markerPath);
+const needsRebuild = currentMarker?.fingerprint !== recipeFingerprint
+  || !(await exists(builtFfmpeg))
+  || !(await exists(builtFfprobe));
+
+// Compilers are required only when the cached install is missing or stale.
+// A cache hit still checksums the source archives, then signs and verifies.
+const packagingCommands = ["curl", "codesign", "strip", "otool"];
+const compileCommands = ["tar", "make", "cmake", "meson", "ninja", "pkg-config", "autoreconf", "ditto"];
+for (const command of needsRebuild ? [...packagingCommands, ...compileCommands] : packagingCommands) {
   requireCommand(command);
 }
 
-const sources = {};
-for (const [name, artifact] of Object.entries(release.sources)) {
-  sources[name] = await prepareSource(name, artifact);
-}
+if (needsRebuild) {
+  const sources = {};
+  for (const [name, artifact] of Object.entries(release.sources)) {
+    sources[name] = await prepareSource(name, artifact);
+  }
 
-const currentMarker = await readJson(markerPath);
-const builtFfmpeg = join(ffmpegPrefix, "bin", "ffmpeg");
-const builtFfprobe = join(ffmpegPrefix, "bin", "ffprobe");
-if (
-  currentMarker?.fingerprint !== recipeFingerprint
-  || !(await exists(builtFfmpeg))
-  || !(await exists(builtFfprobe))
-) {
   await rm(buildDirectory, { recursive: true, force: true });
   await rm(prefixDirectory, { recursive: true, force: true });
   await rm(ffmpegPrefix, { recursive: true, force: true });
@@ -103,16 +111,22 @@ if (
   buildFfmpeg(sources.ffmpeg);
   await writeFile(markerPath, `${JSON.stringify({ fingerprint: recipeFingerprint }, null, 2)}\n`);
 } else {
+  for (const artifact of Object.values(release.sources)) {
+    await ensureDownloaded(artifact);
+  }
   console.log(`Release FFmpeg ${release.sources.ffmpeg.version} is already built.`);
 }
 
+await rm(developmentOverrideMarker(binaryDirectory, target), { force: true });
 for (const name of ["ffmpeg", "ffprobe"]) {
+  await rm(join(binaryDirectory, `.${name}-${target}.sha256`), { force: true });
   const source = join(ffmpegPrefix, "bin", name);
   const destination = join(binaryDirectory, `${name}-${target}`);
   await copyFile(source, destination);
   await chmod(destination, 0o755);
   run("strip", ["-x", destination]);
   run("codesign", ["--force", "--sign", "-", destination]);
+  requirePinnedReleaseVersion(name, destination);
 }
 
 const releaseFfmpeg = join(binaryDirectory, `ffmpeg-${target}`);
@@ -283,10 +297,10 @@ function ffmpegConfiguration() {
   ];
 }
 
-async function prepareSource(name, artifact) {
+async function ensureDownloaded(artifact) {
   const archive = join(downloadDirectory, artifact.archiveName);
   if (!(await exists(archive))) {
-    console.log(`Downloading ${name} ${artifact.version}...`);
+    console.log(`Downloading ${artifact.archiveName}...`);
     run("curl", ["-fL", "--retry", "3", artifact.url, "-o", archive]);
   }
   const digest = await sha256(archive);
@@ -294,7 +308,20 @@ async function prepareSource(name, artifact) {
     await rm(archive, { force: true });
     throw new Error(`Checksum mismatch for ${artifact.archiveName}: expected ${artifact.sha256}, received ${digest}.`);
   }
+  return archive;
+}
 
+function requirePinnedReleaseVersion(name, binary) {
+  const output = run(binary, ["-version"], { capture: true });
+  const expected = release.sources.ffmpeg.version;
+  if (!ffmpegVersionMatches(output, expected)) {
+    const reported = ffmpegVersionToken(output) || "an unrecognized version";
+    throw new Error(`${name} reported ${reported}, which does not match the pinned ${expected} engine.`);
+  }
+}
+
+async function prepareSource(name, artifact) {
+  const archive = await ensureDownloaded(artifact);
   const destination = join(sourceDirectory, `${name}-${artifact.version}`);
   const marker = join(destination, ".vidra-source-sha256");
   if ((await exists(marker)) && (await readFile(marker, "utf8")).trim() === artifact.sha256) {

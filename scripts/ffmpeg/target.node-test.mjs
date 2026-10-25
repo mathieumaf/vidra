@@ -28,35 +28,25 @@ test("keeps the Apple Silicon development and release recipes under that target"
   const development = developmentEntry(manifest, "aarch64-apple-darwin");
   assert.equal(development.developmentOnly, true);
   assert.equal(development.provider, "Vidra");
-  assert.equal(development.sourceRelease, "v0.1.0");
-  assert.equal(
-    development.archive.url,
-    "https://github.com/mathieumaf/vidra/releases/download/v0.1.0/Vidra_0.1.0_aarch64.app.tar.gz",
-  );
-  assert.equal(
-    development.archive.sha256,
-    "1c88316fef3870fc3f2a0edb44749411cc42fbe720874e0977dbf7d227d8a3de",
-  );
-  assert.equal(development.binaries.ffmpeg.archivePath, "Vidra.app/Contents/MacOS/ffmpeg");
-  assert.equal(
-    development.binaries.ffmpeg.binarySha256,
-    "4d49639483af36460a07b66f418e70224f16cbc35eda2dcdae9385e1e1f0704c",
-  );
-  assert.equal(development.binaries.ffprobe.archivePath, "Vidra.app/Contents/MacOS/ffprobe");
-  assert.equal(
-    development.binaries.ffprobe.binarySha256,
-    "bcae19b520bdb3ae568514078d1cc210b2ef8f0fd0180ce8d62609c67e1cc6c9",
-  );
+  assert.equal(development.builtFrom, "release-recipe");
+  assert.equal(development.archive, undefined);
+  assert.equal(development.binaries, undefined);
 
   const release = releaseEntry(manifest, "aarch64-apple-darwin");
   assert.equal(release.target, "aarch64-apple-darwin");
   assert.equal(release.minimumMacOSVersion, "12.0");
-  assert.equal(release.sources.ffmpeg.version, "8.1.2");
+  assert.equal(release.sources.ffmpeg.version, "8.1.3");
+  assert.equal(release.sources.ffmpeg.archiveName, "ffmpeg-8.1.3.tar.xz");
+  assert.equal(release.sources.ffmpeg.url, "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz");
+  assert.equal(
+    release.sources.ffmpeg.sha256,
+    "7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3",
+  );
   assert.equal(development.version, release.sources.ffmpeg.version);
-  // Release recipe fingerprint. Change this hash only when the recipe change is intentional.
+  // Release recipe fingerprint. The FFmpeg 8.1.3 source pin changed this hash on purpose.
   assert.equal(
     createHash("sha256").update(JSON.stringify({ version: 6, release })).digest("hex"),
-    "771a67c6fd618817e9a68f2a80982ecea6d052b8557e13cd38000342c24698b4",
+    "27e95ad072130a0e0869b5372b5030a104cdd3bcbddd586468c2b40a845d079b",
   );
 });
 

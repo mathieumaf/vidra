@@ -1,7 +1,7 @@
 /**
  * Compare an FFmpeg or FFprobe `-version` report with a pinned release version.
  * The token after `version` must be that version. A single leading `n` from
- * FFmpeg's git describe is ignored. `8.1` does not satisfy `8.1.2`, and a
+ * FFmpeg's git describe is ignored. `8.1` does not satisfy `8.1.3`, and a
  * packager suffix such as `7.1.5-0ubuntu1` does not satisfy `7.1.5`.
  */
 export function ffmpegVersionToken(versionOutput) {

@@ -19,8 +19,8 @@ This file applies to the entire repository.
 
 - Use pnpm as the only JavaScript package manager. The pinned version is declared in `package.json`.
 - Use the Rust toolchain and Cargo for the Tauri backend.
-- Use `pnpm ffmpeg:prepare` for local FFmpeg and FFprobe sidecars. Do not rely on a system FFmpeg installation for normal development. `VIDRA_FFMPEG_DIR` may point at a directory containing `ffmpeg` and `ffprobe` for a development or CI build on any target, including Apple Silicon. Release builds reject that override. The app treats a sidecar as ready only when its reported version matches the pinned release FFmpeg version. A development override with a different version is not ready.
-- Keep sidecar versions and checksums pinned in `scripts/ffmpeg/sources.json`. The development sidecar for a target must use the same FFmpeg version as that target's release recipe.
+- Use `pnpm ffmpeg:prepare` for local FFmpeg and FFprobe sidecars. Do not rely on a system FFmpeg installation for normal development. On Apple Silicon, that command builds the pinned release recipe and reuses a matching local cache. `VIDRA_FFMPEG_DIR` may point at a directory containing `ffmpeg` and `ffprobe` for a development or CI build on any target, including Apple Silicon. Release builds reject that override. The app treats a sidecar as ready only when its reported version matches the pinned release FFmpeg version. A development override with a different version is not ready.
+- Keep sidecar versions and checksums pinned in `scripts/ffmpeg/sources.json`. The Apple Silicon development sidecar is built from that target's release recipe, and its FFmpeg version must match the release pin.
 - Use `pnpm icon:prepare` for macOS Icon Composer assets. Keep generated fallback assets committed for environments without Xcode.
 
 ## Frontend architecture

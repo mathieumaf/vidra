@@ -39,7 +39,7 @@ describe("ConvertView", () => {
       <ConvertView
         media={media}
         mediaCount={1}
-        status={{ ready: true, ffmpegVersion: "ffmpeg version 8.1.2", ffprobeVersion: "ffprobe version 8.1.2", error: null }}
+        status={{ ready: true, ffmpegVersion: "ffmpeg version 8.1.3", ffprobeVersion: "ffprobe version 8.1.3", error: null }}
         qualityIndex={2}
         outputContainer="mp4"
         videoCodec="h264"
@@ -110,7 +110,7 @@ describe("ConvertView", () => {
           ready: false,
           ffmpegVersion: "ffmpeg version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers",
           ffprobeVersion: "ffprobe version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers",
-          error: "FFmpeg 7.1.5 does not match Vidra's required 8.1.2 engine. The development override is in use, so this is not the pinned release build.",
+          error: "FFmpeg 7.1.5 does not match Vidra's required 8.1.3 engine. The development override is in use, so this is not the pinned release build.",
         }}
         qualityIndex={2}
         outputContainer="mp4"
@@ -170,7 +170,7 @@ describe("ConvertView", () => {
     );
 
     expect(markup).toContain("FFmpeg 7.1.5 does not match");
-    expect(markup).toContain("required 8.1.2 engine");
+    expect(markup).toContain("required 8.1.3 engine");
     expect(markup).toContain("development override");
     expect(markup).not.toContain("FFmpeg ready");
   });

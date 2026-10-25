@@ -21,11 +21,14 @@ jobs:
   validate:
     name: Validate Apple Silicon build
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require Apple Silicon runner
+        run: test "$(uname -m)" = "arm64"
 
       - name: Install pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -49,20 +52,25 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      # Development sidecars only. prepare.mjs reuses a sidecar when its
-      # checksum marker matches scripts/ffmpeg/sources.json and the binary
-      # reports the pinned release version. The release source build is a
-      # separate command and is not cached here.
-      - name: Cache development FFmpeg sidecars
+      # Apple Silicon development sidecars are compiled with the release recipe.
+      # The cache stores verified source downloads, the installed binaries,
+      # and the build marker. Object files are not cached. A hit skips the
+      # compiler packages and the compile.
+      - name: Cache development FFmpeg build
+        id: ffmpeg-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .cache/ffmpeg
+            .cache/ffmpeg/release/aarch64-apple-darwin/downloads
+            .cache/ffmpeg/release/aarch64-apple-darwin/ffmpeg-install
+            .cache/ffmpeg/release/aarch64-apple-darwin/build-marker.json
             src-tauri/binaries/ffmpeg-aarch64-apple-darwin
             src-tauri/binaries/ffprobe-aarch64-apple-darwin
-            src-tauri/binaries/.ffmpeg-aarch64-apple-darwin.sha256
-            src-tauri/binaries/.ffprobe-aarch64-apple-darwin.sha256
-          key: ffmpeg-dev-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ffmpeg/sources.json', 'scripts/ffmpeg/prepare.mjs', 'scripts/ffmpeg/archive.mjs', 'scripts/ffmpeg/version.mjs') }}
+          key: ffmpeg-dev-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ffmpeg/sources.json', 'scripts/ffmpeg/prepare.mjs', 'scripts/ffmpeg/build-release.mjs', 'scripts/ffmpeg/version.mjs') }}
+
+      - name: Install native build tools
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: brew install autoconf automake libtool cmake meson ninja pkgconf nasm
 
       - name: Prepare FFmpeg sidecars
         run: pnpm ffmpeg:prepare

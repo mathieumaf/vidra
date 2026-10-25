@@ -133,6 +133,8 @@ mod tests {
         expected_ffmpeg_version, target_triple, version_matches,
     };
 
+    const FFMPEG_813: &str = "ffmpeg version 8.1.3 Copyright (c) 2000-2026 the FFmpeg developers";
+    const FFPROBE_813: &str = "ffprobe version 8.1.3 Copyright (c) 2007-2026 the FFmpeg developers";
     const FFMPEG_812: &str = "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers";
     const FFPROBE_812: &str = "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers";
     const FFMPEG_715: &str = "ffmpeg version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers";
@@ -147,37 +149,39 @@ mod tests {
             .and_then(serde_json::Value::as_str);
         let expected = expected_ffmpeg_version().expect("pinned version");
 
-        assert_eq!(expected, "8.1.2");
+        assert_eq!(expected, "8.1.3");
         assert_eq!(development, Some(expected.as_str()));
     }
 
     #[test]
     fn accepts_the_pinned_version_and_rejects_other_reports() {
-        assert_eq!(comparable_version(FFMPEG_812), Some("8.1.2"));
+        assert_eq!(comparable_version(FFMPEG_813), Some("8.1.3"));
         assert_eq!(
-            comparable_version("ffmpeg version n8.1.2 Copyright"),
-            Some("8.1.2")
+            comparable_version("ffmpeg version n8.1.3 Copyright"),
+            Some("8.1.3")
         );
-        assert!(version_matches(FFMPEG_812, "8.1.2"));
-        assert!(version_matches(FFPROBE_812, "8.1.2"));
+        assert!(version_matches(FFMPEG_813, "8.1.3"));
+        assert!(version_matches(FFPROBE_813, "8.1.3"));
+        assert!(!version_matches(FFMPEG_812, "8.1.3"));
+        assert!(!version_matches(FFPROBE_812, "8.1.3"));
         assert!(!version_matches(
             "ffmpeg version 8.1 Copyright (c) 2000-2026 the FFmpeg developers",
-            "8.1.2"
+            "8.1.3"
         ));
-        assert!(!version_matches(FFMPEG_715, "8.1.2"));
+        assert!(!version_matches(FFMPEG_715, "8.1.3"));
         assert!(!version_matches(
             "ffmpeg version n7.1.5 Copyright (c) 2000-2025 the FFmpeg developers",
-            "8.1.2"
+            "8.1.3"
         ));
         assert!(!version_matches(
             "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
-            "8.1.2"
+            "8.1.3"
         ));
         assert!(!version_matches(
-            "ffmpeg version 8.1.2-0ubuntu1 Copyright (c) 2000-2026 the FFmpeg developers",
-            "8.1.2"
+            "ffmpeg version 8.1.3-0ubuntu1 Copyright (c) 2000-2026 the FFmpeg developers",
+            "8.1.3"
         ));
-        assert!(!version_matches("ffmpeg version 8.1.20 Copyright", "8.1.2"));
+        assert!(!version_matches("ffmpeg version 8.1.30 Copyright", "8.1.3"));
         assert_eq!(comparable_version("not a version"), None);
     }
 
@@ -188,7 +192,7 @@ mod tests {
         assert_eq!(
             overridden.error.as_deref(),
             Some(
-                "FFmpeg 7.1.5 does not match Vidra's required 8.1.2 engine. The development override is in use, so this is not the pinned release build."
+                "FFmpeg 7.1.5 does not match Vidra's required 8.1.3 engine. The development override is in use, so this is not the pinned release build."
             )
         );
         assert_eq!(overridden.ffmpeg_version.as_deref(), Some(FFMPEG_715));
@@ -198,7 +202,7 @@ mod tests {
         assert_eq!(
             installed.error.as_deref(),
             Some(
-                "FFmpeg 7.1.5 does not match Vidra's required 8.1.2 engine. Run pnpm ffmpeg:prepare and restart Vidra."
+                "FFmpeg 7.1.5 does not match Vidra's required 8.1.3 engine. Run pnpm ffmpeg:prepare and restart Vidra."
             )
         );
     }
@@ -214,30 +218,42 @@ mod tests {
         assert_eq!(
             status.error.as_deref(),
             Some(
-                "FFmpeg 8.1 does not match Vidra's required 8.1.2 engine. Run pnpm ffmpeg:prepare and restart Vidra."
+                "FFmpeg 8.1 does not match Vidra's required 8.1.3 engine. Run pnpm ffmpeg:prepare and restart Vidra."
             )
         );
     }
 
     #[test]
     fn names_ffmpeg_and_ffprobe_when_their_versions_differ() {
-        let status = assess_engine(FFMPEG_812, "ffprobe version 8.1 Copyright", false);
+        let status = assess_engine(FFMPEG_813, "ffprobe version 8.1 Copyright", false);
         assert!(!status.ready);
         assert_eq!(
             status.error.as_deref(),
             Some(
-                "FFmpeg 8.1.2 and FFprobe 8.1 do not match Vidra's required 8.1.2 engine. Run pnpm ffmpeg:prepare and restart Vidra."
+                "FFmpeg 8.1.3 and FFprobe 8.1 do not match Vidra's required 8.1.3 engine. Run pnpm ffmpeg:prepare and restart Vidra."
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_the_previous_8_1_2_release() {
+        let status = assess_engine(FFMPEG_812, FFPROBE_812, false);
+        assert!(!status.ready);
+        assert_eq!(
+            status.error.as_deref(),
+            Some(
+                "FFmpeg 8.1.2 does not match Vidra's required 8.1.3 engine. Run pnpm ffmpeg:prepare and restart Vidra."
             )
         );
     }
 
     #[test]
     fn marks_the_pinned_release_version_ready() {
-        let status = assess_engine(FFMPEG_812, FFPROBE_812, false);
+        let status = assess_engine(FFMPEG_813, FFPROBE_813, false);
         assert!(status.ready);
         assert_eq!(status.error, None);
-        assert_eq!(status.ffmpeg_version.as_deref(), Some(FFMPEG_812));
-        assert_eq!(status.ffprobe_version.as_deref(), Some(FFPROBE_812));
+        assert_eq!(status.ffmpeg_version.as_deref(), Some(FFMPEG_813));
+        assert_eq!(status.ffprobe_version.as_deref(), Some(FFPROBE_813));
     }
 
     #[test]
