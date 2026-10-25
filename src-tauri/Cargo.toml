@@ -1,6 +1,6 @@
 [package]
 name = "vidra"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-source video conversion and encoding for the desktop"
 authors = ["Mathieu Mafille"]
 edition = "2021"
