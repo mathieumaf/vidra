@@ -4,21 +4,40 @@ All notable changes to Vidra are documented in this file.
 
 ## Unreleased
 
+Intended prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.1`. Before tagging, replace this heading with `0.2.0-beta.1` and the release date. Windows, Linux, and Intel Mac builds are not included.
+
 ### Fixed
 
-- Drop mastering-display, content-light, and HDR10+ metadata when H.264 tone-maps HDR to SDR. FFmpeg 8 was copying that metadata onto the SDR file, so Vidra still treated the result as HDR.
-- Convert MOV text subtitles to SubRip when saving MKV. Matroska cannot store MOV text, so copying that track failed the conversion. Other MKV subtitle tracks are still copied.
 - Leave an existing destination file in place when a conversion fails, is cancelled, or Vidra quits. An existing destination file is replaced only after explicit confirmation and a successful conversion, and only when that same file is still there.
-- Keep a destination that appears after the output name is checked. FFmpeg no longer receives that path. A finished video is saved under the next free numbered name instead of being deleted.
+- Keep a destination that appears after the output name is checked. FFmpeg writes a hidden partial file beside the destination and never receives the final path. The finished video is published with an exclusive rename. When that name is taken, Vidra saves the video under the next free numbered name instead of deleting it, and says which name it used.
+- Keep a finished video that cannot be moved into place, and say where it was saved. The next launch removes only unfinished partials Vidra recorded. A finished video that has been marked as saved is not deleted, including after Vidra is killed and opened again.
 - Save a finished video on volumes that cannot rename without replacing, including exFAT, FAT32, and SMB. The destination is checked and then renamed; that check has a very small race.
+- Say when the destination folder is read-only. A permission or privacy denial uses a different message and is not described as a read-only volume.
+- Convert MOV text subtitles to SubRip when saving MKV. Matroska cannot store MOV text, so copying that track failed the conversion. Other MKV subtitle tracks are still copied.
+- Drop mastering-display, content-light, and HDR10+ metadata when H.264 tone-maps HDR to SDR. FFmpeg 8 was copying that metadata onto the SDR file, so Vidra still treated the result as HDR. H.265 and AV1 re-encodes still keep mastering-display and content-light metadata on the video stream.
 
 ### Changed
 
 - Require free space for the new file while a confirmed replacement is encoding. The existing file stays on disk until the conversion succeeds, so its space is not treated as available.
-- Build the Apple Silicon release engine from FFmpeg 8.1.3. This security and bugfix update is an intentional release-recipe change, so the recipe fingerprint changed. A new beta or release candidate has to re-validate the engine before publication.
-- Download the Apple Silicon development sidecar from a checksum-pinned archive built with that same recipe. `pnpm ffmpeg:prepare` does not compile FFmpeg. Compiling locally requires `pnpm ffmpeg:prepare -- --build`.
-- Pin the SHA-256 of the published FFmpeg 8.1.3 development archive. Apple Silicon development and macOS CI download that archive.
-- Report the encoding engine as unavailable unless FFmpeg and FFprobe report the pinned 8.1.3 release version. A development copy of a different version can still be used to compile Vidra, and the app explains that it is not the release engine.
+- Build the Apple Silicon release engine from FFmpeg 8.1.3. This security and bugfix update is an intentional release-recipe change, so the recipe fingerprint changed. A new beta or release candidate has to re-validate the engine before an official release. When the pinned engine is ready, Settings shows an FFmpeg version line that includes 8.1.3.
+- Report the encoding engine as unavailable unless FFmpeg and FFprobe both report 8.1.3. A development copy of a different version can still be used to compile Vidra, and the app explains that it is not the release engine.
+
+### Installation and testing
+
+- This prerelease targets macOS on Apple Silicon. Windows, Linux, and Intel Mac installers are not included.
+- From an installed 0.1.0, choose Beta in Settings and check for updates. Stable does not offer this prerelease. The bundle version shown in Settings is 0.2.0; the release link is `v0.2.0-beta.1`.
+- Signed-build checks are listed in the [beta validation checklist](docs/RELEASING.md#beta-validation).
+
+### Internal
+
+- Prepare other operating systems to fail closed. Where a check is not implemented, Vidra returns `unsupported_platform` for file identity, destination disk space, saving a converted video, showing the output file, and fast hardware encoding. Preventing sleep returns `sleep_prevention_unsupported`. Pausing an encode returns `pause_unsupported` off Unix. macOS behavior is unchanged. This beta does not add a Windows or Linux release.
+- Keep the macOS sentences "this Mac" and "Files stay on this Mac". Other hosts say "this computer".
+- Download the Apple Silicon development sidecar from the checksum-pinned archive on tag `ffmpeg-dev-8.1.3-r6`, built with the same recipe as the release engine. `pnpm ffmpeg:prepare` does not compile FFmpeg. Compiling locally requires `pnpm ffmpeg:prepare -- --build`. `VIDRA_FFMPEG_DIR` is for development and CI only, and release builds reject it.
+- Check Rust licenses, advisories, and crate sources with cargo-deny on every pull request. Duplicate crate versions are warnings. That change records rustls-webpki 0.103.16 for RUSTSEC-2026-0382. The lockfile has rustls 0.23.46.
+- Cache the Apple Silicon CI build and the development FFmpeg archive. Run the portable frontend and Rust checks on Ubuntu 24.04, using a system FFmpeg only as a development sidecar.
+- Cover enqueue, launch, finish, cancel, pause, reorder, and shutdown in queue tests without starting a sidecar. A poisoned queue lock is recovered so shutdown can still stop the encoder and remove its unfinished partial file.
+- Encode a reduced synthetic corpus in Apple Silicon CI with the pinned sidecar. The corpus includes H.264, H.265, and AV1, MP4 and MKV, HDR10 and HLG sources, and MOV text subtitles. H.264 output from those HDR sources must not still be classified as HDR. H.265 and AV1 keep 10-bit HDR. For the HDR10 clip, the macOS sidecar must keep stream-level mastering-display and content-light metadata through those re-encodes. Source files stay unchanged. The Linux job runs the same corpus as a smoke test against an older system FFmpeg and does not require the release encoders.
+- Update locked JavaScript and Rust dependencies, including the Tauri plugins, React 19.3.1, and Vite 8.3.4. These updates are not a separate conversion-behavior change.
 
 ## 0.1.0 - 2026-09-05
 

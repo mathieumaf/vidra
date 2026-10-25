@@ -38,7 +38,7 @@ Source builds of the release engine require these native build tools:
 brew install autoconf automake libtool cmake meson ninja pkgconf nasm
 ```
 
-1. Update the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` when the application version changes.
+1. Update the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the `vidra` package entry in `src-tauri/Cargo.lock` when the application version changes. A prerelease suffix belongs on the tag only. For `v0.2.0-beta.1`, those files stay at `0.2.0`. `pnpm release:check` accepts the exact tag `v0.2.0` and any tag that starts with `v0.2.0-`, including `v0.2.0-beta.1`.
 2. Prepare the relevant entries in `CHANGELOG.md` under an `Unreleased` heading. Before tagging, replace it with the intended release date and align the README status and installation instructions with the release. Preserve the earlier beta history.
 3. Run `pnpm check`, `VIDRA_FFMPEG_MODE=release pnpm ffmpeg:prepare`, and `pnpm release:check -- <tag>` on an Apple Silicon Mac, using the intended tag such as `v0.1.0`.
 4. Review the dependency and codec licenses in `THIRD_PARTY_NOTICES.md`.
@@ -83,7 +83,40 @@ The release workflow then:
 - verifies the final application with `codesign` and Gatekeeper;
 - creates a draft containing the DMG, updater artifacts and manifest, its checksum, FFmpeg corresponding sources, and build configuration. Tags with a prerelease suffix produce a prerelease draft; tags without one produce an official release draft.
 
-Download the draft artifacts and test installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback on a second Apple Silicon Mac. Confirm that `latest.json` names the release tag and that its `darwin-aarch64` URL and signature match the attached updater bundle. Replace the default draft description with the release's changelog notes, supported platforms, and known limitations. Publish the draft only after those checks pass; mark a new official release as latest on GitHub.
+Download the draft artifacts and test them on a second Apple Silicon Mac before publication. A prerelease follows the [beta validation checklist](#beta-validation). An official release still needs installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback. Confirm that `latest.json` names the release tag and that its `darwin-aarch64` URL and signature match the attached updater bundle. Replace the default draft description with the release's changelog notes, supported platforms, and known limitations. Publish the draft only after those checks pass. Mark a new official release as latest on GitHub. Leave a prerelease unmarked as latest.
+
+## Beta validation
+
+Use this checklist for a prerelease such as `v0.2.0-beta.1`. The bundle version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` stays `0.2.0`. The updater version is `0.2.0-beta.1`. This beta is macOS on Apple Silicon only.
+
+Do not publish the draft until the manual checks below have been recorded. CI does not install the signed application, play media, or exercise the updater.
+
+### Automated in CI
+
+These checks run on pull requests. They do not replace the manual checks on a signed build.
+
+- **Apple Silicon** (`.github/workflows/ci.yml`, job `validate`, `macos-26`): frontend build and tests; `cargo fmt --check`; `cargo clippy --all-targets -- -D warnings`; `cargo test`; `git diff --check`. The job downloads the pinned FFmpeg 8.1.3 development archive. It does not compile FFmpeg, sign the app, or notarize it.
+- **Synthetic corpus** (same job, ignored test `conversion_corpus`, `VIDRA_CORPUS_MATRIX=reduced`, `VIDRA_CORPUS_STRICT_ENCODERS=1`): short generated clips encoded through Vidra's argument builder and partial-file publish, then inspected with FFprobe. The reduced matrix covers H.264, H.265, and AV1, MP4 and MKV, HDR10 and HLG sources, and a MOV text subtitle. H.264 output from HDR10 or HLG must be 8-bit BT.709 and must not still be classified as HDR. H.265 and AV1 keep 10-bit HDR. For the HDR10 clip, the macOS sidecar must keep stream-level mastering-display and content-light metadata through those re-encodes. MOV text becomes SubRip in MKV. Source files must be unchanged. This is not playback in a video player, and it does not cancel a running app or write to exFAT, FAT, or SMB.
+- **Output safety unit tests** (inside `cargo test`, on Apple Silicon and on Linux where the helpers compile): exclusive rename leaves an existing file in place; a rename that the volume rejects falls back to a check followed by a plain rename only when the name is free; a published claim is not deleted on recovery; shutdown removes an unfinished partial and keeps an existing destination. These tests do not kill a running Vidra process.
+- **Linux** (job `validate-linux`, `ubuntu-24.04`): the same frontend and Rust checks, with `VIDRA_FFMPEG_DIR=/usr/bin`. That copy is a development sidecar. The app does not treat it as the release engine unless it reports 8.1.3. The corpus run is a smoke test against Ubuntu's older FFmpeg: missing encoders are skipped, and fast hardware encoding is expected to return `unsupported_platform`. This job is not a Linux release.
+- **cargo-deny** (`.github/workflows/cargo-deny.yml`): licenses, advisories, bans, and crate sources with `--locked`. Duplicate crate versions are warnings and do not fail the job.
+- **Not in pull-request CI:** signed DMG installation, Gatekeeper, media playback, cancel in the running app, `kill -9` and relaunch, exFAT/FAT/SMB volumes, the update from 0.1.0, or the FFmpeg version shown by the packaged app. The release workflow runs those signature and engine checks only after a signed tag is pushed. This preparation change does not push a tag.
+
+### Manual on an Apple Silicon Mac
+
+Complete these steps on the draft produced by the signed `v0.2.0-beta.1` tag. Prefer a second Mac, without Homebrew or a development FFmpeg. Record the commit or tag, the macOS version, and the result of each item. Leave an item unchecked until there is evidence for it.
+
+- [ ] Install the signed and notarized DMG and launch Vidra. Confirm the app is not the development build.
+- [ ] Inspect a representative file and confirm duration, resolution, audio, subtitles, and HDR labeling.
+- [ ] Encode H.264, H.265, and AV1, and play each output in a normal player. The source file must be unchanged.
+- [ ] Tone-map an HDR10 source and an HLG source with H.264. The outputs must play as SDR and must not still be reported as HDR. Encode the same sources with H.265 and AV1 and confirm HDR is preserved, then play those outputs.
+- [ ] Cancel a conversion while it is encoding. The source and any existing destination file must remain. Relaunch Vidra and confirm the unfinished partial is gone.
+- [ ] Start a conversion, stop Vidra with `kill -9`, and open it again. The unfinished partial must be removed. A video that had already finished must still be present, including one that had to stay under its partial or numbered name. The source must be unchanged.
+- [ ] Encode to exFAT, FAT, and SMB destinations, including a folder that already contains the requested filename when replacement was confirmed. Confirm the finished file is the new video, the previous file was not removed early, and each output plays. The exclusive-rename fallback checks the name and then renames; that check has a very small race.
+- [ ] From signed Vidra 0.1.0, leave Stable selected and confirm it does not offer 0.2.0-beta.1. Choose Beta, check for updates, and confirm installation stays unavailable while a conversion is queued or running. After the queue is idle, install the update and confirm Vidra restarts.
+- [ ] In the updated app, confirm Settings shows bundle version `0.2.0`, the release link is `v0.2.0-beta.1`, and the FFmpeg row includes `8.1.3`. Run a short conversion. Settings, profiles, history, and the update-channel choice must still be there.
+- [ ] Confirm the draft `latest.json` version is `0.2.0-beta.1` and that its `darwin-aarch64` URL and signature match the attached updater archive. The draft must be marked as a prerelease.
+- [ ] Publish the draft as a prerelease and do not mark it as the latest GitHub release. Confirm `publish-updater.yml` advances Beta `beta.json` to `0.2.0-beta.1` and leaves Stable `latest.json` on `0.1.0`.
 
 ## Update channels
 
