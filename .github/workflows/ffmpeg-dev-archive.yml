@@ -67,7 +67,7 @@ jobs:
 
           This is not a Vidra application release and it is not an application update. The archive contains the executables and the corresponding source archives used to build them.
 
-          Replace the placeholder checksum in scripts/ffmpeg/dev-archive.json with the SHA-256 in the attached .sha256 file.
+          Replace the checksum in scripts/ffmpeg/dev-archive.json with the SHA-256 in the attached .sha256 file.
           EOF
           )"
           if gh release view "$TAG" >/dev/null 2>&1; then

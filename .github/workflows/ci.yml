@@ -52,10 +52,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      # Development sidecars are downloaded from the checksum in
-      # scripts/ffmpeg/dev-archive.json. While that checksum is the
-      # placeholder, prepare fails on purpose and this job does not compile
-      # FFmpeg. After the archive is published, the same step downloads it.
+      # Development sidecars come from the archive pinned in
+      # scripts/ffmpeg/dev-archive.json. This job downloads that archive.
+      # It does not compile FFmpeg.
       - name: Cache development FFmpeg archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
