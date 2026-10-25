@@ -272,6 +272,16 @@ fn release_partial(
     let _ = jobs.clear_partial(job_id);
 }
 
+fn release_kept_partial(app: &AppHandle, partial_output: &partial::PartialOutput) -> ApiResult<()> {
+    let Some(ledger) = app.try_state::<partial::PartialLedger>() else {
+        return Err(ApiError::new(
+            "output_unavailable",
+            "The finished video could not be saved safely.",
+        ));
+    };
+    ledger.release_finished(partial_output)
+}
+
 fn forget_partial(app: &AppHandle, partial_output: &partial::PartialOutput) {
     let Some(ledger) = app.try_state::<partial::PartialLedger>() else {
         eprintln!("Unable to forget an unfinished video because its list is unavailable.");
@@ -318,16 +328,46 @@ fn finish_job(app: &AppHandle, finished: FinishedEncode) {
     let _ = manager.finish_active(&job_id);
     let cancelled = manager.take_cancelled(&job_id);
     let outcome = output_outcome(cancelled, exit_code);
-    let reserved = manager.reserved_output_paths().unwrap_or_default();
-    let finalized = partial::finalize_output(FinalizeRequest {
+    // An empty reservation list would let a numbered fallback take another
+    // job's output name. A poisoned queue lock is recovered inside
+    // `reserved_output_paths`. Any other failure skips those fallback names.
+    let (reserved, reserved_known) = match manager.reserved_output_paths() {
+        Ok(paths) => (paths, true),
+        Err(error) => {
+            eprintln!(
+                "Unable to read names reserved by the queue, so a numbered name was not used: {error}"
+            );
+            (Vec::new(), false)
+        }
+    };
+    let mut finalized = partial::finalize_output(FinalizeRequest {
         partial: &partial_output,
         destination: Path::new(&output_path),
         replace_identity,
         outcome,
         inputs: std::slice::from_ref(&PathBuf::from(&job.request.input_path)),
         reserved: &reserved,
+        reserved_known,
     });
-    if finalized.cleanup == partial::PartialCleanup::Resolved {
+    let kept_in_place = finalized.outcome == partial::OutputOutcome::Completed
+        && finalized
+            .saved_path
+            .as_ref()
+            .is_some_and(|path| path == &partial_output.path);
+    if kept_in_place {
+        // Release the claim before reporting the hidden path as saved. If the
+        // claim stays unmarked, the next launch deletes that file.
+        if let Err(error) = release_kept_partial(app, &partial_output) {
+            eprintln!("Unable to record that a finished video was kept: {error}");
+            finalized.outcome = partial::OutputOutcome::Failed;
+            finalized.error = Some(ApiError::new(
+                "output_unavailable",
+                "The finished video could not be saved safely.",
+            ));
+            finalized.saved_path = None;
+            finalized.cleanup = partial::PartialCleanup::Retry;
+        }
+    } else if finalized.cleanup == partial::PartialCleanup::Resolved {
         forget_partial(app, &partial_output);
     }
     if let Some(saved) = finalized.saved_path.as_ref().and_then(|path| path.to_str()) {

@@ -135,7 +135,12 @@ impl JobManager {
     }
 
     pub fn reserved_output_paths(&self) -> ApiResult<Vec<PathBuf>> {
-        let state = self.lock()?;
+        // A poisoned lock still holds the queue's paths. Treating that as an
+        // empty list would let a numbered fallback take another job's name.
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut paths = state
             .pending
             .iter()

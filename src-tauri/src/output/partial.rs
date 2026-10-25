@@ -21,6 +21,8 @@ const LEFT_UNCHANGED: &str =
     "The finished video could not be saved safely, so the existing file was left unchanged.";
 const READ_ONLY_FOLDER: &str =
     "The destination folder is read-only, so the conversion could not be started.";
+const CANNOT_WRITE_FOLDER: &str =
+    "The destination folder cannot be written to, so the conversion could not be started.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DestinationIdentity {
@@ -78,6 +80,9 @@ pub(crate) struct FinalizeRequest<'a> {
     pub outcome: OutputOutcome,
     pub inputs: &'a [PathBuf],
     pub reserved: &'a [PathBuf],
+    /// False when the queue lock could not be read. Numbered fallback names
+    /// are then skipped so they cannot take another job's output name.
+    pub reserved_known: bool,
 }
 
 pub(crate) fn require_supported() -> ApiResult<()> {
@@ -276,14 +281,35 @@ fn create_partial_supported(
 }
 
 fn create_error(error: &io::Error) -> ApiError {
-    if error.kind() == io::ErrorKind::PermissionDenied {
+    if is_read_only_filesystem(error) {
         return ApiError::new("output_unavailable", READ_ONLY_FOLDER);
+    }
+    // `EACCES` and `EPERM` both surface as `PermissionDenied`. A privacy
+    // denial (TCC on macOS) is not a read-only volume, so it gets its own
+    // wording instead of the read-only message.
+    if error.kind() == io::ErrorKind::PermissionDenied {
+        return ApiError::new("output_unavailable", CANNOT_WRITE_FOLDER);
     }
     eprintln!("Unable to create a temporary video in the destination folder: {error}");
     ApiError::new(
         "output_unavailable",
         "The conversion could not be started in the destination folder.",
     )
+}
+
+fn is_read_only_filesystem(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::ReadOnlyFilesystem {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        error.raw_os_error() == Some(libc::EROFS)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = error;
+        false
+    }
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -308,6 +334,9 @@ fn place_completed(request: FinalizeRequest<'_>) -> FinalizedOutput {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn save_under_another_name(request: &FinalizeRequest<'_>, destination: &Path) -> FinalizedOutput {
+    if !request.reserved_known {
+        return retain_finished_partial(request.partial);
+    }
     for candidate in numbered_names(destination) {
         if name_blocked(&candidate, destination, request.reserved, request.inputs) {
             continue;
@@ -517,7 +546,9 @@ fn resolved_destination(partial: &PartialOutput, destination: &Path) -> Option<P
 }
 
 /// Continue the numbered names Vidra already uses for batch output.
-/// `holiday-vidra.mp4` is followed by `holiday-vidra-2.mp4`.
+/// `holiday-vidra.mp4` is followed by `holiday-vidra-2.mp4`. A stem that
+/// merely ends in a number, such as `movie-2024.mp4`, keeps that number and
+/// gains `-2`.
 fn numbered_names(destination: &Path) -> Vec<PathBuf> {
     let Some(parent) = destination.parent() else {
         return Vec::new();
@@ -554,7 +585,9 @@ fn split_numeric_suffix(stem: &str) -> (&str, u32) {
         return (stem, 1);
     }
     match tail.parse::<u32>() {
-        Ok(value) if value >= 2 => (head, value),
+        // Only a short Vidra suffix continues (`-2` through `-99`). A year or
+        // other large trailing number stays part of the name.
+        Ok(value) if (2..=MAX_NUMBERED_NAMES).contains(&value) => (head, value),
         _ => (stem, 1),
     }
 }
@@ -732,11 +765,12 @@ fn next_token() -> u64 {
 /// Choose how to publish when an exclusive rename is unavailable.
 ///
 /// `renamex_np(RENAME_EXCL)` and `renameat2(RENAME_NOREPLACE)` return
-/// `ENOTSUP`, `ENOSYS`, or `EINVAL` on exFAT, FAT32, SMB, and FUSE. Those
-/// volumes also reject hard links, so the finished file must be renamed
-/// normally after checking that the destination is absent. A file created in
-/// the gap between that check and the rename can still be replaced. Callers
-/// pass the check result as `destination_occupied`.
+/// `ENOTSUP`, `EOPNOTSUPP`, `ENOSYS`, or `EINVAL` on exFAT, FAT32, SMB, and
+/// FUSE. `ENOTSUP` and `EOPNOTSUPP` are the same value on Linux and different
+/// values on macOS. Those volumes also reject hard links, so the finished
+/// file must be renamed normally after checking that the destination is
+/// absent. A file created in the gap between that check and the rename can
+/// still be replaced. Callers pass the check result as `destination_occupied`.
 #[cfg(unix)]
 fn exclusive_or_absent(
     exclusive: io::Result<()>,
@@ -935,6 +969,10 @@ struct PartialClaim {
     path: String,
     device: u64,
     inode: u64,
+    /// A finished video was kept at `path`. Recovery must not delete it, even
+    /// when this claim could not be removed.
+    #[serde(default)]
+    published: bool,
 }
 
 impl PartialClaim {
@@ -943,6 +981,7 @@ impl PartialClaim {
             path: partial.path.to_str()?.to_owned(),
             device: partial.device,
             inode: partial.inode,
+            published: false,
         })
     }
 
@@ -994,6 +1033,45 @@ impl PartialLedger {
         persist_claims(&self.path, &claims).map_err(ledger_error)
     }
 
+    /// Drop the claim for a finished video that had to stay at its partial
+    /// path. If that write does not land, mark the claim published so recovery
+    /// will not delete the file.
+    pub(crate) fn release_finished(&self, partial: &PartialOutput) -> ApiResult<()> {
+        let _guard = self.guard()?;
+        let mut claims = load_claims(&self.path).map_err(ledger_error)?;
+        let before = claims.len();
+        claims.retain(|claim| !claim_targets(claim, partial));
+        if claims.len() == before {
+            return Ok(());
+        }
+        if persist_claims(&self.path, &claims).is_ok() {
+            return Ok(());
+        }
+        self.mark_finished_locked(partial)
+    }
+
+    /// Remember that the file at this claim is a finished video.
+    #[cfg(test)]
+    pub(crate) fn mark_finished(&self, partial: &PartialOutput) -> ApiResult<()> {
+        let _guard = self.guard()?;
+        self.mark_finished_locked(partial)
+    }
+
+    fn mark_finished_locked(&self, partial: &PartialOutput) -> ApiResult<()> {
+        let mut claims = load_claims(&self.path).map_err(ledger_error)?;
+        let mut marked = false;
+        for claim in &mut claims {
+            if claim_targets(claim, partial) && !claim.published {
+                claim.published = true;
+                marked = true;
+            }
+        }
+        if !marked {
+            return Ok(());
+        }
+        persist_claims(&self.path, &claims).map_err(ledger_error)
+    }
+
     pub(crate) fn recover_stale(&self) {
         let Ok(_guard) = self.lock.lock() else {
             eprintln!("Unable to clean up an unfinished video.");
@@ -1028,7 +1106,14 @@ impl PartialLedger {
     }
 }
 
+fn claim_targets(claim: &PartialClaim, partial: &PartialOutput) -> bool {
+    claim.matches(partial) || Path::new(&claim.path) == partial.path
+}
+
 fn recover_claim(claim: &PartialClaim) -> PartialCleanup {
+    if claim.published {
+        return PartialCleanup::Resolved;
+    }
     if claim.path.is_empty() {
         return PartialCleanup::Resolved;
     }
@@ -1202,6 +1287,7 @@ mod tests {
             outcome,
             inputs: std::slice::from_ref(&sample.source),
             reserved: &[],
+            reserved_known: true,
         })
     }
 
@@ -1240,6 +1326,18 @@ mod tests {
             numbered_names(&sample.destination)[0].file_name().unwrap(),
             "holiday-vidra-2.mp4"
         );
+        assert_eq!(
+            numbered_names(&sample.destination.with_file_name("holiday-vidra-2.mp4"))[0]
+                .file_name()
+                .unwrap(),
+            "holiday-vidra-3.mp4"
+        );
+        assert_eq!(
+            numbered_names(&sample.destination.with_file_name("movie-2024.mp4"))[0]
+                .file_name()
+                .unwrap(),
+            "movie-2024-2.mp4"
+        );
     }
 
     #[test]
@@ -1254,9 +1352,23 @@ mod tests {
 
     #[test]
     fn a_read_only_folder_is_reported_clearly() {
-        let error = create_error(&io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
-        assert_eq!(error.code, "output_unavailable");
-        assert!(error.message.contains("read-only"));
+        let read_only = create_error(&io::Error::new(
+            io::ErrorKind::ReadOnlyFilesystem,
+            "read-only filesystem",
+        ));
+        assert_eq!(read_only.code, "output_unavailable");
+        assert!(read_only.message.contains("read-only"));
+
+        let erofs = create_error(&io::Error::from_raw_os_error(libc::EROFS));
+        assert!(erofs.message.contains("read-only"));
+
+        let permission = create_error(&io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
+        assert!(permission.message.contains("cannot be written to"));
+        assert!(!permission.message.contains("read-only"));
+
+        let privacy = create_error(&io::Error::from_raw_os_error(libc::EPERM));
+        assert!(privacy.message.contains("cannot be written to"));
+        assert!(!privacy.message.contains("read-only"));
     }
 
     #[test]
@@ -1419,6 +1531,7 @@ mod tests {
             outcome: OutputOutcome::Completed,
             inputs: std::slice::from_ref(&source),
             reserved: &[],
+            reserved_known: true,
         });
         assert_eq!(fs::read(&destination).unwrap(), b"original");
         assert_eq!(fs::read(&source).unwrap(), b"source-bytes");
@@ -1575,6 +1688,67 @@ mod tests {
         assert!(!partial.path.exists());
         let text = fs::read_to_string(&ledger_path).unwrap();
         assert!(!text.contains(&partial.path.display().to_string()));
+    }
+
+    #[test]
+    fn a_kept_partial_is_released_before_recovery_can_delete_it() {
+        let directory = unique_dir("release-finished");
+        let destination = directory.0.join("holiday-vidra.mp4");
+        fs::write(&destination, b"original").unwrap();
+        let partial = create_partial(&destination, "job-4", "mp4", &[], &[]).unwrap();
+        fs::write(&partial.path, b"finished").unwrap();
+        let ledger_path = directory.0.join("partial-outputs.json");
+        let ledger = PartialLedger::open(ledger_path.clone());
+        ledger.record(&partial).unwrap();
+        ledger.release_finished(&partial).unwrap();
+        let text = fs::read_to_string(&ledger_path).unwrap();
+        assert!(!text.contains(partial.path.file_name().unwrap().to_str().unwrap()));
+        ledger.recover_stale();
+        assert_eq!(fs::read(&partial.path).unwrap(), b"finished");
+        assert_eq!(fs::read(&destination).unwrap(), b"original");
+    }
+
+    #[test]
+    fn a_published_claim_does_not_delete_the_finished_video() {
+        let directory = unique_dir("published-claim");
+        let destination = directory.0.join("holiday-vidra.mp4");
+        fs::write(&destination, b"original").unwrap();
+        let partial = create_partial(&destination, "job-4", "mp4", &[], &[]).unwrap();
+        fs::write(&partial.path, b"finished").unwrap();
+        let ledger_path = directory.0.join("partial-outputs.json");
+        let ledger = PartialLedger::open(ledger_path.clone());
+        ledger.record(&partial).unwrap();
+        ledger.mark_finished(&partial).unwrap();
+        let text = fs::read_to_string(&ledger_path).unwrap();
+        assert!(text.contains("\"published\": true"));
+        ledger.recover_stale();
+        assert_eq!(fs::read(&partial.path).unwrap(), b"finished");
+        assert_eq!(fs::read(&destination).unwrap(), b"original");
+        let text = fs::read_to_string(&ledger_path).unwrap();
+        assert!(!text.contains(partial.path.file_name().unwrap().to_str().unwrap()));
+    }
+
+    #[test]
+    fn an_unknown_reservation_list_does_not_take_a_numbered_name() {
+        let sample = sample("unknown-reserved", Some(b"original"));
+        let finalized = finalize_output(FinalizeRequest {
+            partial: &sample.partial,
+            destination: &sample.destination,
+            replace_identity: None,
+            outcome: OutputOutcome::Completed,
+            inputs: std::slice::from_ref(&sample.source),
+            reserved: &[],
+            reserved_known: false,
+        });
+        assert_eq!(finalized.outcome, OutputOutcome::Completed);
+        assert_eq!(finalized.saved_path.as_ref(), Some(&sample.partial.path));
+        assert_eq!(fs::read(&sample.partial.path).unwrap(), b"encoded-bytes");
+        assert_eq!(fs::read(&sample.destination).unwrap(), b"original");
+        assert!(!sample
+            .destination
+            .with_file_name("holiday-vidra-2.mp4")
+            .exists());
+        assert_source_unchanged(&sample);
     }
 
     #[test]
@@ -1745,6 +1919,7 @@ mod tests {
             outcome: OutputOutcome::Completed,
             inputs: std::slice::from_ref(&source),
             reserved: &[],
+            reserved_known: true,
         });
         assert_eq!(finalized.outcome, OutputOutcome::Completed);
         assert_eq!(fs::read(&canonical).unwrap(), b"encoded-bytes");

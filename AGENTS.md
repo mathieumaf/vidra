@@ -54,7 +54,7 @@ This file applies to the entire repository.
 - When audio conversion is required, never raise a known source bitrate.
 - Keep container-specific stream mapping explicit. MKV should preserve compatible subtitles, chapters, metadata, and tracks; MP4 must use compatible mappings and codec tags.
 - Validate all input and output paths in Rust, even if the frontend already validated them.
-- Encode into a temporary file in the destination directory and move it into place only after success. Failure, cancellation, and shutdown may remove that temporary file and must leave the source and any existing destination unchanged. A successful conversion whose destination name is taken is saved under the next free numbered name instead of being deleted.
+- Encode into a temporary file in the destination directory and move it into place only after success. Failure, cancellation, and shutdown may remove that temporary file and must leave the source unchanged. An existing destination file is replaced only when replacement was confirmed and the conversion succeeds. A successful conversion whose destination name is taken is saved under the next free numbered name instead of being deleted.
 - Keep quality presets stable and covered by tests when changing CRF values or codec behavior.
 - Treat FFmpeg stderr as diagnostic data. Present concise failures to users and avoid unbounded log storage.
 

@@ -6,7 +6,7 @@ All notable changes to Vidra are documented in this file.
 
 ### Fixed
 
-- Leave an existing destination file in place when a conversion fails, is cancelled, or Vidra quits. A confirmed replacement happens only after the conversion succeeds, and only when that same file is still there.
+- Leave an existing destination file in place when a conversion fails, is cancelled, or Vidra quits. An existing destination file is replaced only after explicit confirmation and a successful conversion, and only when that same file is still there.
 - Keep a destination that appears after the output name is checked. FFmpeg no longer receives that path. A finished video is saved under the next free numbered name instead of being deleted.
 - Save a finished video on volumes that cannot rename without replacing, including exFAT, FAT32, and SMB. The destination is checked and then renamed; that check has a very small race.
 

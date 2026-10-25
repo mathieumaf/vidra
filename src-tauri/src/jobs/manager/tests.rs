@@ -263,6 +263,18 @@ fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
 }
 
 #[test]
+fn a_poisoned_queue_lock_still_reports_reserved_output_paths() {
+    let manager = JobManager::default();
+    manager.append(vec![pending("waiting")]).unwrap();
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = manager.state.lock().unwrap();
+        panic!("poison the queue lock");
+    }));
+    let reserved = manager.reserved_output_paths().unwrap();
+    assert!(reserved.iter().any(|path| path.ends_with("waiting.mp4")));
+}
+
+#[test]
 fn shutdown_removes_partials_and_keeps_existing_destinations() {
     use crate::output::partial::create_partial;
 
