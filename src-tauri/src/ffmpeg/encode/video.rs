@@ -111,6 +111,9 @@ fn tone_map_filters(source: &VideoStream) -> ApiResult<Vec<String>> {
         "zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited:dither=error_diffusion"
             .to_owned(),
         "format=yuv420p".to_owned(),
+        "sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA".to_owned(),
+        "sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL".to_owned(),
+        "sidedata=mode=delete:type=DYNAMIC_HDR_PLUS".to_owned(),
     ])
 }
 
@@ -574,7 +577,7 @@ mod tests {
             "zscale=transferin=arib-std-b67:primariesin=bt2020:matrixin=bt2020nc:rangein=limited:transfer=linear:primaries=bt2020:matrix=gbr:npl=100,format=gbrpf32le,tonemap=mobius:desat=2"
         ));
         assert!(filters.contains(
-            "zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited:dither=error_diffusion,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"
+            "zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited:dither=error_diffusion,format=yuv420p,sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,sidedata=mode=delete:type=DYNAMIC_HDR_PLUS,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"
         ));
         for pair in [
             ["-color_primaries", "bt709"],

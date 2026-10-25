@@ -656,9 +656,12 @@ fn report_static_hdr_metadata(
     }
     let (source_mastering, source_light) = static_hdr_metadata(source_side_data);
     let (output_mastering, output_light) = static_hdr_metadata(output_side_data);
-    if source_mastering && source_light && output_mastering && output_light {
+    if output_mastering && output_light {
         return;
     }
+    // FFmpeg 8.1.3 keeps this metadata on the re-encoded stream even when the
+    // source only reports it on frames. Strict mode requires the output stream,
+    // which is what Vidra reads. Older builds often have neither.
     let detail = format!(
         "{label}: stream-level static HDR metadata (source mastering={source_mastering}, content light={source_light}; output mastering={output_mastering}, content light={output_light}; source side data: {}; output side data: {})",
         side_data_list(source_side_data),

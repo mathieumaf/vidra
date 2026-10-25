@@ -6,6 +6,7 @@ All notable changes to Vidra are documented in this file.
 
 ### Fixed
 
+- Drop mastering-display, content-light, and HDR10+ metadata when H.264 tone-maps HDR to SDR. FFmpeg 8 was copying that metadata onto the SDR file, so Vidra still treated the result as HDR.
 - Convert MOV text subtitles to SubRip when saving MKV. Matroska cannot store MOV text, so copying that track failed the conversion. Other MKV subtitle tracks are still copied.
 - Leave an existing destination file in place when a conversion fails, is cancelled, or Vidra quits. An existing destination file is replaced only after explicit confirmation and a successful conversion, and only when that same file is still there.
 - Keep a destination that appears after the output name is checked. FFmpeg no longer receives that path. A finished video is saved under the next free numbered name instead of being deleted.
