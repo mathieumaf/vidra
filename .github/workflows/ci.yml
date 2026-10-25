@@ -83,6 +83,16 @@ jobs:
       - name: Test Rust
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      # Tiny synthetic clips only. The ignored test is separate so the unit
+      # suite above stays the fast signal. Strict encoders match the pinned
+      # Apple Silicon sidecar (libx264, libx265, libsvtav1, zscale, tonemap).
+      - name: Test conversion corpus
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture
+        env:
+          VIDRA_CORPUS_REQUIRED: "1"
+          VIDRA_CORPUS_MATRIX: reduced
+          VIDRA_CORPUS_STRICT_ENCODERS: "1"
+
       - name: Check patch formatting
         run: git diff --check
 
@@ -151,3 +161,13 @@ jobs:
 
       - name: Test Rust
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # Ubuntu's FFmpeg 6.1 is older than the Apple Silicon sidecar. Missing
+      # encoders are skipped with a message. Static HDR metadata that this
+      # build only attaches to frames is reported, not failed. Hardware Fast
+      # export is expected to return unsupported_platform.
+      - name: Test conversion corpus (older FFmpeg smoke test)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture
+        env:
+          VIDRA_CORPUS_REQUIRED: "1"
+          VIDRA_CORPUS_MATRIX: reduced

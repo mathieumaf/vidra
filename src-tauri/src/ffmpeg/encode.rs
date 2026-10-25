@@ -83,28 +83,22 @@ fn mapping_arguments(request: &EncodeRequest, subtitles: &[SubtitleStream]) -> V
         if request.preserve_chapters { "0" } else { "-1" }.to_owned(),
     ]);
     if request.preserve_subtitles {
-        let subtitle_indexes = request
+        let mapped_subtitles = request
             .subtitle_stream_indexes
             .iter()
-            .filter(|index| {
-                request.container == OutputContainer::Mkv
-                    || subtitles.iter().any(|stream| {
-                        stream.index == **index && is_mp4_text_subtitle(&stream.codec)
-                    })
+            .filter_map(|index| subtitles.iter().find(|stream| stream.index == *index))
+            .filter(|stream| {
+                request.container == OutputContainer::Mkv || is_mp4_text_subtitle(&stream.codec)
             })
             .collect::<Vec<_>>();
-        for index in &subtitle_indexes {
-            arguments.extend(["-map".to_owned(), format!("0:{index}")]);
+        for stream in &mapped_subtitles {
+            arguments.extend(["-map".to_owned(), format!("0:{}", stream.index)]);
         }
-        if !subtitle_indexes.is_empty() {
-            arguments.extend([
-                "-c:s".to_owned(),
-                match request.container {
-                    OutputContainer::Mp4 => "mov_text",
-                    OutputContainer::Mkv => "copy",
-                }
-                .to_owned(),
-            ]);
+        if !mapped_subtitles.is_empty() {
+            arguments.extend(subtitle_codec_arguments(
+                request.container,
+                &mapped_subtitles,
+            ));
         }
     }
     arguments
@@ -116,11 +110,56 @@ fn is_mp4_text_subtitle(codec: &str) -> bool {
         .any(|candidate| codec.eq_ignore_ascii_case(candidate))
 }
 
+/// Matroska cannot store MOV text. Convert that codec to SubRip and copy every
+/// subtitle codec the container already accepts, including image tracks.
+fn subtitle_codec_arguments(
+    container: OutputContainer,
+    subtitles: &[&SubtitleStream],
+) -> Vec<String> {
+    match container {
+        OutputContainer::Mp4 => vec!["-c:s".to_owned(), "mov_text".to_owned()],
+        OutputContainer::Mkv
+            if subtitles
+                .iter()
+                .any(|stream| stream.codec.eq_ignore_ascii_case("mov_text")) =>
+        {
+            subtitles
+                .iter()
+                .enumerate()
+                .flat_map(|(index, stream)| {
+                    let codec = if stream.codec.eq_ignore_ascii_case("mov_text") {
+                        "subrip"
+                    } else {
+                        "copy"
+                    };
+                    [format!("-c:s:{index}"), codec.to_owned()]
+                })
+                .collect()
+        }
+        OutputContainer::Mkv => vec!["-c:s".to_owned(), "copy".to_owned()],
+    }
+}
+
 pub(super) fn build_command(
     app: &AppHandle,
     job: &PendingJob,
     partial_output: &Path,
 ) -> ApiResult<tauri_plugin_shell::process::Command> {
+    let arguments = command_arguments(job, partial_output)?;
+    Ok(app
+        .shell()
+        .sidecar("ffmpeg")
+        .map_err(|error| ApiError::ffmpeg(error.to_string()))?
+        .args(arguments)
+        .env("AV_LOG_FORCE_NOCOLOR", "1"))
+}
+
+/// Arguments for one encode, including the validated source and the temporary
+/// output. `build_command` passes this list to the FFmpeg sidecar unchanged.
+pub(super) fn command_arguments(
+    job: &PendingJob,
+    partial_output: &Path,
+) -> ApiResult<Vec<OsString>> {
     validate_settings(&job.request, &job.media)?;
     let input = validate_input(&job.request.input_path)?;
     let output = validate_output(
@@ -130,13 +169,11 @@ pub(super) fn build_command(
         ExistingOutput::for_request(&job.request),
     )?;
     crate::output::partial::ensure_partial_target(&output, partial_output)?;
-    let arguments = ffmpeg_arguments(&input, partial_output, &encoding_arguments(job)?);
-    Ok(app
-        .shell()
-        .sidecar("ffmpeg")
-        .map_err(|error| ApiError::ffmpeg(error.to_string()))?
-        .args(arguments)
-        .env("AV_LOG_FORCE_NOCOLOR", "1"))
+    Ok(ffmpeg_arguments(
+        &input,
+        partial_output,
+        &encoding_arguments(job)?,
+    ))
 }
 
 #[cfg(test)]
@@ -391,6 +428,21 @@ mod tests {
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
         assert!(arguments.windows(2).any(|pair| pair == ["-c:s", "copy"]));
         assert!(!arguments.iter().any(|argument| argument == "mov_text"));
+    }
+
+    #[test]
+    fn mkv_converts_mov_text_and_still_copies_image_subtitles() {
+        let mut request = request(OutputContainer::Mkv);
+        request.subtitle_stream_indexes = vec![3, 4];
+        let subtitles = vec![subtitle(3, "mov_text"), subtitle(4, "hdmv_pgs_subtitle")];
+
+        let arguments = mapping_arguments(&request, &subtitles);
+
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c:s:0", "subrip"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:s:1", "copy"]));
+        assert!(!arguments.windows(2).any(|pair| pair == ["-c:s", "copy"]));
     }
 
     #[test]

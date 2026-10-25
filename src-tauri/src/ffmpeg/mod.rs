@@ -8,6 +8,9 @@ pub mod queue;
 mod types;
 mod version;
 
+#[cfg(test)]
+mod corpus;
+
 pub use types::*;
 
 use paths::{validate_input, validate_output, ExistingOutput};
