@@ -162,7 +162,7 @@ fn same_file_identity(_left: &fs::Metadata, _right: &fs::Metadata) -> ApiResult<
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_output, ExistingOutput};
+    use super::{validate_input, validate_output, ExistingOutput};
     use crate::ffmpeg::OutputContainer;
     use std::{
         fs,
@@ -394,6 +394,105 @@ mod tests {
         .expect("a path that does not exist yet is not the source file");
 
         assert_eq!(resolved.file_name(), output.file_name());
+        fs::remove_dir_all(directory).expect("the test directory should be removed");
+    }
+
+    #[test]
+    fn input_paths_must_be_absolute_files() {
+        let relative = validate_input("clip.mov").expect_err("a relative input should be rejected");
+        assert_eq!(relative.code, "invalid_input");
+        assert!(relative.message.contains("absolute"));
+
+        let directory = test_directory("input-file");
+        let missing = directory.join("missing.mov");
+        let missing_error =
+            validate_input(path_text(&missing)).expect_err("a missing input should be rejected");
+        assert!(missing_error.message.contains("not accessible"));
+
+        let directory_error = validate_input(path_text(&directory))
+            .expect_err("a directory should not be accepted as media");
+        assert!(directory_error.message.contains("not a file"));
+
+        let input = directory.join("clip.mov");
+        fs::write(&input, b"source").expect("the input should be written");
+        let resolved = validate_input(path_text(&input)).expect("a file should be accepted");
+        assert_eq!(
+            resolved,
+            input.canonicalize().expect("the input should resolve")
+        );
+        fs::remove_dir_all(directory).expect("the test directory should be removed");
+    }
+
+    #[test]
+    fn output_paths_must_be_absolute_files_in_an_existing_folder() {
+        let directory = test_directory("output-shape");
+        let input = directory.join("clip.mov");
+        fs::write(&input, b"source").expect("the input should be written");
+        let inputs = vec![input.canonicalize().expect("the input should resolve")];
+
+        let relative = validate_output(
+            "clip-vidra.mp4",
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Reject,
+        )
+        .expect_err("a relative output should be rejected");
+        assert!(relative.message.contains("absolute"));
+
+        let wrong_extension = directory.join("clip-vidra.mov");
+        let extension = validate_output(
+            path_text(&wrong_extension),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Reject,
+        )
+        .expect_err("the container extension should be required");
+        assert!(extension.message.contains(".mp4"));
+
+        let missing_parent = directory.join("missing").join("clip-vidra.mp4");
+        let parent = validate_output(
+            path_text(&missing_parent),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Reject,
+        )
+        .expect_err("a missing folder should be rejected");
+        assert!(parent.message.contains("does not exist"));
+
+        let directory_output = directory.join("clip-vidra.mp4");
+        fs::create_dir(&directory_output).expect("the directory output should be created");
+        let not_a_file = validate_output(
+            path_text(&directory_output),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Reject,
+        )
+        .expect_err("a directory should not be accepted as an output file");
+        assert!(not_a_file.message.contains("regular file"));
+        fs::remove_dir(&directory_output).expect("the directory output should be removed");
+
+        let uppercase = directory.join("CLIP-VIDRA.MP4");
+        let resolved = validate_output(
+            path_text(&uppercase),
+            &inputs,
+            OutputContainer::Mp4,
+            ExistingOutput::Reject,
+        )
+        .expect("an extension should match regardless of case");
+        assert_eq!(resolved.file_name(), uppercase.file_name());
+
+        let mkv = directory.join("clip-vidra.mkv");
+        let mkv_output = validate_output(
+            path_text(&mkv),
+            &inputs,
+            OutputContainer::Mkv,
+            ExistingOutput::Reject,
+        )
+        .expect("an MKV output should be accepted");
+        assert_eq!(
+            mkv_output.extension().and_then(|value| value.to_str()),
+            Some("mkv")
+        );
         fs::remove_dir_all(directory).expect("the test directory should be removed");
     }
 }
