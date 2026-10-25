@@ -39,11 +39,21 @@ test("pins the development archive to the current release recipe", async () => {
     `https://github.com/mathieumaf/vidra/releases/download/${pin.tag}/${pin.archiveName}`,
   );
   assert.equal(pin.recipeFingerprint, releaseRecipeFingerprint(release));
+  assert.equal(isDevArchivePlaceholder(pin), false);
+  assert.equal(pin.sha256, "d89964bedaa6bfd660cb2c39adbda7e04ff00580e10922da9b54b3bb1cfe82c8");
+  assert.doesNotThrow(() => assertDevArchivePinned(pin));
+  assert.doesNotThrow(() => assertDevArchiveMatchesRecipe(pin, release));
+});
+
+test("rejects a placeholder development archive checksum", () => {
+  const pin = { version: "8.1.3", sha256: DEV_ARCHIVE_SHA256_PLACEHOLDER };
   assert.equal(isDevArchivePlaceholder(pin), true);
-  assert.equal(pin.sha256, DEV_ARCHIVE_SHA256_PLACEHOLDER);
   assert.throws(() => assertDevArchivePinned(pin), /does not compile FFmpeg/);
   assert.throws(() => assertDevArchivePinned(pin), /placeholder/);
-  assert.doesNotThrow(() => assertDevArchiveMatchesRecipe(pin, release));
+  assert.throws(
+    () => assertDevArchivePinned({ version: "8.1.3", sha256: "not-a-checksum" }),
+    /64-character SHA-256/,
+  );
 });
 
 test("rejects a development archive whose fingerprint is stale", () => {
@@ -162,7 +172,7 @@ test("refuses to package binaries without corresponding sources", async () => {
   }
 });
 
-test("checks the placeholder before downloading and does not compile on that path", () => {
+test("checks the pinned checksum before downloading and compiles only when a build is requested", () => {
   const source = readFileSync(new URL("./prepare.mjs", import.meta.url), "utf8");
   const buildImport = source.indexOf('await import("./build-release.mjs")');
   const pinCheck = source.indexOf("assertDevArchivePinned(pin)");

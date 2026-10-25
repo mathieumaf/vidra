@@ -46,15 +46,15 @@ brew install autoconf automake libtool cmake meson ninja pkgconf nasm
 
 ### Development sidecar
 
-On Apple Silicon, `pnpm ffmpeg:prepare` downloads the development archive pinned in `scripts/ffmpeg/dev-archive.json`. It checks the archive SHA-256, checks that the archive contains the corresponding sources, and checks that FFmpeg and FFprobe report the release version. It does not compile FFmpeg. While the checksum is `placeholder`, prepare stops with an error instead of building.
+On Apple Silicon, `pnpm ffmpeg:prepare` downloads the development archive pinned in `scripts/ffmpeg/dev-archive.json`. It checks the archive SHA-256, checks that the archive contains the corresponding sources, and checks that FFmpeg and FFprobe report the release version. It does not compile FFmpeg. macOS pull-request CI runs that same download.
 
 The archive is produced by the manual **FFmpeg development archive** workflow (`.github/workflows/ffmpeg-dev-archive.yml`). That workflow runs only when a maintainer starts it. It compiles `scripts/ffmpeg/build-release.mjs` on Apple Silicon and uploads one `.tar.xz` and its `.sha256` file to a prerelease tag such as `ffmpeg-dev-8.1.3-r6`. The tag must not start with `v`. It is not a Vidra application release, and the updater workflow ignores it. The workflow uses the default `GITHUB_TOKEN` only. It does not sign or notarize the application.
 
-After the workflow finishes:
+`scripts/ffmpeg/dev-archive.json` records the SHA-256 of the published archive for the current recipe. When a new archive is published:
 
 1. Open the prerelease and copy the SHA-256 from the `.sha256` asset.
-2. Replace `placeholder` in `scripts/ffmpeg/dev-archive.json` with that checksum. Leave the recorded recipe fingerprint unchanged unless the recipe itself changed.
-3. Commit that pin. Pull-request CI then downloads the archive. It does not compile FFmpeg.
+2. Replace the checksum in `scripts/ffmpeg/dev-archive.json` with that value. Leave the recorded recipe fingerprint unchanged unless the recipe itself changed.
+3. Commit that pin. Pull-request CI downloads the archive. It does not compile FFmpeg.
 
 `pnpm ffmpeg:prepare -- --build` and `pnpm ffmpeg:release` compile the pinned recipe locally. They need the native tools listed above. Use them when the published archive is not the build you need. Public application releases still compile from the pinned sources in the release workflow.
 
