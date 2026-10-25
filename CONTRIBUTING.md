@@ -22,7 +22,7 @@ The 1.0 conversion check encodes a small synthetic corpus. Nothing from that cor
 | Clip | What it exercises |
 | --- | --- |
 | `sdr-h264-aac` | H.264 and AAC from `testsrc2` and a sine wave. Quality presets and the built-in profiles run on this clip. |
-| `hdr10-hevc` | 10-bit HEVC tagged BT.2020 / SMPTE ST 2084. |
+| `hdr10-hevc` | 10-bit HEVC tagged BT.2020 / SMPTE ST 2084, with mastering-display and content-light metadata. |
 | `hlg-hevc` | 10-bit HEVC tagged BT.2020 / HLG (`arib-std-b67`). |
 | `rotated-h264` | A 90 degree display matrix, with the coded frame left landscape. |
 | `variable-frame-rate` | Two H.264 pieces concatenated so frame duration changes. |
@@ -31,7 +31,7 @@ The 1.0 conversion check encodes a small synthetic corpus. Nothing from that cor
 | `corrupt` | The first bytes of a real MP4, truncated so inspection fails. |
 | `unknown-transfer` | 10-bit HEVC with BT.2020 primaries, no transfer characteristic, and stream-level mastering-display metadata. |
 
-A Dolby Vision clip is added only when this FFmpeg build writes a DOVI configuration record that FFprobe reports on the video stream. libx265 can name a Dolby Vision profile, but the record is not written unless an external RPU bitstream is passed to `dolby-vision-rpu`. lavfi cannot synthesize that RPU, and Vidra does not bundle Dolby's tools or `dovi_tool`. The generator prints that reason and still writes the HDR10 and HLG clips, which cover the backward-compatible base layer.
+A Dolby Vision clip is added only when this FFmpeg build writes a DOVI configuration record that FFprobe reports on the video stream. libx265 can name a Dolby Vision profile, but the record is not written unless an external RPU bitstream is passed to `dolby-vision-rpu`. lavfi cannot synthesize that RPU, and Vidra does not bundle Dolby's tools or `dovi_tool`. The generator prints that reason and still writes the HDR10 and HLG clips, which cover the backward-compatible base layer. Color tags are written with `setparams` so lavfi frames carry them on both FFmpeg 6 and FFmpeg 8. An existing `--output` folder is replaced only when it already holds this corpus's manifest and only the files the generator wrote. Each FFmpeg invocation may run for 180 seconds.
 
 The Rust test `conversion_corpus` is ignored during ordinary `cargo test` so those checks stay fast. It probes every clip with the application's FFprobe parser, builds each command with `encode::command_arguments`, and publishes the result through the same temporary-file helper as the queue. Encodes run one at a time. From the repository root, after `pnpm ffmpeg:prepare`:
 
