@@ -234,8 +234,9 @@ fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
     use std::process::Command;
 
     let manager = JobManager::default();
-    let mut process = Command::new("sleep").arg("30").spawn().unwrap();
-    let process_id = process.id();
+    let mut process =
+        crate::jobs::process::ChildGuard(Command::new("sleep").arg("30").spawn().unwrap());
+    let process_id = process.0.id();
     manager.sleep_preventer.activate().unwrap();
     {
         let mut state = manager.state.lock().unwrap();
@@ -258,8 +259,8 @@ fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
 
     manager.finish_active("active").unwrap();
     assert!(!manager.sleep_preventer.is_active());
-    process.kill().unwrap();
-    process.wait().unwrap();
+    process.0.kill().unwrap();
+    process.0.wait().unwrap();
 }
 
 #[test]
@@ -581,8 +582,9 @@ fn pause_and_resume_bookkeeping_keeps_a_single_active_encoder() {
         pending_id(manager.reserve_next().unwrap().unwrap()),
         "active"
     );
-    let mut sleep = Command::new("sleep").arg("30").spawn().unwrap();
-    let process_id = sleep.id();
+    let mut sleep =
+        crate::jobs::process::ChildGuard(Command::new("sleep").arg("30").spawn().unwrap());
+    let process_id = sleep.0.id();
     let stopped = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&stopped);
     manager
@@ -665,7 +667,7 @@ fn pause_and_resume_bookkeeping_keeps_a_single_active_encoder() {
         crate::jobs::CancelledJob::Pending(_) => panic!("the resumed job should be active"),
     }
     assert!(stopped.load(Ordering::Relaxed));
-    let _ = sleep.wait();
+    let _ = sleep.0.wait();
 }
 
 #[test]

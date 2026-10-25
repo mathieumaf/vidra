@@ -651,8 +651,9 @@ fn resuming_a_paused_encode_does_not_start_another_one() {
         ReservedJob::Pending(job) => assert_eq!(job.id, "paused"),
         ReservedJob::Resumed(_) => panic!("the first start should be pending"),
     }
-    let mut sleep = Command::new("sleep").arg("30").spawn().unwrap();
-    let process_id = sleep.id();
+    let mut sleep =
+        crate::jobs::process::ChildGuard(Command::new("sleep").arg("30").spawn().unwrap());
+    let process_id = sleep.0.id();
     effects
         .jobs
         .attach_running(
@@ -686,7 +687,7 @@ fn resuming_a_paused_encode_does_not_start_another_one() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
         crate::jobs::CancelledJob::Pending(_) => panic!("the resumed job should be active"),
     }
-    let _ = sleep.wait();
+    let _ = sleep.0.wait();
 }
 
 #[test]

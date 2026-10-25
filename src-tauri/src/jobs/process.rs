@@ -93,11 +93,27 @@ impl RunningProcess {
     }
 }
 
+/// Reaps a test child when the test returns, including after a failed assertion.
+#[cfg(all(test, unix))]
+pub(crate) struct ChildGuard(pub(crate) std::process::Child);
+
+#[cfg(all(test, unix))]
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        // A child that was already reaped must not be signalled again.
+        if matches!(self.0.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::{set_paused, terminate_process};
     use std::os::unix::process::ExitStatusExt;
-    use std::process::{Child, Command};
+    use std::process::Command;
 
     fn missing_process_id() -> u32 {
         let pid_max = std::fs::read_to_string("/proc/sys/kernel/pid_max")
@@ -107,19 +123,10 @@ mod tests {
         pid_max.saturating_add(1).min(i32::MAX as u32)
     }
 
-    struct ChildGuard(Child);
-
-    impl Drop for ChildGuard {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-
     #[test]
     fn cached_process_id_can_pause_and_resume_a_child() {
         let child = Command::new("sleep").arg("30").spawn().unwrap();
-        let mut child = ChildGuard(child);
+        let mut child = super::ChildGuard(child);
         let process_id = child.0.id();
 
         set_paused(process_id, true).unwrap();
@@ -144,16 +151,18 @@ mod tests {
 
     #[test]
     fn terminate_kills_a_child_and_ignores_a_process_that_is_already_gone() {
-        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
-        let process_id = child.id();
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        let mut child = super::ChildGuard(child);
+        let process_id = child.0.id();
 
         terminate_process(process_id).unwrap();
-        let status = child.wait().unwrap();
+        let status = child.0.wait().unwrap();
         assert!(!status.success());
         assert_eq!(status.code(), None);
         assert_eq!(status.signal(), Some(libc::SIGKILL));
 
-        terminate_process(process_id).unwrap();
+        // The reaped PID can be reused. Signal a PID that cannot belong to a process.
+        terminate_process(missing_process_id()).unwrap();
     }
 
     #[test]
