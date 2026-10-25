@@ -13,7 +13,8 @@ All notable changes to Vidra are documented in this file.
 ### Changed
 
 - Require free space for the new file while a confirmed replacement is encoding. The existing file stays on disk until the conversion succeeds, so its space is not treated as available.
-- Build the Apple Silicon release engine and development sidecar from FFmpeg 8.1.3. This security and bugfix update is an intentional release-recipe change, so the recipe fingerprint changed. A new beta or release candidate has to re-validate the engine before publication.
+- Build the Apple Silicon release engine from FFmpeg 8.1.3. This security and bugfix update is an intentional release-recipe change, so the recipe fingerprint changed. A new beta or release candidate has to re-validate the engine before publication.
+- Download the Apple Silicon development sidecar from a checksum-pinned archive built with that same recipe. `pnpm ffmpeg:prepare` does not compile FFmpeg. Compiling locally requires `pnpm ffmpeg:prepare -- --build`.
 - Report the encoding engine as unavailable unless FFmpeg and FFprobe report the pinned 8.1.3 release version. A development copy of a different version can still be used to compile Vidra, and the app explains that it is not the release engine.
 
 ## 0.1.0 - 2026-09-05

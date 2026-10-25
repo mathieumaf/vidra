@@ -4,7 +4,7 @@ Thank you for helping improve Vidra. Keep changes focused, preserve the local-fi
 
 ## Development setup
 
-Vidra currently targets macOS on Apple Silicon. Install Node.js 24, pnpm 11, Rust, the Tauri prerequisites, and Xcode when regenerating native icon assets. The first `pnpm ffmpeg:prepare` on Apple Silicon compiles the pinned release recipe; install the native build tools listed in [docs/RELEASING.md](docs/RELEASING.md). Later runs reuse that build when the recipe fingerprint matches.
+Vidra currently targets macOS on Apple Silicon. Install Node.js 24, pnpm 11, Rust, the Tauri prerequisites, and Xcode when regenerating native icon assets. `pnpm ffmpeg:prepare` downloads the checksum-pinned development archive. It does not compile FFmpeg. To compile the release recipe locally, run `pnpm ffmpeg:prepare -- --build` after installing the native build tools listed in [docs/RELEASING.md](docs/RELEASING.md).
 
 Linux can compile the Rust crate and run the portable checks before a Linux port exists. Install the Tauri Linux dependencies and a local FFmpeg, then run `VIDRA_FFMPEG_DIR=/usr/bin pnpm ffmpeg:prepare` so the sidecar filenames exist. That override is for development and CI only. Release builds reject `VIDRA_FFMPEG_DIR` and still require the pinned Apple Silicon recipe. Vidra reports the engine as ready only when FFmpeg and FFprobe report the pinned release version. A different local build still prepares the filenames, and the app explains that it is not the pinned engine.
 

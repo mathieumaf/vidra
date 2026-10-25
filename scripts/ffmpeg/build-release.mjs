@@ -1,5 +1,6 @@
 import { availableParallelism } from "node:os";
 import { createHash } from "node:crypto";
+import { BUILD_RECIPE_VERSION, releaseRecipeFingerprint } from "./recipe.mjs";
 import { createReadStream } from "node:fs";
 import {
   access,
@@ -20,9 +21,6 @@ import { hostTargetTriple, releaseEntry } from "./target.mjs";
 import { verifyAv1Decoding } from "./verify-av1.mjs";
 import { ffmpegVersionMatches, ffmpegVersionToken } from "./version.mjs";
 
-// Recipe 6. The fingerprint also covers the release source object, so a source
-// pin change needs a new fingerprint assertion even when this number stays 6.
-const BUILD_RECIPE_VERSION = 6;
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
@@ -44,9 +42,7 @@ const prefixMapFlags = [
   `-ffile-prefix-map=${cacheDirectory}=${reproducibleSourceRoot}`,
   `-fdebug-prefix-map=${cacheDirectory}=${reproducibleSourceRoot}`,
 ].join(" ");
-const recipeFingerprint = createHash("sha256")
-  .update(JSON.stringify({ version: BUILD_RECIPE_VERSION, release }))
-  .digest("hex");
+const recipeFingerprint = releaseRecipeFingerprint(release);
 const deploymentTarget = release.minimumMacOSVersion;
 const commonEnvironment = {
   ...process.env,

@@ -19,7 +19,7 @@ The release build currently links these optional libraries statically:
 - Opus, licensed under the BSD 3-Clause License;
 - zimg, licensed under the Do What The Fuck You Want To Public License version 2.
 
-Apple Silicon development builds FFmpeg and FFprobe from the same pinned sources, checksums, and configure arguments as the public release recipe in `scripts/ffmpeg/build-release.mjs`. That local build is a development copy. Public builds still compile FFmpeg from the pinned sources in the release workflow, and the development build must not replace that published build. `VIDRA_FFMPEG_DIR` may point at a different local FFmpeg for development and CI. Vidra does not treat that engine as ready unless it reports the pinned release version.
+Apple Silicon development downloads FFmpeg and FFprobe from the archive pinned in `scripts/ffmpeg/dev-archive.json`. That archive is built with the same pinned sources, checksums, and configure arguments as the public release recipe in `scripts/ffmpeg/build-release.mjs`, and it contains those corresponding source archives. It is a development copy. Public builds still compile FFmpeg from the pinned sources in the release workflow, and the development archive must not replace that published application build. `VIDRA_FFMPEG_DIR` may point at a different local FFmpeg for development and CI. Vidra does not treat that engine as ready unless it reports the pinned release version.
 
 See [FFmpeg's legal and license documentation](https://ffmpeg.org/legal.html).
 

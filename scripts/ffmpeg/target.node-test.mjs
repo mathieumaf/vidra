@@ -28,7 +28,7 @@ test("keeps the Apple Silicon development and release recipes under that target"
   const development = developmentEntry(manifest, "aarch64-apple-darwin");
   assert.equal(development.developmentOnly, true);
   assert.equal(development.provider, "Vidra");
-  assert.equal(development.builtFrom, "release-recipe");
+  assert.equal(development.distribution, "dev-archive");
   assert.equal(development.archive, undefined);
   assert.equal(development.binaries, undefined);
 

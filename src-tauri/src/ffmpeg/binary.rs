@@ -1,5 +1,6 @@
 use super::version::{assess_engine, development_override_marker_name, host_target_triple};
 use super::FfmpegStatus;
+#[cfg(debug_assertions)]
 use std::path::Path;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
@@ -50,11 +51,10 @@ pub async fn status(app: &AppHandle) -> FfmpegStatus {
 
 fn development_override_active() -> bool {
     let name = development_override_marker_name(host_target_triple());
-    if Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("binaries")
-        .join(&name)
-        .is_file()
-    {
+    // A packaged release has no source tree. Only debug builds may find the
+    // override marker under the Cargo manifest directory.
+    #[cfg(debug_assertions)]
+    if debug_manifest_override_marker(&name) {
         return true;
     }
 
@@ -62,4 +62,12 @@ fn development_override_active() -> bool {
         .ok()
         .and_then(|executable| executable.parent().map(|directory| directory.join(&name)))
         .is_some_and(|path| path.is_file())
+}
+
+#[cfg(debug_assertions)]
+fn debug_manifest_override_marker(name: &str) -> bool {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("binaries")
+        .join(name)
+        .is_file()
 }

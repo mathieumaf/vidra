@@ -46,13 +46,19 @@ brew install autoconf automake libtool cmake meson ninja pkgconf nasm
 
 ### Development sidecar
 
-On Apple Silicon, `pnpm ffmpeg:prepare` builds the development sidecar with `scripts/ffmpeg/build-release.mjs`, using the same source pins and configure arguments as a public release. It verifies the SHA-256 checksum of every pinned source archive. A finished build is reused when the recipe fingerprint still matches, so later runs do not compile again.
+On Apple Silicon, `pnpm ffmpeg:prepare` downloads the development archive pinned in `scripts/ffmpeg/dev-archive.json`. It checks the archive SHA-256, checks that the archive contains the corresponding sources, and checks that FFmpeg and FFprobe report the release version. It does not compile FFmpeg. While the checksum is `placeholder`, prepare stops with an error instead of building.
 
-The first prepare on a clean machine needs the native build tools listed above. Pull-request CI installs those tools only when its FFmpeg cache misses, then caches the verified downloads, the installed binaries, and the build marker. Object files are not cached. A cache hit skips compilation.
+The archive is produced by the manual **FFmpeg development archive** workflow (`.github/workflows/ffmpeg-dev-archive.yml`). That workflow runs only when a maintainer starts it. It compiles `scripts/ffmpeg/build-release.mjs` on Apple Silicon and uploads one `.tar.xz` and its `.sha256` file to a prerelease tag such as `ffmpeg-dev-8.1.3-r6`. The tag must not start with `v`. It is not a Vidra application release, and the updater workflow ignores it. The workflow uses the default `GITHUB_TOKEN` only. It does not sign or notarize the application.
 
-Public releases still compile FFmpeg from the pinned sources in the release workflow. The development build is a local copy of that recipe. It does not replace the release workflow, and it is not a published binary.
+After the workflow finishes:
 
-The development version in `scripts/ffmpeg/sources.json` must match the release FFmpeg version. The recipe fingerprint asserted in `scripts/ffmpeg/target.node-test.mjs` changes when the release source pin or `BUILD_RECIPE_VERSION` changes. Update that hash only when the recipe change is intentional. After an intentional recipe change, publish a new beta or release candidate and re-validate the engine before an official release. The recipe change itself does not publish a release.
+1. Open the prerelease and copy the SHA-256 from the `.sha256` asset.
+2. Replace `placeholder` in `scripts/ffmpeg/dev-archive.json` with that checksum. Leave the recorded recipe fingerprint unchanged unless the recipe itself changed.
+3. Commit that pin. Pull-request CI then downloads the archive. It does not compile FFmpeg.
+
+`pnpm ffmpeg:prepare -- --build` and `pnpm ffmpeg:release` compile the pinned recipe locally. They need the native tools listed above. Use them when the published archive is not the build you need. Public application releases still compile from the pinned sources in the release workflow.
+
+The development version must match the release FFmpeg version. `scripts/ffmpeg/dev-archive.json` records the recipe fingerprint. The test fails when that fingerprint no longer matches the current recipe, so a recipe change needs a new archive and a new checksum. Update the fingerprint assertion in `scripts/ffmpeg/target.node-test.mjs` only when the recipe change is intentional. After an intentional FFmpeg recipe change, publish a new beta or release candidate and re-validate the engine before an official application release. Publishing the development archive does not publish Vidra.
 
 ## Build and publish
 
