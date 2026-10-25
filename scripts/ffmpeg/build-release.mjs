@@ -1,4 +1,4 @@
-import { availableParallelism, platform, arch } from "node:os";
+import { availableParallelism } from "node:os";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
@@ -16,19 +16,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { verifyAv1Decoding } from "./verify-av1.mjs";
+import { hostTargetTriple, releaseEntry } from "./target.mjs";
 
 const BUILD_RECIPE_VERSION = 6;
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
-const release = manifest.release;
-const hostPlatform = platform();
-const hostArchitecture = arch();
-const target = `${hostArchitecture === "arm64" ? "aarch64" : hostArchitecture}-apple-darwin`;
-
-if (hostPlatform !== "darwin" || target !== release.target) {
-  throw new Error(`Release FFmpeg builds require macOS Apple Silicon, received ${hostPlatform}/${hostArchitecture}.`);
-}
+const target = hostTargetTriple();
+const release = releaseEntry(manifest, target);
 
 const jobs = String(Math.max(1, availableParallelism()));
 const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", "release", target);

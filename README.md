@@ -49,7 +49,7 @@ Requirements:
 - Node.js 24 or later
 - pnpm 11
 - Rust and the Tauri system prerequisites
-- macOS on Apple Silicon for the current FFmpeg bootstrap
+- macOS on Apple Silicon for the pinned FFmpeg bootstrap
 - Xcode 26 or later to regenerate the layered macOS icon
 
 Install dependencies and start the app:
@@ -60,6 +60,8 @@ pnpm tauri dev
 ```
 
 The Tauri development command prepares both native assets automatically. `pnpm icon:prepare` compiles the Icon Composer document when Xcode is available and otherwise uses the checked-in fallback assets. `pnpm ffmpeg:prepare` downloads pinned development-only FFmpeg and FFprobe archives, verifies their SHA-256 checksums, extracts the executables, and ad-hoc signs them for local use.
+
+`pnpm ffmpeg:prepare` currently has a pinned development sidecar for macOS on Apple Silicon. On another target it stops with an unsupported-target error. For local development and CI only, `VIDRA_FFMPEG_DIR` can name a directory that contains `ffmpeg` and `ffprobe`; those copies are written as sidecars and are never used for a public release.
 
 ## Checks
 

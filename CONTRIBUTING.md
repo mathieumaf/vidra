@@ -6,6 +6,8 @@ Thank you for helping improve Vidra. Keep changes focused, preserve the local-fi
 
 Vidra currently targets macOS on Apple Silicon. Install Node.js 24, pnpm 11, Rust, the Tauri prerequisites, and Xcode when regenerating native icon assets.
 
+Linux can compile the Rust crate and run the portable checks before a Linux port exists. Install the Tauri Linux dependencies and a local FFmpeg, then run `VIDRA_FFMPEG_DIR=/usr/bin pnpm ffmpeg:prepare` so the sidecar filenames exist. That override is for development and CI only. Release builds ignore it and still require the pinned Apple Silicon recipe.
+
 ```sh
 pnpm install
 pnpm tauri dev

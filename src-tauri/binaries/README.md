@@ -6,5 +6,9 @@ Prepared executables are intentionally ignored by Git. Tauri expects each execut
 
 - `ffmpeg-aarch64-apple-darwin`
 - `ffprobe-aarch64-apple-darwin`
+- `ffmpeg-x86_64-unknown-linux-gnu`
+- `ffprobe-x86_64-unknown-linux-gnu`
 
-The initial development manifest supports macOS on Apple Silicon. Release artifacts must be built from pinned source by Vidra's release pipeline before public distribution.
+The development manifest in `scripts/ffmpeg/sources.json` is keyed by target triple. It currently pins macOS on Apple Silicon. Other targets fail with an unsupported-target error until a pinned sidecar is added. For local development and CI only, `VIDRA_FFMPEG_DIR` can supply `ffmpeg` and `ffprobe`; those copies are not release artifacts.
+
+Release artifacts must be built from pinned source by Vidra's release pipeline before public distribution.

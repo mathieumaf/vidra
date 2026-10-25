@@ -6,29 +6,22 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { installDevelopmentSidecars } from "./development-override.mjs";
+import { developmentEntry, hostTargetTriple, rejectReleaseDevelopmentOverride } from "./target.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
+const overrideDirectory = process.env.VIDRA_FFMPEG_DIR?.trim() ?? "";
+
+rejectReleaseDevelopmentOverride(process.env.VIDRA_FFMPEG_MODE, overrideDirectory);
 
 if (process.env.VIDRA_FFMPEG_MODE === "release") {
   await import("./build-release.mjs");
   process.exit(0);
 }
 
-const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
-
-const target = `${process.arch === "arm64" ? "aarch64" : process.arch}-apple-darwin`;
-
-if (process.platform !== "darwin" || target !== "aarch64-apple-darwin") {
-  throw new Error(`FFmpeg preparation is not implemented for ${process.platform}/${process.arch} yet.`);
-}
-
-const release = manifest[target];
-const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", target);
+const target = hostTargetTriple();
 const binaryDirectory = join(rootDirectory, "src-tauri", "binaries");
-
-await mkdir(cacheDirectory, { recursive: true });
-await mkdir(binaryDirectory, { recursive: true });
 
 async function exists(path) {
   try {
@@ -96,7 +89,28 @@ function signExecutable(executable, destination) {
   }
 }
 
-for (const [name, artifact] of Object.entries(release.binaries)) {
+if (overrideDirectory) {
+  await installDevelopmentSidecars({
+    sourceDirectory: overrideDirectory,
+    target,
+    binaryDirectory,
+  });
+  if (process.platform === "darwin") {
+    for (const name of ["ffmpeg", "ffprobe"]) {
+      signExecutable(name, join(binaryDirectory, `${name}-${target}`));
+    }
+  }
+  console.log(`Using local FFmpeg sidecars from ${overrideDirectory} for ${target}.`);
+  process.exit(0);
+}
+
+const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
+const development = developmentEntry(manifest, target);
+const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", target);
+await mkdir(cacheDirectory, { recursive: true });
+await mkdir(binaryDirectory, { recursive: true });
+
+for (const [name, artifact] of Object.entries(development.binaries)) {
   const destination = join(binaryDirectory, `${name}-${target}`);
   const marker = join(binaryDirectory, `.${name}-${target}.sha256`);
   const markerMatches =
@@ -104,13 +118,13 @@ for (const [name, artifact] of Object.entries(release.binaries)) {
     (await readFile(marker, "utf8")).trim() === artifact.binarySha256;
 
   if ((await exists(destination)) && markerMatches) {
-    console.log(`${name} ${release.version} is ready for ${target}.`);
+    console.log(`${name} ${development.version} is ready for ${target}.`);
     continue;
   }
 
-  const archive = join(cacheDirectory, `${name}-${release.version}.zip`);
+  const archive = join(cacheDirectory, `${name}-${development.version}.zip`);
   if (!(await exists(archive))) {
-    console.log(`Downloading ${name} ${release.version} for ${target}...`);
+    console.log(`Downloading ${name} ${development.version} for ${target}...`);
     await download(artifact.url, archive);
   }
 
@@ -126,5 +140,5 @@ for (const [name, artifact] of Object.entries(release.binaries)) {
 
   signExecutable(name, destination);
   await writeFile(marker, `${artifact.binarySha256}\n`);
-  console.log(`${name} ${release.version} is ready for ${target}.`);
+  console.log(`${name} ${development.version} is ready for ${target}.`);
 }
