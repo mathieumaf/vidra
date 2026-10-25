@@ -47,6 +47,23 @@ describe("SettingsView application information", () => {
     tree.unmount();
   });
 
+  it("explains an engine that is not the pinned release version", () => {
+    const { tree } = renderSettings({
+      isReady: false,
+      status: {
+        ready: false,
+        ffmpegVersion: "ffmpeg version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers",
+        ffprobeVersion: "ffprobe version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers",
+        error: "FFmpeg 7.1.5 does not match Vidra's required 8.1.2 engine. The development override is in use, so this is not the pinned release build.",
+      },
+    });
+
+    expect(tree.text()).toContain("Unavailable");
+    expect(tree.text()).toContain("FFmpeg 7.1.5 does not match Vidra's required 8.1.2 engine.");
+    expect(tree.text()).toContain("ffmpeg version 7.1.5");
+    tree.unmount();
+  });
+
   it("offers an available update only when conversions are idle", () => {
     const update = {
       currentVersion: "1.2.3",

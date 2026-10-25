@@ -9,6 +9,6 @@ Prepared executables are intentionally ignored by Git. Each sidecar is named `<n
 - `ffmpeg-x86_64-unknown-linux-gnu`
 - `ffprobe-x86_64-unknown-linux-gnu`
 
-The development manifest in `scripts/ffmpeg/sources.json` is keyed by target triple. It currently pins macOS on Apple Silicon. Other targets fail with an unsupported-target error until a pinned sidecar is added. For local development and CI only, `VIDRA_FFMPEG_DIR` can supply `ffmpeg` and `ffprobe`; those copies are not release artifacts.
+The development manifest in `scripts/ffmpeg/sources.json` is keyed by target triple. It currently pins macOS on Apple Silicon to the FFmpeg and FFprobe executables from a published Vidra release, at the same version as the release recipe. Other targets fail with an unsupported-target error until a pinned sidecar is added. For local development and CI only, `VIDRA_FFMPEG_DIR` can supply `ffmpeg` and `ffprobe`; those copies are not release artifacts. The app treats an engine as ready only when both tools report the pinned release version.
 
-Release artifacts must be built from pinned source by Vidra's release pipeline before public distribution.
+Release artifacts must be built from pinned source by Vidra's release pipeline before public distribution. The development download is not a substitute for that build.

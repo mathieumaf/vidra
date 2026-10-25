@@ -61,9 +61,9 @@ pnpm install
 pnpm tauri dev
 ```
 
-The Tauri development command prepares both native assets automatically. `pnpm icon:prepare` compiles the Icon Composer document when Xcode is available and otherwise uses the checked-in fallback assets. `pnpm ffmpeg:prepare` downloads pinned development-only FFmpeg and FFprobe archives, verifies their SHA-256 checksums, extracts the executables, and ad-hoc signs them for local use.
+The Tauri development command prepares both native assets automatically. `pnpm icon:prepare` compiles the Icon Composer document when Xcode is available and otherwise uses the checked-in fallback assets. `pnpm ffmpeg:prepare` downloads the pinned Apple Silicon development sidecar from a published Vidra release archive, verifies the archive and executable SHA-256 checksums, checks that FFmpeg and FFprobe report the release version, and ad-hoc signs them for local use.
 
-`pnpm ffmpeg:prepare` currently has a pinned development sidecar for macOS on Apple Silicon. On another target it stops with an unsupported-target error. For local development and CI only, `VIDRA_FFMPEG_DIR` can name a directory that contains `ffmpeg` and `ffprobe`; those copies are written as sidecars and are never used for a public release.
+`pnpm ffmpeg:prepare` currently has a pinned development sidecar for macOS on Apple Silicon. That sidecar is the same FFmpeg version as the release recipe. On another target it stops with an unsupported-target error. For local development and CI only, `VIDRA_FFMPEG_DIR` can name a directory that contains `ffmpeg` and `ffprobe`; those copies are written as sidecars and are never used for a public release. Vidra does not treat that copy as ready unless it reports the pinned release version.
 
 ## Checks
 

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { installDevelopmentSidecars } from "./development-override.mjs";
+import { developmentOverrideMarker, installDevelopmentSidecars } from "./development-override.mjs";
 
 test("copies local ffmpeg and ffprobe into sidecar names and drops stale checksum markers", async () => {
   const root = await mkdtemp(join(tmpdir(), "vidra-ffmpeg-override-"));
@@ -24,6 +24,11 @@ test("copies local ffmpeg and ffprobe into sidecar names and drops stale checksu
     const mode = (await stat(join(binaryDirectory, `ffmpeg-${target}`))).mode & 0o777;
     assert.equal(mode, 0o755);
     await assert.rejects(stat(join(binaryDirectory, `.ffmpeg-${target}.sha256`)));
+    assert.equal(await readFile(developmentOverrideMarker(binaryDirectory, target), "utf8"), "development-override\n");
+    assert.equal(
+      developmentOverrideMarker(binaryDirectory, target),
+      join(binaryDirectory, ".ffmpeg-development-override-x86_64-unknown-linux-gnu"),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -2,18 +2,23 @@
   "targets": {
     "aarch64-apple-darwin": {
       "development": {
-        "version": "8.1",
+        "version": "8.1.2",
         "developmentOnly": true,
-        "provider": "OSXExperts",
-        "sourcePage": "https://www.osxexperts.net/",
+        "provider": "Vidra",
+        "sourceRelease": "v0.1.0",
+        "sourcePage": "https://github.com/mathieumaf/vidra/releases/tag/v0.1.0",
+        "archive": {
+          "url": "https://github.com/mathieumaf/vidra/releases/download/v0.1.0/Vidra_0.1.0_aarch64.app.tar.gz",
+          "sha256": "1c88316fef3870fc3f2a0edb44749411cc42fbe720874e0977dbf7d227d8a3de"
+        },
         "binaries": {
           "ffmpeg": {
-            "url": "https://www.osxexperts.net/ffmpeg81arm.zip",
-            "binarySha256": "9a08d61f9328e8164ba560ee7a79958e357307fcfeea6fe626b7d66cdc287028"
+            "archivePath": "Vidra.app/Contents/MacOS/ffmpeg",
+            "binarySha256": "4d49639483af36460a07b66f418e70224f16cbc35eda2dcdae9385e1e1f0704c"
           },
           "ffprobe": {
-            "url": "https://www.osxexperts.net/ffprobe81arm.zip",
-            "binarySha256": "aab17ac7379c1178aaf400c3ef36cdb67db0b75b1a23eeef2cb9f658be8844e6"
+            "archivePath": "Vidra.app/Contents/MacOS/ffprobe",
+            "binarySha256": "bcae19b520bdb3ae568514078d1cc210b2ef8f0fd0180ce8d62609c67e1cc6c9"
           }
         }
       },

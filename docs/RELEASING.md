@@ -44,6 +44,14 @@ brew install autoconf automake libtool cmake meson ninja pkgconf nasm
 4. Review the dependency and codec licenses in `THIRD_PARTY_NOTICES.md`.
 5. Commit the release changes through the normal pull-request process. Merge the reviewed changes before creating a release tag from `main`.
 
+### Development sidecar pin
+
+`pnpm ffmpeg:prepare` on Apple Silicon downloads the development sidecar described in `scripts/ffmpeg/sources.json`. That pin must be the same FFmpeg version as the release recipe, with SHA-256 checksums for the archive and for each extracted executable. The pull-request CI job only downloads this archive. It does not compile the release engine.
+
+The current pin is the `ffmpeg` and `ffprobe` inside the [v0.1.0 updater archive](https://github.com/mathieumaf/vidra/releases/tag/v0.1.0). That release was built with recipe 6, and its configure arguments match `scripts/ffmpeg/build-release.mjs`. The recipe fingerprint in `scripts/ffmpeg/target.node-test.mjs` stays valid until the release recipe itself changes.
+
+When the release recipe or the FFmpeg version changes, build the new engine with `VIDRA_FFMPEG_MODE=release pnpm ffmpeg:prepare`, publish an archive that contains those `ffmpeg` and `ffprobe` executables, and update the development version and checksums in the same change. Update the recipe fingerprint only when that recipe change is intentional. Public releases still compile FFmpeg from the pinned sources. Do not ship the development download as a substitute for that build.
+
 ## Build and publish
 
 Once the release is authorized and preparation is merged, create and push a signed tag from the reviewed `main` commit. For the first official release:

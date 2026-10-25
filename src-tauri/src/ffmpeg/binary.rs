@@ -1,4 +1,6 @@
+use super::version::{assess_engine, development_override_marker_name, host_target_triple};
 use super::FfmpegStatus;
+use std::path::Path;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
@@ -29,12 +31,11 @@ pub async fn status(app: &AppHandle) -> FfmpegStatus {
     let ffprobe = version(app, "ffprobe").await;
 
     match (ffmpeg, ffprobe) {
-        (Ok(ffmpeg_version), Ok(ffprobe_version)) => FfmpegStatus {
-            ready: true,
-            ffmpeg_version: Some(ffmpeg_version),
-            ffprobe_version: Some(ffprobe_version),
-            error: None,
-        },
+        (Ok(ffmpeg_version), Ok(ffprobe_version)) => assess_engine(
+            &ffmpeg_version,
+            &ffprobe_version,
+            development_override_active(),
+        ),
         (ffmpeg, ffprobe) => {
             let error = ffmpeg.err().or_else(|| ffprobe.err());
             FfmpegStatus {
@@ -45,4 +46,20 @@ pub async fn status(app: &AppHandle) -> FfmpegStatus {
             }
         }
     }
+}
+
+fn development_override_active() -> bool {
+    let name = development_override_marker_name(host_target_triple());
+    if Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("binaries")
+        .join(&name)
+        .is_file()
+    {
+        return true;
+    }
+
+    std::env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(|directory| directory.join(&name)))
+        .is_some_and(|path| path.is_file())
 }

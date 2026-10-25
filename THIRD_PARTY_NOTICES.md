@@ -19,7 +19,7 @@ The release build currently links these optional libraries statically:
 - Opus, licensed under the BSD 3-Clause License;
 - zimg, licensed under the Do What The Fuck You Want To Public License version 2.
 
-The default local development bootstrap still uses artifacts from [OSXExperts](https://www.osxexperts.net/). Those artifacts are development-only, are not committed, and must not be used for a public Vidra release.
+Apple Silicon development downloads the FFmpeg and FFprobe executables from a pinned Vidra release archive. Those executables are the release engine built by `scripts/ffmpeg/build-release.mjs` for that version. They are a development copy: public builds still compile FFmpeg from the pinned sources, and the development archive must not replace that source build. The corresponding source archives are attached to the pinned release. `VIDRA_FFMPEG_DIR` may point at a different local FFmpeg for development and CI. Vidra does not treat that engine as ready unless it reports the pinned release version.
 
 See [FFmpeg's legal and license documentation](https://ffmpeg.org/legal.html).
 
