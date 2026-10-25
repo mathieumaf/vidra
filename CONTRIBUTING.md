@@ -15,6 +15,35 @@ pnpm tauri dev
 
 Use pnpm for every JavaScript dependency operation. Do not commit generated FFmpeg binaries, credentials, signing material, media samples containing private data, or unrelated changes.
 
+## Conversion corpus
+
+The 1.0 conversion check encodes a small synthetic corpus. Nothing from that corpus is committed. `scripts/corpus/generate.mjs` asks the prepared FFmpeg sidecar (or `VIDRA_FFMPEG_DIR` when the sidecar files are not there yet) for short lavfi clips:
+
+| Clip | What it exercises |
+| --- | --- |
+| `sdr-h264-aac` | H.264 and AAC from `testsrc2` and a sine wave. Quality presets and the built-in profiles run on this clip. |
+| `hdr10-hevc` | 10-bit HEVC tagged BT.2020 / SMPTE ST 2084. |
+| `hlg-hevc` | 10-bit HEVC tagged BT.2020 / HLG (`arib-std-b67`). |
+| `rotated-h264` | A 90 degree display matrix, with the coded frame left landscape. |
+| `variable-frame-rate` | Two H.264 pieces concatenated so frame duration changes. |
+| `mov-subtitles` | An MOV file with a text subtitle track. |
+| `audio-only` | AAC with no video stream. |
+| `corrupt` | The first bytes of a real MP4, truncated so inspection fails. |
+| `unknown-transfer` | 10-bit HEVC with BT.2020 primaries, no transfer characteristic, and stream-level mastering-display metadata. |
+
+A Dolby Vision clip is added only when this FFmpeg build writes a DOVI configuration record that FFprobe reports on the video stream. libx265 can name a Dolby Vision profile, but the record is not written unless an external RPU bitstream is passed to `dolby-vision-rpu`. lavfi cannot synthesize that RPU, and Vidra does not bundle Dolby's tools or `dovi_tool`. The generator prints that reason and still writes the HDR10 and HLG clips, which cover the backward-compatible base layer.
+
+The Rust test `conversion_corpus` is ignored during ordinary `cargo test` so those checks stay fast. It probes every clip with the application's FFprobe parser, builds each command with `encode::command_arguments`, and publishes the result through the same temporary-file helper as the queue. Encodes run one at a time. From the repository root, after `pnpm ffmpeg:prepare`:
+
+```sh
+node scripts/corpus/generate.mjs --output /tmp/vidra-corpus
+cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture
+```
+
+`VIDRA_CORPUS_MATRIX=reduced` is the default and the matrix CI runs. On `sdr-h264-aac` it encodes every quality preset with efficient H.264 MP4, the Smaller file profile (efficient H.265 MP4), and the Fast export profile (hardware H.264 MP4). Every clip is also encoded with Copy, H.264, H.265, and AV1 into both MP4 and MKV at the balanced preset. `VIDRA_CORPUS_MATRIX=full` repeats every quality preset for every re-encode codec and container, and adds hardware H.264 and H.265 where the platform supports them. Fast AV1 is not part of either matrix because the app rejects it.
+
+`VIDRA_CORPUS_REQUIRED=1` fails the test when Node or the FFmpeg sidecar is missing. Without that variable the test prints the reason and returns. `VIDRA_CORPUS_STRICT_ENCODERS=1` fails when libx264, libx265, libsvtav1, AAC, zscale, tonemap, or 10-bit output for H.265 and AV1 is missing. macOS CI sets it. Linux CI uses the system FFmpeg and skips a combination, with a message, when that build lacks the encoder or filter. On Linux, Fast export is expected to stop before FFmpeg with the unsupported-platform error. `VIDRA_CORPUS_KEEP=1` leaves the temporary clips and outputs in place.
+
 ## Dependency policy
 
 Rust crate licenses, security advisories, and crate sources are checked with [cargo-deny](https://embarkstudios.github.io/cargo-deny/) 0.20.2. Duplicate crate versions are reported as warnings and do not fail the check. The rules live in `src-tauri/deny.toml`. From the repository root:

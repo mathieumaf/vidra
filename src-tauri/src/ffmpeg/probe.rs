@@ -212,6 +212,16 @@ fn dolby_vision_info(stream: &ProbeStream) -> Option<DolbyVisionInfo> {
     })
 }
 
+pub(super) const PROBE_ARGUMENTS: [&str; 7] = [
+    "-v",
+    "error",
+    "-show_format",
+    "-show_streams",
+    "-show_chapters",
+    "-of",
+    "json",
+];
+
 pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
     let input = validate_input(path)?;
     let input_argument = input.as_os_str();
@@ -219,15 +229,7 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
         .shell()
         .sidecar("ffprobe")
         .map_err(|error| ApiError::ffmpeg(error.to_string()))?
-        .args([
-            "-v",
-            "error",
-            "-show_format",
-            "-show_streams",
-            "-show_chapters",
-            "-of",
-            "json",
-        ])
+        .args(PROBE_ARGUMENTS)
         .arg(input_argument)
         .output()
         .await
@@ -239,6 +241,27 @@ pub async fn media(app: &AppHandle, path: &str) -> ApiResult<MediaInfo> {
         ));
     }
 
+    parse_media_info(&output.stdout, &input)
+}
+
+/// Runs the same FFprobe arguments and parser as [`media`] against a binary
+/// path. The application uses the Tauri sidecar; tests use the prepared binary.
+#[cfg(test)]
+pub(super) fn probe_with_binary(ffprobe: &Path, path: &str) -> ApiResult<MediaInfo> {
+    let input = validate_input(path)?;
+    let output = std::process::Command::new(ffprobe)
+        .args(PROBE_ARGUMENTS)
+        .arg(&input)
+        .output()
+        .map_err(|error| ApiError::ffmpeg(format!("Unable to run FFprobe: {error}")))?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(ApiError::ffmpeg(if message.is_empty() {
+            "FFprobe could not read this file.".to_owned()
+        } else {
+            message
+        }));
+    }
     parse_media_info(&output.stdout, &input)
 }
 
