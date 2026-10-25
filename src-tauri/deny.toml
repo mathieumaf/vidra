@@ -1,0 +1,102 @@
+# cargo-deny policy for Vidra.
+#
+# Vidra is GPL-3.0-or-later. A license is allowed only when it can be combined
+# with that license and the current graph actually requires it. An SPDX "OR"
+# expression passes when any one option is allowed, so dual-licensed crates do
+# not add their other options to this list. Per-crate exceptions are reserved
+# for a license that should not be accepted from an arbitrary new dependency.
+
+[graph]
+# Crates linked into the Apple Silicon application, plus the Linux crates
+# Tauri resolves for a desktop build. Windows-only crates stay out of this
+# graph until Vidra builds for Windows; add that target here when it does.
+targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"]
+all-features = false
+
+[advisories]
+version = 2
+ignore = [
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error 1.0.4 is unmaintained and has no patched release. glib-macros 0.18 and gtk3-macros 0.18, used by Tauri 2.12 for its Linux GTK backend, still depend on it. It is a compile-time proc macro and is not linked into the application. Remove this ignore when Tauri no longer depends on those gtk-rs 0.18 crates." },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant 5 was folded into zbus 6 and has no patched 5.x release. tauri-plugin-opener and tauri-plugin-single-instance 2.x depend on zbus 5 for Linux D-Bus. This is an unmaintained-crate notice, not a vulnerability advisory. Remove this ignore when those plugins move to zbus 6." },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names 4 was folded into zbus 6 and has no patched release. It is only present because Tauri's Linux opener and single-instance plugins depend on zbus 5. This is an unmaintained-crate notice, not a vulnerability advisory. Remove this ignore when those plugins move to zbus 6." },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5 was folded into zbus 6 and has no patched release. It is only present because Tauri's Linux opener and single-instance plugins depend on zbus 5. This is an unmaintained-crate notice, not a vulnerability advisory. Remove this ignore when those plugins move to zbus 6." },
+]
+
+[licenses]
+version = 2
+# Reject a license file that does not closely match the canonical SPDX text.
+confidence-threshold = 0.93
+allow = [
+    # Vidra itself.
+    "GPL-3.0-or-later",
+    # Permissive licenses. MIT and Apache-2.0 cover most of the graph,
+    # including crates that are also offered under Unlicense, 0BSD, CC0-1.0,
+    # MIT-0, or LGPL-2.1-or-later. Those alternatives are not listed here, so
+    # a future dependency that uses one of them as its only license still fails.
+    "MIT",
+    "Apache-2.0",
+    # target-lexicon is published only under this SPDX exception. The LLVM
+    # exception is permissive and GPL-3.0-compatible.
+    "Apache-2.0 WITH LLVM-exception",
+    # Required on its own by subtle, alloc-no-stdlib, and alloc-stdlib, and
+    # required in addition to MIT by brotli and encoding_rs.
+    "BSD-3-Clause",
+    # Required on its own by rustls-webpki and untrusted, and required in
+    # addition to Apache-2.0 by ring.
+    "ISC",
+    # foldhash is published only under the zlib license, which is GPL-compatible.
+    "Zlib",
+    # The ICU data crates are published only under the Unicode License v3.
+    # unicode-ident requires it in addition to MIT or Apache-2.0. The Unicode
+    # License v3 is a permissive license and is GPL-compatible.
+    "Unicode-3.0",
+    # cssparser, selectors, dtoa-short, and option-ext are MPL-2.0 only.
+    # MPL-2.0 section 3.3 allows that code to be included in a GPL-3.0 work.
+    "MPL-2.0",
+]
+# webpki-root-certs is in Cargo.lock under CDLA-Permissive-2.0, but it is not
+# compiled for the targets above. It is intentionally not allowed. If a change
+# starts building it, the license check fails until that data license is reviewed.
+exceptions = []
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "simplest-path"
+# Each skipped crate is an older copy that Tauri 2.12, or one of its pinned
+# dependencies, still requires. The newer copy remains in the graph and is not
+# skipped. Delete an entry when that older version disappears; cargo-deny
+# rejects a skip that no longer matches a crate.
+skip = [
+    { crate = "base64@0.21.7", reason = "swift-rs 1.0.9, via tauri-utils, requires base64 0.21. The rest of the graph uses 0.22." },
+    { crate = "bitflags@1.3.2", reason = "webkit2gtk 2.0 and ico 0.5 still require bitflags 1. Tauri uses both for the Linux GTK backend and for icon codegen." },
+    { crate = "core-foundation@0.9.4", reason = "system-configuration 0.7, via hyper-util and reqwest, requires core-foundation 0.9. Vidra and tao use 0.10." },
+    { crate = "getrandom@0.2.17", reason = "ring 0.17, used by rustls, still depends on getrandom 0.2." },
+    { crate = "getrandom@0.3.4", reason = "tauri 2.12 depends on getrandom 0.3, while tempfile and uuid use 0.4." },
+    { crate = "hashbrown@0.12.3", reason = "schemars 0.8 pulls indexmap 1.9, which pins hashbrown 0.12. The rest of the graph uses hashbrown 0.17." },
+    { crate = "heck@0.4.1", reason = "glib-macros 0.18, on the Linux GTK path, requires heck 0.4. Other Tauri macros use heck 0.5." },
+    { crate = "indexmap@1.9.3", reason = "schemars 0.8, used by Tauri's configuration schema, still resolves indexmap 1." },
+    { crate = "png@0.17.16", reason = "ico 0.5, used by tauri-codegen, requires png 0.17. muda and tauri-codegen also use png 0.18." },
+    { crate = "proc-macro-crate@1.3.1", reason = "gtk3-macros 0.18 requires proc-macro-crate 1." },
+    { crate = "proc-macro-crate@2.0.2", reason = "glib-macros 0.18 requires proc-macro-crate 2. zbus 5 uses proc-macro-crate 3." },
+    { crate = "serde_spanned@0.6.9", reason = "toml 0.8, pulled by system-deps for the Linux GTK sys crates, uses serde_spanned 0.6." },
+    { crate = "syn@1.0.109", reason = "proc-macro-error 1, pulled by glib-macros and gtk3-macros, still depends on syn 1." },
+    { crate = "syn@2.0.118", reason = "serde_derive, thiserror, and tauri-macros still use syn 2, while newer crates use syn 3." },
+    { crate = "thiserror@1.0.69", reason = "gtk-rs 0.18 crates, including cairo-rs, still depend on thiserror 1." },
+    { crate = "thiserror-impl@1.0.69", reason = "Proc-macro companion of thiserror 1, kept by the same gtk-rs 0.18 crates." },
+    { crate = "toml@0.8.2", reason = "system-deps 6, used to build the Linux GTK sys crates, requires toml 0.8." },
+    { crate = "toml_datetime@0.6.3", reason = "proc-macro-crate 2, pulled by glib-macros, requires toml_datetime 0.6." },
+    { crate = "toml_edit@0.19.15", reason = "proc-macro-crate 1, via gtk3-macros, requires toml_edit 0.19." },
+    { crate = "toml_edit@0.20.2", reason = "proc-macro-crate 2, via glib-macros, requires toml_edit 0.20." },
+    { crate = "winnow@0.5.40", reason = "toml_edit 0.19 and 0.20, from the Linux GTK build scripts, require winnow 0.5." },
+]
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

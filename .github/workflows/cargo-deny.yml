@@ -1,0 +1,37 @@
+name: Cargo deny
+
+# Separate from ci.yml so the Apple Silicon job can change independently.
+# cargo-deny reads the lockfile; it does not build or run the application.
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cargo-deny-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-deny:
+    name: Check Rust dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check Rust dependency policy
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          # Tauri 2.12 declares rust-version 1.90. The action image's toolchain
+          # is older than that, so install one that can read the lockfile.
+          rust-version: "1.99.1"
+          arguments: "--locked"
+          command: check
+          log-level: warn
