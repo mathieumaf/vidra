@@ -497,4 +497,304 @@ mod tests {
         assert!(media.subtitles[0].is_default);
         assert!(media.subtitles[0].is_forced);
     }
+
+    fn parse(json: &str) -> super::MediaInfo {
+        parse_media_info(json.as_bytes(), Path::new("/tmp/holiday.mkv")).unwrap()
+    }
+
+    #[test]
+    fn classifies_hdr10_hlg_pq_and_generic_hdr_without_media_files() {
+        let hdr10 = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "width": 3840,
+                "height": 2160,
+                "color_transfer": "smpte2084",
+                "color_primaries": "bt2020"
+              }],
+              "format": { "format_name": "matroska" }
+            }"#,
+        );
+        assert_eq!(hdr10.video.unwrap().hdr_format, Some(HdrFormat::Hdr10));
+
+        let hlg = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "width": 1920,
+                "height": 1080,
+                "color_transfer": "arib-std-b67",
+                "color_primaries": "bt2020"
+              }],
+              "format": { "format_name": "mov" }
+            }"#,
+        );
+        let hlg = hlg.video.unwrap();
+        assert_eq!(hlg.hdr_format, Some(HdrFormat::Hlg));
+        assert!(hlg.dolby_vision.is_none());
+
+        let pq = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "width": 1920,
+                "height": 1080,
+                "color_transfer": "smpte2084",
+                "color_primaries": "bt709"
+              }],
+              "format": { "format_name": "mp4" }
+            }"#,
+        );
+        assert_eq!(pq.video.unwrap().hdr_format, Some(HdrFormat::Pq));
+
+        let hdr10_plus = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "width": 3840,
+                "height": 2160,
+                "color_transfer": "smpte2084",
+                "color_primaries": "bt2020",
+                "side_data_list": [{ "side_data_type": "SMPTE2094-40 metadata" }]
+              }],
+              "format": { "format_name": "matroska" }
+            }"#,
+        );
+        assert_eq!(
+            hdr10_plus.video.unwrap().hdr_format,
+            Some(HdrFormat::Hdr10Plus)
+        );
+
+        let generic = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "width": 1920,
+                "height": 1080,
+                "side_data_list": [{ "side_data_type": "Content light level metadata" }]
+              }],
+              "format": { "format_name": "mp4" }
+            }"#,
+        );
+        assert_eq!(generic.video.unwrap().hdr_format, Some(HdrFormat::Hdr));
+    }
+
+    #[test]
+    fn reads_dolby_vision_profiles_and_enhancement_layers() {
+        let profile5 = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "width": 3840,
+                "height": 2160,
+                "color_transfer": "smpte2084",
+                "side_data_list": [{
+                  "side_data_type": "DOVI configuration record",
+                  "dv_profile": 5,
+                  "dv_bl_signal_compatibility_id": 0,
+                  "el_present_flag": 0
+                }]
+              }],
+              "format": { "format_name": "mp4" }
+            }"#,
+        );
+        let profile5 = profile5.video.unwrap();
+        assert_eq!(profile5.hdr_format, Some(HdrFormat::DolbyVision));
+        let info = profile5.dolby_vision.unwrap();
+        assert_eq!(info.profile, Some(5));
+        assert_eq!(info.base_layer_compatibility_id, Some(0));
+        assert!(!info.has_enhancement_layer);
+
+        let profile7 = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "width": 3840,
+                "height": 2160,
+                "color_transfer": "arib-std-b67",
+                "side_data_list": [{
+                  "side_data_type": "Dolby Vision configuration",
+                  "dv_profile": 7,
+                  "dv_bl_signal_compatibility_id": 6,
+                  "el_present_flag": 1
+                }]
+              }],
+              "format": { "format_name": "matroska" }
+            }"#,
+        );
+        let profile7 = profile7.video.unwrap();
+        assert_eq!(profile7.hdr_format, Some(HdrFormat::DolbyVision));
+        let info = profile7.dolby_vision.unwrap();
+        assert_eq!(info.profile, Some(7));
+        assert_eq!(info.base_layer_compatibility_id, Some(6));
+        assert!(info.has_enhancement_layer);
+
+        let profile8 = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "width": 1920,
+                "height": 1080,
+                "side_data_list": [{
+                  "side_data_type": "DOVI configuration record",
+                  "dv_profile": 8,
+                  "dv_bl_signal_compatibility_id": 4
+                }]
+              }],
+              "format": { "format_name": "mp4" }
+            }"#,
+        );
+        let info = profile8.video.unwrap().dolby_vision.unwrap();
+        assert_eq!(info.profile, Some(8));
+        assert_eq!(info.base_layer_compatibility_id, Some(4));
+        assert!(!info.has_enhancement_layer);
+
+        let unclassified = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_type": "video",
+                "width": 1280,
+                "height": 720,
+                "side_data_list": [{ "side_data_type": "dovi configuration record" }]
+              }],
+              "format": { "format_name": "mp4" }
+            }"#,
+        );
+        let info = unclassified.video.unwrap().dolby_vision.unwrap();
+        assert_eq!(info.profile, None);
+        assert_eq!(info.base_layer_compatibility_id, None);
+        assert!(!info.has_enhancement_layer);
+    }
+
+    #[test]
+    fn missing_duration_tags_audio_and_odd_frame_rates_stay_explicit() {
+        let media = parse(
+            r#"{
+              "streams": [
+                {
+                  "index": 0,
+                  "codec_type": "video",
+                  "width": 1920,
+                  "height": 1080,
+                  "avg_frame_rate": "24000/1001",
+                  "tags": { "rotate": "90" }
+                },
+                {
+                  "index": 2,
+                  "codec_type": "video",
+                  "width": 640,
+                  "height": 360,
+                  "avg_frame_rate": "0/0"
+                },
+                {
+                  "index": 3,
+                  "codec_type": "audio",
+                  "codec_name": "aac",
+                  "channels": 2,
+                  "tags": { "language": "eng", "title": "Main" }
+                },
+                {
+                  "index": 4,
+                  "codec_type": "audio",
+                  "channels": 6,
+                  "sample_rate": "48000",
+                  "tags": { "language": "jpn" }
+                },
+                {
+                  "index": 5,
+                  "codec_type": "subtitle",
+                  "codec_name": "ass",
+                  "tags": { "language": "eng" }
+                },
+                {
+                  "index": 6,
+                  "codec_type": "subtitle",
+                  "codec_name": "subrip",
+                  "disposition": { "default": 0, "forced": 0 },
+                  "tags": { "language": "spa", "title": "Spanish" }
+                },
+                { "index": 7, "codec_type": "data" }
+              ],
+              "format": { "format_name": "matroska" }
+            }"#,
+        );
+
+        assert_eq!(media.duration_seconds, 0.0);
+        assert_eq!(media.size_bytes, 0);
+        assert!(media.format_long_name.is_none());
+        assert!(!media.has_metadata);
+        assert_eq!(media.chapter_count, 0);
+        assert_eq!(media.name, "holiday.mkv");
+        let video = media.video.unwrap();
+        assert_eq!(video.codec, "unknown");
+        assert_eq!(video.width, 1080);
+        assert_eq!(video.height, 1920);
+        assert_eq!(video.frame_rate, Some(24_000.0 / 1_001.0));
+        assert!(video.hdr_format.is_none());
+        assert_eq!(media.audio.len(), 2);
+        assert_eq!(media.audio[0].index, 3);
+        assert_eq!(media.audio[0].title.as_deref(), Some("Main"));
+        assert_eq!(media.audio[1].language.as_deref(), Some("jpn"));
+        assert_eq!(media.audio[1].codec, "unknown");
+        assert_eq!(media.audio[1].channels, Some(6));
+        assert_eq!(media.subtitles.len(), 2);
+        assert!(!media.subtitles[1].is_default);
+        assert!(!media.subtitles[1].is_forced);
+        assert_eq!(media.subtitles[1].language.as_deref(), Some("spa"));
+
+        assert_eq!(
+            parse_frame_rate(Some("30000/1001")),
+            Some(30_000.0 / 1_001.0)
+        );
+        assert_eq!(
+            parse_frame_rate(Some("60000/1001")),
+            Some(60_000.0 / 1_001.0)
+        );
+        assert_eq!(parse_frame_rate(Some("25/1")), Some(25.0));
+        assert_eq!(parse_frame_rate(Some("ntsc")), None);
+        assert_eq!(parse_frame_rate(Some("")), None);
+    }
+
+    #[test]
+    fn a_silent_file_has_no_audio_and_can_omit_a_frame_rate() {
+        let media = parse(
+            r#"{
+              "streams": [{
+                "index": 0,
+                "codec_name": "h264",
+                "codec_type": "video",
+                "width": 1280,
+                "height": 720
+              }],
+              "format": {
+                "format_name": "mp4",
+                "duration": "8",
+                "size": "100",
+                "tags": {}
+              }
+            }"#,
+        );
+
+        assert!(media.audio.is_empty());
+        assert!(media.subtitles.is_empty());
+        assert!(!media.has_metadata);
+        assert_eq!(media.duration_seconds, 8.0);
+        let video = media.video.unwrap();
+        assert_eq!(video.codec, "h264");
+        assert_eq!(video.frame_rate, None);
+        assert!(video.hdr_format.is_none());
+    }
 }

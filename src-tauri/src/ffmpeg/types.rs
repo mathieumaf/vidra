@@ -360,3 +360,333 @@ pub struct EncodePauseChanged {
     pub job_id: String,
     pub paused: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AudioBitrate, AudioChannels, AudioMode, AudioStream, AudioTrackMode, DolbyVisionInfo,
+        EncodeFinished, EncodePauseChanged, EncodeProgress, EncodeRequest, EncodeStarted,
+        EncodingSpeed, FfmpegStatus, HdrFormat, MediaInfo, OutputContainer, OutputFrameRate,
+        OutputResolution, QualityLevel, QueuedEncode, SubtitleStream, VideoCodec, VideoStream,
+    };
+    use crate::diagnostics::DiagnosticReport;
+
+    #[test]
+    fn encode_requests_use_the_frontend_field_names() {
+        let request: EncodeRequest = serde_json::from_value(serde_json::json!({
+            "inputPath": "/videos/holiday.mov",
+            "outputPath": "/videos/holiday-vidra.mp4",
+            "quality": "high-quality",
+            "container": "mp4",
+            "videoCodec": "h265",
+            "encodingSpeed": "efficient",
+            "audioMode": "aac",
+            "outputResolution": "1080p",
+            "outputFrameRate": "30",
+            "qualityTuning": -1,
+            "audioBitrate": "192",
+            "audioChannels": "stereo",
+            "audioTrackMode": "first",
+            "audioStreamIndexes": [1, 3],
+            "subtitleStreamIndexes": [4],
+            "preserveSubtitles": false,
+            "preserveMetadata": true,
+            "preserveChapters": false,
+            "replaceExisting": true,
+            "allowInsufficientDiskSpace": true
+        }))
+        .unwrap();
+
+        assert_eq!(request.input_path, "/videos/holiday.mov");
+        assert_eq!(request.output_path, "/videos/holiday-vidra.mp4");
+        assert_eq!(request.quality, QualityLevel::HighQuality);
+        assert_eq!(request.container, OutputContainer::Mp4);
+        assert_eq!(request.video_codec, VideoCodec::H265);
+        assert_eq!(request.encoding_speed, EncodingSpeed::Efficient);
+        assert_eq!(request.audio_mode, AudioMode::Aac);
+        assert_eq!(request.output_resolution, OutputResolution::P1080);
+        assert_eq!(request.output_frame_rate, OutputFrameRate::Fps30);
+        assert_eq!(request.quality_tuning, -1);
+        assert_eq!(request.audio_bitrate, AudioBitrate::Kbps192);
+        assert_eq!(request.audio_channels, AudioChannels::Stereo);
+        assert_eq!(request.audio_track_mode, AudioTrackMode::First);
+        assert_eq!(request.audio_stream_indexes, vec![1, 3]);
+        assert_eq!(request.subtitle_stream_indexes, vec![4]);
+        assert!(!request.preserve_subtitles);
+        assert!(request.preserve_metadata);
+        assert!(!request.preserve_chapters);
+        assert!(request.replace_existing);
+        assert!(request.allow_insufficient_disk_space);
+    }
+
+    #[test]
+    fn optional_encode_request_flags_default_to_false() {
+        let request: EncodeRequest = serde_json::from_value(serde_json::json!({
+            "inputPath": "/videos/holiday.mkv",
+            "outputPath": "/videos/holiday-vidra.mkv",
+            "quality": "near-source",
+            "container": "mkv",
+            "videoCodec": "av1",
+            "encodingSpeed": "fast",
+            "audioMode": "opus",
+            "outputResolution": "source",
+            "outputFrameRate": "source",
+            "qualityTuning": 0,
+            "audioBitrate": "auto",
+            "audioChannels": "source",
+            "audioTrackMode": "all",
+            "audioStreamIndexes": [],
+            "subtitleStreamIndexes": [],
+            "preserveSubtitles": true,
+            "preserveMetadata": true,
+            "preserveChapters": true
+        }))
+        .unwrap();
+
+        assert_eq!(request.container, OutputContainer::Mkv);
+        assert_eq!(request.video_codec, VideoCodec::Av1);
+        assert_eq!(request.audio_mode, AudioMode::Opus);
+        assert_eq!(request.quality, QualityLevel::NearSource);
+        assert!(!request.replace_existing);
+        assert!(!request.allow_insufficient_disk_space);
+    }
+
+    #[test]
+    fn quality_container_codec_and_hdr_names_match_the_frontend() {
+        let wire = serde_json::json!({
+            "qualities": [
+                QualityLevel::MaximumCompression,
+                QualityLevel::SmallerFile,
+                QualityLevel::Balanced,
+                QualityLevel::HighQuality,
+                QualityLevel::NearSource
+            ],
+            "containers": [OutputContainer::Mp4, OutputContainer::Mkv],
+            "codecs": [VideoCodec::Copy, VideoCodec::H264, VideoCodec::H265, VideoCodec::Av1],
+            "speeds": [EncodingSpeed::Efficient, EncodingSpeed::Fast],
+            "audioModes": [
+                AudioMode::Auto,
+                AudioMode::Copy,
+                AudioMode::Aac,
+                AudioMode::Opus,
+                AudioMode::None
+            ],
+            "resolutions": [
+                OutputResolution::Source,
+                OutputResolution::P2160,
+                OutputResolution::P1440,
+                OutputResolution::P1080,
+                OutputResolution::P720,
+                OutputResolution::P480,
+                OutputResolution::P360
+            ],
+            "frameRates": [
+                OutputFrameRate::Source,
+                OutputFrameRate::Fps24,
+                OutputFrameRate::Fps25,
+                OutputFrameRate::Fps30,
+                OutputFrameRate::Fps50,
+                OutputFrameRate::Fps60
+            ],
+            "bitrates": [
+                AudioBitrate::Auto,
+                AudioBitrate::Kbps96,
+                AudioBitrate::Kbps128,
+                AudioBitrate::Kbps160,
+                AudioBitrate::Kbps192,
+                AudioBitrate::Kbps256
+            ],
+            "channels": [AudioChannels::Source, AudioChannels::Stereo, AudioChannels::Mono],
+            "tracks": [AudioTrackMode::All, AudioTrackMode::First],
+            "hdr": [
+                HdrFormat::DolbyVision,
+                HdrFormat::Hdr10Plus,
+                HdrFormat::Hdr10,
+                HdrFormat::Hlg,
+                HdrFormat::Pq,
+                HdrFormat::Hdr
+            ]
+        });
+
+        assert_eq!(
+            wire,
+            serde_json::json!({
+                "qualities": [
+                    "maximum-compression",
+                    "smaller-file",
+                    "balanced",
+                    "high-quality",
+                    "near-source"
+                ],
+                "containers": ["mp4", "mkv"],
+                "codecs": ["copy", "h264", "h265", "av1"],
+                "speeds": ["efficient", "fast"],
+                "audioModes": ["auto", "copy", "aac", "opus", "none"],
+                "resolutions": ["source", "2160p", "1440p", "1080p", "720p", "480p", "360p"],
+                "frameRates": ["source", "24", "25", "30", "50", "60"],
+                "bitrates": ["auto", "96", "128", "160", "192", "256"],
+                "channels": ["source", "stereo", "mono"],
+                "tracks": ["all", "first"],
+                "hdr": ["dolby-vision", "hdr10-plus", "hdr10", "hlg", "pq", "hdr"]
+            })
+        );
+    }
+
+    #[test]
+    fn inspected_media_and_queue_events_serialize_for_the_frontend() {
+        let media = MediaInfo {
+            path: "/videos/holiday.mkv".to_owned(),
+            name: "holiday.mkv".to_owned(),
+            duration_seconds: 12.5,
+            size_bytes: 2048,
+            format_name: "matroska,webm".to_owned(),
+            format_long_name: Some("Matroska / WebM".to_owned()),
+            video: Some(VideoStream {
+                codec: "hevc".to_owned(),
+                width: 3840,
+                height: 2160,
+                frame_rate: Some(24_000.0 / 1_001.0),
+                pixel_format: Some("yuv420p10le".to_owned()),
+                bit_depth: Some(10),
+                color_range: Some("tv".to_owned()),
+                color_space: Some("bt2020nc".to_owned()),
+                color_transfer: Some("smpte2084".to_owned()),
+                color_primaries: Some("bt2020".to_owned()),
+                hdr_format: Some(HdrFormat::DolbyVision),
+                dolby_vision: Some(DolbyVisionInfo {
+                    profile: Some(8),
+                    base_layer_compatibility_id: Some(1),
+                    has_enhancement_layer: false,
+                }),
+            }),
+            audio: vec![AudioStream {
+                index: 1,
+                codec: "aac".to_owned(),
+                channels: Some(2),
+                sample_rate: Some(48_000),
+                bit_rate: Some(160_000),
+                language: Some("eng".to_owned()),
+                title: Some("Stereo".to_owned()),
+            }],
+            subtitles: vec![SubtitleStream {
+                index: 2,
+                codec: "subrip".to_owned(),
+                language: Some("fra".to_owned()),
+                title: None,
+                is_default: true,
+                is_forced: false,
+            }],
+            chapter_count: 3,
+            has_metadata: true,
+        };
+        let value = serde_json::to_value(&media).unwrap();
+        assert_eq!(value["path"], "/videos/holiday.mkv");
+        assert_eq!(value["durationSeconds"], 12.5);
+        assert_eq!(value["sizeBytes"], 2048);
+        assert_eq!(value["formatName"], "matroska,webm");
+        assert_eq!(value["formatLongName"], "Matroska / WebM");
+        assert_eq!(value["chapterCount"], 3);
+        assert_eq!(value["hasMetadata"], true);
+        assert_eq!(value["video"]["frameRate"], 24_000.0 / 1_001.0);
+        assert_eq!(value["video"]["pixelFormat"], "yuv420p10le");
+        assert_eq!(value["video"]["bitDepth"], 10);
+        assert_eq!(value["video"]["colorRange"], "tv");
+        assert_eq!(value["video"]["colorSpace"], "bt2020nc");
+        assert_eq!(value["video"]["colorTransfer"], "smpte2084");
+        assert_eq!(value["video"]["colorPrimaries"], "bt2020");
+        assert_eq!(value["video"]["hdrFormat"], "dolby-vision");
+        assert_eq!(value["video"]["dolbyVision"]["profile"], 8);
+        assert_eq!(value["video"]["dolbyVision"]["baseLayerCompatibilityId"], 1);
+        assert_eq!(value["video"]["dolbyVision"]["hasEnhancementLayer"], false);
+        assert_eq!(value["audio"][0]["sampleRate"], 48_000);
+        assert_eq!(value["audio"][0]["bitRate"], 160_000);
+        assert_eq!(value["subtitles"][0]["isDefault"], true);
+        assert_eq!(value["subtitles"][0]["isForced"], false);
+
+        let status = FfmpegStatus {
+            ready: false,
+            ffmpeg_version: None,
+            ffprobe_version: None,
+            error: Some("ffprobe missing".to_owned()),
+        };
+        assert_eq!(
+            serde_json::to_value(status).unwrap(),
+            serde_json::json!({
+                "ready": false,
+                "ffmpegVersion": null,
+                "ffprobeVersion": null,
+                "error": "ffprobe missing"
+            })
+        );
+
+        let progress = EncodeProgress {
+            job_id: "job-1".to_owned(),
+            percent: 40.0,
+            indeterminate: false,
+            elapsed_seconds: 3.0,
+            out_time_seconds: 2.5,
+            speed: Some("1.2x".to_owned()),
+            eta_seconds: Some(4.0),
+            frame: Some(60),
+        };
+        assert_eq!(
+            serde_json::to_value(progress).unwrap(),
+            serde_json::json!({
+                "jobId": "job-1",
+                "percent": 40.0,
+                "indeterminate": false,
+                "elapsedSeconds": 3.0,
+                "outTimeSeconds": 2.5,
+                "speed": "1.2x",
+                "etaSeconds": 4.0,
+                "frame": 60
+            })
+        );
+
+        let finished = EncodeFinished {
+            job_id: "job-1".to_owned(),
+            status: "failed".to_owned(),
+            output_path: "/videos/holiday-vidra.mp4".to_owned(),
+            error: Some("FFmpeg could not complete this conversion.".to_owned()),
+            diagnostic: Some(DiagnosticReport {
+                code: "ffmpeg_failure".to_owned(),
+                summary: "FFmpeg could not complete this conversion.".to_owned(),
+                report: "Vidra diagnostic report".to_owned(),
+            }),
+        };
+        let finished = serde_json::to_value(finished).unwrap();
+        assert_eq!(finished["jobId"], "job-1");
+        assert_eq!(finished["outputPath"], "/videos/holiday-vidra.mp4");
+        assert_eq!(finished["diagnostic"]["code"], "ffmpeg_failure");
+        assert_eq!(finished["diagnostic"]["summary"], finished["error"]);
+
+        assert_eq!(
+            serde_json::to_value(QueuedEncode {
+                job_id: "job-2".to_owned(),
+                input_path: "/videos/holiday.mkv".to_owned(),
+                output_path: "/videos/holiday-vidra.mkv".to_owned(),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "jobId": "job-2",
+                "inputPath": "/videos/holiday.mkv",
+                "outputPath": "/videos/holiday-vidra.mkv"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(EncodeStarted {
+                job_id: "job-2".to_owned(),
+            })
+            .unwrap(),
+            serde_json::json!({ "jobId": "job-2" })
+        );
+        assert_eq!(
+            serde_json::to_value(EncodePauseChanged {
+                job_id: "job-2".to_owned(),
+                paused: true,
+            })
+            .unwrap(),
+            serde_json::json!({ "jobId": "job-2", "paused": true })
+        );
+    }
+}

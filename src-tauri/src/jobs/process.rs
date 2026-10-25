@@ -32,7 +32,7 @@ pub fn set_paused(_process_id: u32, _paused: bool) -> ApiResult<()> {
 }
 
 #[cfg(unix)]
-pub fn terminate(process_id: u32, _child: CommandChild) -> ApiResult<()> {
+fn terminate_process(process_id: u32) -> ApiResult<()> {
     match signal_process(process_id, libc::SIGKILL) {
         Ok(()) => Ok(()),
         Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
@@ -42,6 +42,11 @@ pub fn terminate(process_id: u32, _child: CommandChild) -> ApiResult<()> {
     }
 }
 
+#[cfg(unix)]
+pub fn terminate(process_id: u32, _child: CommandChild) -> ApiResult<()> {
+    terminate_process(process_id)
+}
+
 #[cfg(not(unix))]
 pub fn terminate(_process_id: u32, child: CommandChild) -> ApiResult<()> {
     child
@@ -49,24 +54,79 @@ pub fn terminate(_process_id: u32, child: CommandChild) -> ApiResult<()> {
         .map_err(|error| ApiError::ffmpeg(format!("Unable to cancel FFmpeg: {error}")))
 }
 
+/// A running encoder. Pausing uses the cached PID. Stopping owns the shell
+/// child and is explicit: dropping this handle does not signal the process,
+/// matching the previous `CommandChild` handle.
+pub(crate) struct RunningProcess {
+    process_id: u32,
+    stop: Option<Box<dyn FnOnce() -> ApiResult<()> + Send>>,
+}
+
+impl RunningProcess {
+    pub(crate) fn from_shell(child: CommandChild) -> Self {
+        // Cache the PID before FFmpeg can be suspended. On macOS, querying the
+        // shell child after SIGSTOP can block behind its internal wait lock.
+        let process_id = child.pid();
+        Self::from_stop(process_id, move || terminate(process_id, child))
+    }
+
+    pub(crate) fn from_stop(
+        process_id: u32,
+        stop: impl FnOnce() -> ApiResult<()> + Send + 'static,
+    ) -> Self {
+        Self {
+            process_id,
+            stop: Some(Box::new(stop)),
+        }
+    }
+
+    pub(crate) fn process_id(&self) -> u32 {
+        self.process_id
+    }
+
+    pub(crate) fn stop(mut self) -> ApiResult<()> {
+        if let Some(stop) = self.stop.take() {
+            stop()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Reaps a test child when the test returns, including after a failed assertion.
+#[cfg(all(test, unix))]
+pub(crate) struct ChildGuard(pub(crate) std::process::Child);
+
+#[cfg(all(test, unix))]
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        // A child that was already reaped must not be signalled again.
+        if matches!(self.0.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
-    use super::set_paused;
-    use std::process::{Child, Command};
+    use super::{set_paused, terminate_process};
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::Command;
 
-    struct ChildGuard(Child);
-
-    impl Drop for ChildGuard {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
+    fn missing_process_id() -> u32 {
+        let pid_max = std::fs::read_to_string("/proc/sys/kernel/pid_max")
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .unwrap_or(4_194_304);
+        pid_max.saturating_add(1).min(i32::MAX as u32)
     }
 
     #[test]
     fn cached_process_id_can_pause_and_resume_a_child() {
         let child = Command::new("sleep").arg("30").spawn().unwrap();
-        let mut child = ChildGuard(child);
+        let mut child = super::ChildGuard(child);
         let process_id = child.0.id();
 
         set_paused(process_id, true).unwrap();
@@ -87,5 +147,33 @@ mod tests {
 
         child.0.kill().unwrap();
         child.0.wait().unwrap();
+    }
+
+    #[test]
+    fn terminate_kills_a_child_and_ignores_a_process_that_is_already_gone() {
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        let mut child = super::ChildGuard(child);
+        let process_id = child.0.id();
+
+        terminate_process(process_id).unwrap();
+        let status = child.0.wait().unwrap();
+        assert!(!status.success());
+        assert_eq!(status.code(), None);
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+
+        // The reaped PID can be reused. Signal a PID that cannot belong to a process.
+        terminate_process(missing_process_id()).unwrap();
+    }
+
+    #[test]
+    fn pausing_an_unknown_process_reports_ffmpeg_error() {
+        let process_id = missing_process_id();
+        let error = set_paused(process_id, true).unwrap_err();
+        assert_eq!(error.code, "ffmpeg_error");
+        assert!(error.message.contains("pause"));
+
+        let error = set_paused(process_id, false).unwrap_err();
+        assert_eq!(error.code, "ffmpeg_error");
+        assert!(error.message.contains("resume"));
     }
 }
