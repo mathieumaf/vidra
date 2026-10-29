@@ -98,7 +98,7 @@ Public builds are produced by the GitHub release workflow. The process, includin
 
 ## Build from source
 
-Development targets macOS on Apple Silicon. Install Node.js 24, pnpm 11, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/). Xcode 26 or later is needed only to regenerate the layered macOS icon. Without Xcode, icon preparation uses the checked-in fallback assets.
+Development targets macOS on Apple Silicon. Install Node.js 26, pnpm 12, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/). Xcode 26 or later is needed only to regenerate the layered macOS icon. Without Xcode, icon preparation uses the checked-in fallback assets.
 
 ```sh
 pnpm install
