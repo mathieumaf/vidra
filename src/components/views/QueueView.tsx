@@ -6,6 +6,7 @@ import { outputFrameRateLabel } from "../../config/advanced";
 import { formatDuration, formatEta, formatFrameCount, outputFileName } from "../../lib/format";
 import { colorConversionNotice } from "../../lib/color";
 import { queueTrackSummary } from "../../lib/tracks";
+import { effectiveSegment, trimSummary } from "../../lib/trim";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
 import { DiagnosticDetails } from "./DiagnosticDetails";
@@ -157,7 +158,14 @@ export function QueueView({
           const frameRateSummary = item.settings.outputFrameRate === "source"
             ? ""
             : ` · ${outputFrameRateLabel(item.settings.outputFrameRate)}`;
-          const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)}${frameRateSummary} · ${audioSummary}`;
+          const segmentSummary = trimSummary(
+            item.settings.videoCodec === "copy"
+              ? (item.copyStartStatus === "ready"
+                ? effectiveSegment(item.trim, item.copyStartSeconds)
+                : null)
+              : item.trim,
+          );
+          const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)}${frameRateSummary} · ${audioSummary}${segmentSummary ? ` · ${segmentSummary}` : ""}`;
           const colorNotice = colorConversionNotice(item.media.video, item.settings.videoCodec);
           const destinationName = item.outputPath && DESTINATION_STATUSES.has(item.status)
             ? outputFileName(item.outputPath)

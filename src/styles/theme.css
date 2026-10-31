@@ -52,6 +52,7 @@
   .file-picker,
   .source-card,
   .profile-bar,
+  .segment-card,
   .media-details-card,
   .track-selection-card,
   .encoding-options-card,
@@ -68,6 +69,7 @@
   .track-selection-list,
   .track-shortcuts button,
   .profile-editor input,
+  .segment-times input,
   .settings-default-profile select,
   .settings-profile-editor input,
   .diagnostic-panel button
@@ -369,7 +371,9 @@
 }
 
 :root[data-theme="dark"] .quality-slider-wrap input::-webkit-slider-thumb,
-:root[data-theme="dark"] .advanced-quality-field input::-webkit-slider-thumb { border-color: var(--surface); }
+:root[data-theme="dark"] .advanced-quality-field input::-webkit-slider-thumb,
+:root[data-theme="dark"] .segment-slider input::-webkit-slider-thumb { border-color: var(--surface); }
+:root[data-theme="dark"] .segment-slider-rail { background: #3a463f; }
 
 @media (max-width: 760px) {
   .settings-appearance-row { align-items: flex-start; flex-direction: column; }

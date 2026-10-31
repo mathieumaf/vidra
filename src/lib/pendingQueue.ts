@@ -2,6 +2,7 @@ import { isEncodingSettings } from "../config/profiles";
 import type {
   EncodeQueueItem,
   EncodingSettings,
+  SegmentTrim,
   TrackSelection,
 } from "../types/media";
 
@@ -12,6 +13,8 @@ export type PendingQueueEntry = {
   sourceName: string;
   settings: EncodingSettings;
   trackSelection: TrackSelection;
+  trim: SegmentTrim | null;
+  copyStartSeconds: number | null;
 };
 
 export type PendingQueueSnapshot = {
@@ -30,6 +33,8 @@ export function pendingQueueEntries(items: EncodeQueueItem[]): PendingQueueEntry
             audioStreamIndexes: [...item.trackSelection.audioStreamIndexes],
             subtitleStreamIndexes: [...item.trackSelection.subtitleStreamIndexes],
           },
+          trim: item.trim ? { ...item.trim } : null,
+          copyStartSeconds: item.copyStartSeconds,
         }]
       : []
   ));
@@ -42,19 +47,24 @@ export function parsePendingQueue(value: string | null): PendingQueueSnapshot | 
     if (!isRecord(document) || document.version !== 1 || !Array.isArray(document.entries)) {
       return null;
     }
-    const entries = document.entries.flatMap((candidate) => (
-      isPendingQueueEntry(candidate)
-        ? [{
-            sourcePath: candidate.sourcePath,
-            sourceName: candidate.sourceName,
-            settings: { ...candidate.settings },
-            trackSelection: {
-              audioStreamIndexes: [...candidate.trackSelection.audioStreamIndexes],
-              subtitleStreamIndexes: [...candidate.trackSelection.subtitleStreamIndexes],
-            },
-          }]
-        : []
-    ));
+    const entries = document.entries.flatMap((candidate) => {
+      if (!isPendingQueueEntry(candidate)) return [];
+      const trim = readTrim(candidate);
+      if (trim === undefined) return [];
+      const copyStartSeconds = readCopyStart(candidate);
+      if (copyStartSeconds === undefined) return [];
+      return [{
+        sourcePath: candidate.sourcePath,
+        sourceName: candidate.sourceName,
+        settings: { ...candidate.settings },
+        trackSelection: {
+          audioStreamIndexes: [...candidate.trackSelection.audioStreamIndexes],
+          subtitleStreamIndexes: [...candidate.trackSelection.subtitleStreamIndexes],
+        },
+        trim,
+        copyStartSeconds,
+      }];
+    });
     return entries.length > 0 ? { version: 1, entries } : null;
   } catch {
     return null;
@@ -102,6 +112,24 @@ function isPendingQueueEntry(value: unknown): value is PendingQueueEntry {
     && value.sourceName.length > 0
     && isEncodingSettings(value.settings)
     && isTrackSelection(value.trackSelection);
+}
+
+function readCopyStart(value: { copyStartSeconds?: unknown }): number | null | undefined {
+  if (!("copyStartSeconds" in value) || value.copyStartSeconds === null || value.copyStartSeconds === undefined) {
+    return null;
+  }
+  return typeof value.copyStartSeconds === "number" && Number.isFinite(value.copyStartSeconds)
+    ? value.copyStartSeconds
+    : undefined;
+}
+
+function readTrim(value: { trim?: unknown }): SegmentTrim | null | undefined {
+  if (!("trim" in value) || value.trim === null || value.trim === undefined) return null;
+  const trim = value.trim;
+  if (!isRecord(trim)) return undefined;
+  if (typeof trim.startSeconds !== "number" || typeof trim.endSeconds !== "number") return undefined;
+  if (!Number.isFinite(trim.startSeconds) || !Number.isFinite(trim.endSeconds)) return undefined;
+  return { startSeconds: trim.startSeconds, endSeconds: trim.endSeconds };
 }
 
 function isTrackSelection(value: unknown): value is TrackSelection {

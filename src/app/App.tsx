@@ -39,6 +39,7 @@ import type {
   EncodingSpeed,
   OutputContainer,
   OutputResolution,
+  SegmentTrim,
   VideoCodec,
   View,
 } from "../types/media";
@@ -78,6 +79,7 @@ export default function App() {
     getAdvancedSettings(initialSettings),
   );
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(initialProfile.id);
+  const [segmentError, setSegmentError] = useState<string | null>(null);
   const { status, isReady } = useFfmpegStatus();
   const quality = QUALITY_LEVELS[qualityIndex];
   const hasActiveJobsRef = useRef(false);
@@ -136,6 +138,10 @@ export default function App() {
   }
 
   async function startEncoding() {
+    if (segmentError) {
+      queue.setError(segmentError);
+      return;
+    }
     const queued = await queue.startEncoding();
     if (queued > 1 || queue.hasActiveJobs) setView("queue");
   }
@@ -187,6 +193,11 @@ export default function App() {
       outputResolution,
       ...advancedSettings,
     };
+  }
+
+  function changeTrim(trim: SegmentTrim | null) {
+    const item = queue.primaryItem;
+    if (item?.status === "ready") queue.updateItemTrim(item, trim);
   }
 
   function changeOutputContainer(container: OutputContainer) {
@@ -444,6 +455,14 @@ export default function App() {
                   audioStreamIndexes: [],
                   subtitleStreamIndexes: [],
                 }}
+                trim={primaryItem?.trim ?? null}
+                copyStartSeconds={primaryItem?.settings.videoCodec === "copy"
+                  ? primaryItem.copyStartSeconds
+                  : null}
+                copyStartStatus={primaryItem?.settings.videoCodec === "copy"
+                  ? primaryItem.copyStartStatus
+                  : "unknown"}
+                segmentError={segmentError}
                 profiles={profileStore.profiles}
                 selectedProfileId={selectedProfileId}
                 isProfileModified={isProfileModified}
@@ -471,6 +490,8 @@ export default function App() {
                 onAdvancedSettingsChange={changeAdvancedSettings}
                 onAudioTrackSelectionChange={changeAudioTrackSelection}
                 onSubtitleTrackSelectionChange={changeSubtitleTrackSelection}
+                onTrimChange={changeTrim}
+                onTrimError={setSegmentError}
                 onProfileSelect={selectProfile}
                 onProfileCreate={createProfile}
                 onProfileUpdate={updateSelectedProfile}

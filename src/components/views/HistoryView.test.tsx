@@ -26,6 +26,8 @@ const historyEntry: HistoryEntry = {
   settings: BUILT_IN_PROFILES[0].settings,
   error: null,
   diagnostic: null,
+  trimStartSeconds: null,
+  trimEndSeconds: null,
 };
 
 function renderHistory(onClear = vi.fn(async () => {})) {

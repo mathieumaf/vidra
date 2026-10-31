@@ -23,7 +23,17 @@ pub struct MediaInfo {
     pub audio: Vec<AudioStream>,
     pub subtitles: Vec<SubtitleStream>,
     pub chapter_count: usize,
+    #[serde(default)]
+    pub chapters: Vec<ChapterMark>,
     pub has_metadata: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterMark {
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -290,6 +300,13 @@ pub enum AudioTrackMode {
     First,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentTrim {
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodeRequest {
@@ -315,6 +332,8 @@ pub struct EncodeRequest {
     pub replace_existing: bool,
     #[serde(default)]
     pub allow_insufficient_disk_space: bool,
+    #[serde(default)]
+    pub trim: Option<SegmentTrim>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -367,7 +386,8 @@ mod tests {
         AudioBitrate, AudioChannels, AudioMode, AudioStream, AudioTrackMode, DolbyVisionInfo,
         EncodeFinished, EncodePauseChanged, EncodeProgress, EncodeRequest, EncodeStarted,
         EncodingSpeed, FfmpegStatus, HdrFormat, MediaInfo, OutputContainer, OutputFrameRate,
-        OutputResolution, QualityLevel, QueuedEncode, SubtitleStream, VideoCodec, VideoStream,
+        OutputResolution, QualityLevel, QueuedEncode, SegmentTrim, SubtitleStream, VideoCodec,
+        VideoStream,
     };
     use crate::diagnostics::DiagnosticReport;
 
@@ -417,6 +437,7 @@ mod tests {
         assert!(!request.preserve_chapters);
         assert!(request.replace_existing);
         assert!(request.allow_insufficient_disk_space);
+        assert!(request.trim.is_none());
     }
 
     #[test]
@@ -449,6 +470,45 @@ mod tests {
         assert_eq!(request.quality, QualityLevel::NearSource);
         assert!(!request.replace_existing);
         assert!(!request.allow_insufficient_disk_space);
+        assert!(request.trim.is_none());
+    }
+
+    #[test]
+    fn segment_bounds_use_the_frontend_field_names() {
+        let request: EncodeRequest = serde_json::from_value(serde_json::json!({
+            "inputPath": "/videos/holiday.mov",
+            "outputPath": "/videos/holiday-vidra.mp4",
+            "quality": "balanced",
+            "container": "mp4",
+            "videoCodec": "h264",
+            "encodingSpeed": "efficient",
+            "audioMode": "auto",
+            "outputResolution": "source",
+            "outputFrameRate": "source",
+            "qualityTuning": 0,
+            "audioBitrate": "auto",
+            "audioChannels": "source",
+            "audioTrackMode": "all",
+            "audioStreamIndexes": [],
+            "subtitleStreamIndexes": [],
+            "preserveSubtitles": true,
+            "preserveMetadata": true,
+            "preserveChapters": true,
+            "trim": { "startSeconds": 1.5, "endSeconds": 4.0 }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            request.trim,
+            Some(SegmentTrim {
+                start_seconds: 1.5,
+                end_seconds: 4.0,
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(request.trim).unwrap(),
+            serde_json::json!({ "startSeconds": 1.5, "endSeconds": 4.0 })
+        );
     }
 
     #[test]
@@ -577,6 +637,7 @@ mod tests {
                 is_forced: false,
             }],
             chapter_count: 3,
+            chapters: vec![],
             has_metadata: true,
         };
         let value = serde_json::to_value(&media).unwrap();

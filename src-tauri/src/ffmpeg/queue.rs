@@ -1,7 +1,7 @@
 use super::{
-    disk_space, encode, probe, progress::ProgressParser, validate_input, validate_output,
+    disk_space, encode, probe, progress::ProgressParser, segment, validate_input, validate_output,
     EncodeFinished, EncodePauseChanged, EncodeRequest, EncodeStarted, ExistingOutput, MediaInfo,
-    QueuedEncode,
+    OutputContainer, QueuedEncode,
 };
 use crate::output::partial::{self, FinalizeRequest};
 use crate::{
@@ -114,6 +114,8 @@ where
                     request,
                     media,
                     ffmpeg_version: ffmpeg_version.clone(),
+                    segment: None,
+                    ffmpeg_command: None,
                 },
                 snapshot,
             )
@@ -127,24 +129,38 @@ where
     Ok(snapshots)
 }
 
-pub fn start_next(app: AppHandle) -> ApiResult<()> {
-    with_app_effects(&app, |state, emits| {
-        drive_queue(
-            state,
-            emits,
-            |job, partial_output| launch_ffmpeg(&app, job, partial_output),
-            |spawned, watched| watch_ffmpeg(&app, spawned, watched),
-        )
-    })
+pub async fn start_next(app: AppHandle) -> ApiResult<()> {
+    loop {
+        let ready = with_app_effects(&app, next_launch)?;
+        match ready {
+            NextLaunch::Idle | NextLaunch::Resumed => return Ok(()),
+            NextLaunch::Retry => continue,
+            NextLaunch::Ready(ready) => {
+                let mut ready = *ready;
+                let launched = launch_ffmpeg(&app, &mut ready.job, &ready.prepared.partial).await;
+                let started = with_app_effects(&app, |state, emits| {
+                    apply_launch(state, emits, ready, launched, |spawned, watched| {
+                        watch_ffmpeg(&app, spawned, watched)
+                    })
+                })?;
+                if started {
+                    return Ok(());
+                }
+            }
+        }
+    }
 }
 
-fn launch_ffmpeg(
+async fn launch_ffmpeg(
     app: &AppHandle,
-    job: &PendingJob,
+    job: &mut PendingJob,
     partial_output: &partial::PartialOutput,
 ) -> Result<SpawnedEncode, LaunchError> {
-    let command =
-        encode::build_command(app, job, &partial_output.path).map_err(LaunchError::Prepare)?;
+    let command = match encode::build_command(app, job, &partial_output.path).await {
+        Ok(command) => command,
+        Err(error) if error.code == "cancelled" => return Err(LaunchError::Cancelled),
+        Err(error) => return Err(LaunchError::Prepare(error)),
+    };
     match command.spawn() {
         Ok((receiver, child)) => Ok(SpawnedEncode { receiver, child }),
         Err(error) => Err(LaunchError::Spawn(ApiError::ffmpeg(error.to_string()))),
@@ -170,7 +186,11 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
         partial,
         replace_identity,
     } = watched;
-    app.state::<JobManager>().attach_child(&job_id, child)?;
+    if let Err(error) = app.state::<JobManager>().attach_child(&job_id, child) {
+        let mut job = job;
+        job.discard_segment_files();
+        return Err(error);
+    }
     let _ = app.emit(
         "encode-started",
         EncodeStarted {
@@ -183,6 +203,18 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
         let mut progress = ProgressParser::default();
         let mut log = BoundedLog::default();
         let mut exit_code = None;
+        let mut history = history;
+        let mut duration_seconds = duration_seconds;
+        let mut job = job;
+        if let Some(segment) = job.segment.as_ref() {
+            history.trim_start_seconds = Some(segment.output_start);
+            history.trim_end_seconds = Some(segment.output_end);
+            duration_seconds = segment::watched_duration(
+                job.request.trim,
+                job.media.duration_seconds,
+                Some(segment.output_start),
+            );
+        }
 
         while let Some(event) = receiver.recv().await {
             match event {
@@ -203,6 +235,41 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
             }
         }
 
+        if exit_code == Some(0) {
+            let mov_text = job.request.container == OutputContainer::Mp4;
+            if let Some(segment) = job.segment.clone() {
+                if segment.remux_text_subtitles && !segment.text_subtitle_files.is_empty() {
+                    match segment::remux_text_subtitles(
+                        &task_app,
+                        &job_id,
+                        &partial.path,
+                        &segment,
+                        mov_text,
+                    )
+                    .await
+                    {
+                        Ok(Some(remux)) => {
+                            append_ffmpeg_command(&mut job, &remux.command);
+                            if let Some(error) = remux.error {
+                                if error.code != "cancelled" {
+                                    log.push(&error.message);
+                                    exit_code = Some(1);
+                                }
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            if error.code != "cancelled" {
+                                log.push(&error.message);
+                                exit_code = Some(1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        job.discard_segment_files();
+
         finish_job(
             &task_app,
             FinishedEncode {
@@ -216,7 +283,7 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
                 exit_code,
             },
         );
-        let _ = start_next(task_app);
+        let _ = start_next(task_app).await;
     });
     Ok(())
 }
@@ -224,6 +291,17 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
 enum LaunchError {
     Prepare(ApiError),
     Spawn(ApiError),
+    Cancelled,
+}
+
+fn append_ffmpeg_command(job: &mut PendingJob, command: &str) {
+    match job.ffmpeg_command.as_mut() {
+        Some(existing) => {
+            existing.push_str("\n\nSubtitle remux\n");
+            existing.push_str(command);
+        }
+        None => job.ffmpeg_command = Some(command.to_owned()),
+    }
 }
 
 struct QueueState<'a> {
@@ -282,6 +360,139 @@ struct WatchJob {
     replace_identity: Option<partial::DestinationIdentity>,
 }
 
+enum NextLaunch {
+    Idle,
+    Resumed,
+    Retry,
+    Ready(Box<ReadyLaunch>),
+}
+
+struct ReadyLaunch {
+    job: Box<PendingJob>,
+    job_id: String,
+    output_path: String,
+    duration_seconds: f64,
+    history: HistoryDraft,
+    prepared: PreparedPartial,
+}
+
+impl ReadyLaunch {
+    fn into_watch(self) -> WatchJob {
+        WatchJob {
+            job_id: self.job_id,
+            output_path: self.output_path,
+            duration_seconds: self.duration_seconds,
+            history: self.history,
+            job: self.job,
+            partial: self.prepared.partial,
+            replace_identity: self.prepared.replace_identity,
+        }
+    }
+}
+
+fn next_launch(state: &QueueState<'_>, emits: &mut Emits<'_>) -> ApiResult<NextLaunch> {
+    let Some(reserved) = state.jobs.reserve_next()? else {
+        return Ok(NextLaunch::Idle);
+    };
+    let job = match reserved {
+        ReservedJob::Pending(job) => job,
+        ReservedJob::Resumed(job_id) => {
+            (emits.pause)(EncodePauseChanged {
+                job_id,
+                paused: false,
+            });
+            return Ok(NextLaunch::Resumed);
+        }
+    };
+    let job_id = job.id.clone();
+    let output_path = job.request.output_path.clone();
+    let duration_seconds =
+        super::trim::output_duration_seconds(job.request.trim, job.media.duration_seconds);
+    let history = HistoryDraft::from_job(&job, now_millis());
+    let prepared = match prepare_partial(state, &job) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            report_blocked_start(state, emits, job_id, output_path, history, error);
+            return Ok(NextLaunch::Retry);
+        }
+    };
+    Ok(NextLaunch::Ready(Box::new(ReadyLaunch {
+        job,
+        job_id,
+        output_path,
+        duration_seconds,
+        history,
+        prepared,
+    })))
+}
+
+fn apply_launch<T>(
+    state: &QueueState<'_>,
+    emits: &mut Emits<'_>,
+    mut ready: ReadyLaunch,
+    launched: Result<T, LaunchError>,
+    mut watch: impl FnMut(T, WatchJob) -> ApiResult<()>,
+) -> ApiResult<bool> {
+    match launched {
+        Ok(spawned) => {
+            // `watch` returns an error only when the encoder was not left
+            // running. The partial is then removed and the queue continues.
+            let job_id = ready.job_id.clone();
+            let output_path = ready.output_path.clone();
+            let history = ready.history.clone();
+            let partial = ready.prepared.partial.clone();
+            match watch(spawned, ready.into_watch()) {
+                Ok(()) => Ok(true),
+                Err(error) => {
+                    rollback_unlaunched_partial(state, &job_id, &partial);
+                    report_blocked_start(state, emits, job_id, output_path, history, error);
+                    Ok(false)
+                }
+            }
+        }
+        Err(error) => {
+            finish_launch_error(state, emits, &mut ready, error);
+            Ok(false)
+        }
+    }
+}
+
+fn finish_launch_error(
+    state: &QueueState<'_>,
+    emits: &mut Emits<'_>,
+    ready: &mut ReadyLaunch,
+    error: LaunchError,
+) {
+    ready.job.discard_segment_files();
+    let job_id = ready.job_id.clone();
+    let output_path = ready.output_path.clone();
+    let history = ready.history.clone();
+    match error {
+        LaunchError::Prepare(error) => {
+            rollback_unlaunched_partial(state, &job_id, &ready.prepared.partial);
+            report_blocked_start(state, emits, job_id, output_path, history, error);
+        }
+        LaunchError::Spawn(error) => {
+            release_partial(state, &job_id, &ready.prepared.partial);
+            report_spawn_failure(
+                state,
+                emits,
+                &ready.job,
+                job_id,
+                output_path,
+                history,
+                error,
+            );
+        }
+        LaunchError::Cancelled => {
+            let _ = state.jobs.take_cancelled(&job_id);
+            rollback_unlaunched_partial(state, &job_id, &ready.prepared.partial);
+            report_cancelled_start(state, emits, job_id, output_path, history);
+        }
+    }
+}
+
+#[cfg(test)]
 fn drive_queue<L, W, T>(
     state: &QueueState<'_>,
     emits: &mut Emits<'_>,
@@ -289,75 +500,19 @@ fn drive_queue<L, W, T>(
     mut watch: W,
 ) -> ApiResult<()>
 where
-    L: FnMut(&PendingJob, &partial::PartialOutput) -> Result<T, LaunchError>,
+    L: FnMut(&mut PendingJob, &partial::PartialOutput) -> Result<T, LaunchError>,
     W: FnMut(T, WatchJob) -> ApiResult<()>,
 {
     loop {
-        let Some(reserved) = state.jobs.reserve_next()? else {
-            return Ok(());
-        };
-        let job = match reserved {
-            ReservedJob::Pending(job) => job,
-            ReservedJob::Resumed(job_id) => {
-                (emits.pause)(EncodePauseChanged {
-                    job_id,
-                    paused: false,
-                });
-                return Ok(());
-            }
-        };
-        let job_id = job.id.clone();
-        let output_path = job.request.output_path.clone();
-        let duration_seconds = job.media.duration_seconds;
-        let history = HistoryDraft::from_job(&job, now_millis());
-
-        let prepared = match prepare_partial(state, &job) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                report_blocked_start(state, emits, job_id, output_path, history, error);
-                continue;
-            }
-        };
-
-        match launch(&job, &prepared.partial) {
-            Ok(spawned) => {
-                // `watch` returns an error only when the encoder was not left
-                // running. The partial is then removed and the queue continues.
-                let partial = prepared.partial.clone();
-                let history_if_unwatched = history.clone();
-                match watch(
-                    spawned,
-                    WatchJob {
-                        job_id: job_id.clone(),
-                        output_path: output_path.clone(),
-                        duration_seconds,
-                        history,
-                        job,
-                        partial: prepared.partial,
-                        replace_identity: prepared.replace_identity,
-                    },
-                ) {
-                    Ok(()) => return Ok(()),
-                    Err(error) => {
-                        rollback_unlaunched_partial(state, &job_id, &partial);
-                        report_blocked_start(
-                            state,
-                            emits,
-                            job_id,
-                            output_path,
-                            history_if_unwatched,
-                            error,
-                        );
-                    }
+        match next_launch(state, emits)? {
+            NextLaunch::Idle | NextLaunch::Resumed => return Ok(()),
+            NextLaunch::Retry => continue,
+            NextLaunch::Ready(ready) => {
+                let mut ready = *ready;
+                let launched = launch(&mut ready.job, &ready.prepared.partial);
+                if apply_launch(state, emits, ready, launched, &mut watch)? {
+                    return Ok(());
                 }
-            }
-            Err(LaunchError::Prepare(error)) => {
-                rollback_unlaunched_partial(state, &job_id, &prepared.partial);
-                report_blocked_start(state, emits, job_id, output_path, history, error);
-            }
-            Err(LaunchError::Spawn(error)) => {
-                release_partial(state, &job_id, &prepared.partial);
-                report_spawn_failure(state, emits, &job, job_id, output_path, history, error);
             }
         }
     }
@@ -600,6 +755,24 @@ fn output_failure(error: &ApiError) -> DiagnosticReport {
     }
 }
 
+fn report_cancelled_start(
+    state: &QueueState<'_>,
+    emits: &mut Emits<'_>,
+    job_id: String,
+    output_path: String,
+    history: HistoryDraft,
+) {
+    let _ = state.jobs.finish_active(&job_id);
+    record_history(state, emits, history, HistoryStatus::Cancelled, None, None);
+    (emits.finished)(EncodeFinished {
+        job_id,
+        status: "cancelled".to_owned(),
+        output_path,
+        error: None,
+        diagnostic: None,
+    });
+}
+
 fn report_blocked_start(
     state: &QueueState<'_>,
     emits: &mut Emits<'_>,
@@ -691,6 +864,7 @@ fn cancel_job(
 ) -> ApiResult<()> {
     match jobs.cancel(job_id)? {
         CancelledJob::Active { process } => process.stop(),
+        CancelledJob::Preparing => Ok(()),
         CancelledJob::Pending(job) => emit_finished(EncodeFinished {
             job_id: job.id,
             status: "cancelled".to_owned(),

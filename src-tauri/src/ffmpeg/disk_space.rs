@@ -1,4 +1,4 @@
-use super::{AudioMode, EncodeRequest, MediaInfo, QualityLevel, VideoCodec};
+use super::{trim, AudioMode, EncodeRequest, MediaInfo, QualityLevel, VideoCodec};
 use crate::error::{ApiError, ApiResult};
 use crate::jobs::DiskSpaceReservation;
 use std::{
@@ -93,7 +93,10 @@ fn ensure_available_with(
 
 pub(super) fn estimated_output_bytes(request: &EncodeRequest, media: &MediaInfo) -> u64 {
     if request.video_codec == VideoCodec::Copy {
-        return with_overhead(media.size_bytes);
+        return with_overhead(scale_bytes(
+            media.size_bytes,
+            trim::segment_fraction(request.trim, media.duration_seconds),
+        ));
     }
 
     let source_projection = source_size_projection(request, media);
@@ -129,6 +132,7 @@ fn source_size_projection(request: &EncodeRequest, media: &MediaInfo) -> Option<
     let frame_rate_factor = output_frame_rate_ratio(request, media).powf(0.65);
     Some(saturating_f64_to_u64(
         media.size_bytes as f64
+            * trim::segment_fraction(request.trim, media.duration_seconds)
             * codec_factor
             * quality_factor
             * tuning_factor
@@ -167,8 +171,13 @@ fn duration_projection(request: &EncodeRequest, media: &MediaInfo) -> Option<u64
     let total_bits_per_second =
         video_bits_per_second + estimated_audio_bits_per_second(request, media) as f64;
     Some(saturating_f64_to_u64(
-        total_bits_per_second * media.duration_seconds / 8.0,
+        total_bits_per_second * trim::output_duration_seconds(request.trim, media.duration_seconds)
+            / 8.0,
     ))
+}
+
+fn scale_bytes(bytes: u64, fraction: f64) -> u64 {
+    saturating_f64_to_u64(bytes as f64 * fraction.clamp(0.0, 1.0))
 }
 
 fn estimated_audio_bits_per_second(request: &EncodeRequest, media: &MediaInfo) -> u64 {
@@ -309,8 +318,8 @@ mod tests {
     use crate::error::ApiError;
     use crate::ffmpeg::{
         AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodeRequest, EncodingSpeed,
-        MediaInfo, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel, VideoCodec,
-        VideoStream,
+        MediaInfo, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel, SegmentTrim,
+        VideoCodec, VideoStream,
     };
     use crate::jobs::DiskSpaceReservation;
     use std::path::Path;
@@ -337,6 +346,7 @@ mod tests {
             preserve_chapters: false,
             replace_existing: false,
             allow_insufficient_disk_space: false,
+            trim: None,
         }
     }
 
@@ -365,6 +375,7 @@ mod tests {
             audio: vec![],
             subtitles: vec![],
             chapter_count: 0,
+            chapters: Vec::new(),
             has_metadata: false,
         }
     }
@@ -401,6 +412,26 @@ mod tests {
         settings.video_codec = VideoCodec::Copy;
 
         assert!(estimated_output_bytes(&settings, &source) > source.size_bytes);
+    }
+
+    #[test]
+    fn a_shorter_segment_needs_less_destination_space() {
+        let source = media();
+        let full = request();
+        let mut segment = full.clone();
+        segment.trim = Some(SegmentTrim {
+            start_seconds: 0.0,
+            end_seconds: source.duration_seconds / 2.0,
+        });
+
+        assert!(estimated_output_bytes(&segment, &source) < estimated_output_bytes(&full, &source));
+
+        segment.video_codec = VideoCodec::Copy;
+        let mut copied = segment.clone();
+        copied.trim = None;
+        assert!(
+            estimated_output_bytes(&segment, &source) < estimated_output_bytes(&copied, &source)
+        );
     }
 
     #[test]

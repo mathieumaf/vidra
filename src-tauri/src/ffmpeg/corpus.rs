@@ -890,6 +890,7 @@ fn request_for(media: &MediaInfo, case: Case, destination: &str) -> EncodeReques
         preserve_chapters: true,
         replace_existing: false,
         allow_insufficient_disk_space: false,
+        trim: None,
     }
 }
 
@@ -900,6 +901,8 @@ fn pending_job(id: &str, request: EncodeRequest, media: MediaInfo) -> PendingJob
         request,
         media,
         ffmpeg_version: None,
+        segment: None,
+        ffmpeg_command: None,
     }
 }
 

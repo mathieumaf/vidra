@@ -7,6 +7,7 @@ import type {
   MediaInfo,
   OutputContainer,
   QueuedEncode,
+  SegmentTrim,
   VideoCodec,
 } from "../types/media";
 
@@ -31,6 +32,7 @@ export type EncodeRequest = {
   preserveChapters: boolean;
   replaceExisting: boolean;
   allowInsufficientDiskSpace: boolean;
+  trim: SegmentTrim | null;
 };
 
 export function getFfmpegStatus(): Promise<FfmpegStatus> {
@@ -39,6 +41,10 @@ export function getFfmpegStatus(): Promise<FfmpegStatus> {
 
 export function probeMedia(path: string): Promise<MediaInfo> {
   return invoke("probe_media", { path });
+}
+
+export function segmentKeyframe(path: string, startSeconds: number): Promise<number> {
+  return invoke("segment_keyframe", { path, startSeconds });
 }
 
 export function enqueueEncodes(requests: EncodeRequest[]): Promise<QueuedEncode[]> {

@@ -38,6 +38,7 @@ const encodingMocks = vi.hoisted(() => ({
   }[]),
   moveQueuedEncode: vi.fn(async () => {}),
   probeMedia: vi.fn(),
+  segmentKeyframe: vi.fn(async () => 0),
   setEncodePaused: vi.fn(async () => {}),
   startEncodeQueue: vi.fn(async () => {}),
 }));

@@ -28,7 +28,14 @@ struct ProbeFormat {
 }
 
 #[derive(Debug, Deserialize)]
-struct ProbeChapter {}
+struct ProbeChapter {
+    #[serde(default)]
+    start_time: Option<String>,
+    #[serde(default)]
+    end_time: Option<String>,
+    #[serde(default)]
+    tags: HashMap<String, String>,
+}
 
 #[derive(Debug, Deserialize)]
 struct ProbeStream {
@@ -381,6 +388,19 @@ fn parse_media_info(output: &[u8], input: &Path) -> ApiResult<MediaInfo> {
         audio,
         subtitles,
         chapter_count: probe.chapters.len(),
+        chapters: probe
+            .chapters
+            .iter()
+            .filter_map(|chapter| {
+                let start = chapter.start_time.as_deref()?.parse().ok()?;
+                let end = chapter.end_time.as_deref()?.parse().ok()?;
+                Some(super::ChapterMark {
+                    start_seconds: start,
+                    end_seconds: end,
+                    title: chapter.tags.get("title").cloned(),
+                })
+            })
+            .collect(),
         has_metadata: !probe.format.tags.is_empty(),
     })
 }

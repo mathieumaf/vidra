@@ -57,8 +57,10 @@ pub fn failure_report(
     let raw_log = log.finish();
     let (code, summary) = classify_failure(&raw_log);
     let redacted_log = redact_paths(&raw_log, job, partial_path);
-    let command = crate::ffmpeg::encode::redacted_command(job)
-        .unwrap_or_else(|_| "ffmpeg <command unavailable>".to_owned());
+    let command = job.ffmpeg_command.clone().unwrap_or_else(|| {
+        crate::ffmpeg::encode::redacted_command(job)
+            .unwrap_or_else(|_| "ffmpeg <command unavailable>".to_owned())
+    });
     let report = format!(
         "Vidra diagnostic report\n\
          Privacy: source and output paths are redacted.\n\n\
@@ -293,7 +295,7 @@ fn source_summary(media: &MediaInfo) -> String {
 
 fn settings_summary(job: &PendingJob) -> String {
     let request = &job.request;
-    format!(
+    let settings = format!(
         "Container: {:?}\nVideo codec: {:?}\nEncoding: {:?}\nQuality: {:?} (tuning {})\nResolution: {:?}\nFrame rate: {:?}\nAudio: {:?} · {:?} · {:?}\nSelected tracks: {} audio · {} subtitles\nPreserve: metadata {} · chapters {} · subtitles {}",
         request.container,
         request.video_codec,
@@ -310,7 +312,20 @@ fn settings_summary(job: &PendingJob) -> String {
         request.preserve_metadata,
         request.preserve_chapters,
         request.preserve_subtitles,
-    )
+    );
+    format!("{settings}\n{}", segment_summary(job))
+}
+
+fn segment_summary(job: &PendingJob) -> String {
+    match crate::ffmpeg::trim::normalize_trim(job.request.trim, job.media.duration_seconds) {
+        Ok(Some(segment)) => format!(
+            "Segment: {:.3}–{:.3} seconds ({:.3} seconds)",
+            segment.start_seconds,
+            segment.end_seconds,
+            segment.end_seconds - segment.start_seconds
+        ),
+        _ => "Segment: entire video".to_owned(),
+    }
 }
 
 fn truncate_report(mut report: String) -> String {
@@ -346,7 +361,7 @@ mod tests {
         ffmpeg::{
             AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodeRequest, EncodingSpeed,
             MediaInfo, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel,
-            VideoCodec,
+            SegmentTrim, VideoCodec,
         },
         jobs::PendingJob,
     };
@@ -377,6 +392,7 @@ mod tests {
                 preserve_chapters: true,
                 replace_existing: false,
                 allow_insufficient_disk_space: false,
+                trim: None,
             },
             media: MediaInfo {
                 path: "/Users/private/Videos/source.mov".to_owned(),
@@ -389,9 +405,12 @@ mod tests {
                 audio: vec![],
                 subtitles: vec![],
                 chapter_count: 0,
+                chapters: Vec::new(),
                 has_metadata: false,
             },
             ffmpeg_version: Some("ffmpeg test".to_owned()),
+            segment: None,
+            ffmpeg_command: None,
         }
     }
 
@@ -474,6 +493,42 @@ mod tests {
         assert!(diagnostic.report.contains("<source>"));
         assert!(diagnostic.report.contains("<output>"));
         assert!(diagnostic.report.len() <= MAX_REPORT_BYTES);
+        assert!(diagnostic.report.contains("Segment: entire video"));
+    }
+
+    #[test]
+    fn failure_report_keeps_the_command_that_ran_after_segment_files_are_removed() {
+        let mut job = pending_job();
+        job.segment = None;
+        job.ffmpeg_command = Some(
+            "ffmpeg -hide_banner -nostdin -y -ss 7.3 -i <source> -i /tmp/vidra-segment/chapters.txt -map_chapters 1 <output>\n\nSubtitle remux\nffmpeg -i <output> -i /tmp/vidra-segment/clipped.srt -c copy -c:s srt -f matroska <output>"
+                .to_owned(),
+        );
+
+        let diagnostic = failure_report(&job, BoundedLog::default(), Some(1), None);
+
+        assert!(diagnostic.report.contains("chapters.txt"));
+        assert!(diagnostic.report.contains("-map_chapters 1"));
+        assert!(diagnostic.report.contains("Subtitle remux"));
+        assert!(diagnostic.report.contains("clipped.srt"));
+        assert!(diagnostic.report.contains("-f matroska"));
+        assert!(!diagnostic.report.contains("-map_chapters 0"));
+    }
+
+    #[test]
+    fn diagnostic_reports_include_a_selected_segment() {
+        let mut job = pending_job();
+        job.media.duration_seconds = 10.0;
+        job.request.trim = Some(SegmentTrim {
+            start_seconds: 1.5,
+            end_seconds: 4.0,
+        });
+
+        let diagnostic = failure_report(&job, BoundedLog::default(), Some(1), None);
+
+        assert!(diagnostic
+            .report
+            .contains("Segment: 1.500–4.000 seconds (2.500 seconds)"));
     }
 
     #[test]

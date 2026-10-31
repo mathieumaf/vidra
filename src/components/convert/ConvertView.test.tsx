@@ -29,6 +29,7 @@ const media: MediaInfo = {
   audio: [],
   subtitles: [],
   chapterCount: 0,
+  chapters: [],
   hasMetadata: false,
 };
 
@@ -49,6 +50,10 @@ describe("ConvertView", () => {
         isAdvancedMode={false}
         advancedSettings={DEFAULT_ADVANCED_SETTINGS}
         trackSelection={{ audioStreamIndexes: [], subtitleStreamIndexes: [] }}
+        trim={null}
+        copyStartSeconds={null}
+        copyStartStatus="unknown"
+        segmentError={null}
         profiles={[BUILT_IN_PROFILES[0]]}
         selectedProfileId={BUILT_IN_PROFILES[0].id}
         isProfileModified={false}
@@ -85,6 +90,8 @@ describe("ConvertView", () => {
         onAdvancedSettingsChange={noop}
         onAudioTrackSelectionChange={noop}
         onSubtitleTrackSelectionChange={noop}
+        onTrimChange={noop}
+        onTrimError={noop}
         onProfileSelect={noop}
         onProfileCreate={noop}
         onProfileUpdate={noop}
@@ -121,6 +128,10 @@ describe("ConvertView", () => {
         isAdvancedMode={false}
         advancedSettings={DEFAULT_ADVANCED_SETTINGS}
         trackSelection={{ audioStreamIndexes: [], subtitleStreamIndexes: [] }}
+        trim={null}
+        copyStartSeconds={null}
+        copyStartStatus="unknown"
+        segmentError={null}
         profiles={[BUILT_IN_PROFILES[0]]}
         selectedProfileId={BUILT_IN_PROFILES[0].id}
         isProfileModified={false}
@@ -157,6 +168,8 @@ describe("ConvertView", () => {
         onAdvancedSettingsChange={vi.fn()}
         onAudioTrackSelectionChange={vi.fn()}
         onSubtitleTrackSelectionChange={vi.fn()}
+        onTrimChange={vi.fn()}
+        onTrimError={vi.fn()}
         onProfileSelect={vi.fn()}
         onProfileCreate={vi.fn()}
         onProfileUpdate={vi.fn()}

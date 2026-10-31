@@ -7,13 +7,20 @@ import {
 import type { EncodingProfile } from "../../config/profiles";
 import { formatDuration, formatEta, formatFrameCount } from "../../lib/format";
 import { colorConversionNotice, type ColorConversionNotice } from "../../lib/color";
-import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
+import type {
+  CopyStartStatus,
+  EncodeFinished,
+  EncodeProgress,
+  FfmpegStatus,
+  MediaInfo,
+} from "../../types/media";
 import type {
   AudioMode,
   AudioTrackMode,
   EncodingSpeed,
   OutputContainer,
   OutputResolution,
+  SegmentTrim,
   VideoCodec,
   TrackSelection,
 } from "../../types/media";
@@ -27,6 +34,8 @@ import { ResolutionOptions } from "./ResolutionOptions";
 import { AdvancedOptions } from "./AdvancedOptions";
 import { ProfileBar } from "./ProfileBar";
 import { TrackSelectionOptions } from "./TrackSelectionOptions";
+import { SegmentOptions } from "./SegmentOptions";
+import { effectiveSegment, trimSummary } from "../../lib/trim";
 
 type ConvertViewProps = {
   media: MediaInfo | null;
@@ -41,6 +50,10 @@ type ConvertViewProps = {
   isAdvancedMode: boolean;
   advancedSettings: AdvancedEncodingSettings;
   trackSelection: TrackSelection;
+  trim: SegmentTrim | null;
+  copyStartSeconds: number | null;
+  copyStartStatus: CopyStartStatus;
+  segmentError: string | null;
   profiles: EncodingProfile[];
   selectedProfileId: string | null;
   isProfileModified: boolean;
@@ -68,6 +81,8 @@ type ConvertViewProps = {
   onAdvancedSettingsChange: (settings: Partial<AdvancedEncodingSettings>) => void;
   onAudioTrackSelectionChange: (indexes: number[], strategy?: AudioTrackMode) => void;
   onSubtitleTrackSelectionChange: (indexes: number[]) => void;
+  onTrimChange: (trim: SegmentTrim | null) => void;
+  onTrimError: (message: string | null) => void;
   onProfileSelect: (profileId: string | null) => void;
   onProfileCreate: (name: string) => void;
   onProfileUpdate: () => void;
@@ -92,6 +107,10 @@ export function ConvertView({
   isAdvancedMode,
   advancedSettings,
   trackSelection,
+  trim,
+  copyStartSeconds,
+  copyStartStatus,
+  segmentError,
   profiles,
   selectedProfileId,
   isProfileModified,
@@ -119,6 +138,8 @@ export function ConvertView({
   onAdvancedSettingsChange,
   onAudioTrackSelectionChange,
   onSubtitleTrackSelectionChange,
+  onTrimChange,
+  onTrimError,
   onProfileSelect,
   onProfileCreate,
   onProfileUpdate,
@@ -157,12 +178,30 @@ export function ConvertView({
   }
 
   const colorNotice = colorConversionNotice(media.video, videoCodec);
+  const shownTrim = videoCodec === "copy"
+    ? (copyStartStatus === "ready" ? effectiveSegment(trim, copyStartSeconds) : null)
+    : trim;
+  const copyStartBlocksEncode = videoCodec === "copy"
+    && trim !== null
+    && copyStartStatus !== "ready";
 
   return (
     <div className="convert-view">
       <div className="conversion-workspace">
         <div className="conversion-content">
           <MediaSourceCard media={media} count={mediaCount} />
+          <SegmentOptions
+            key={media.path}
+            durationSeconds={media.durationSeconds}
+            videoCodec={videoCodec}
+            trim={trim}
+            copyStartSeconds={copyStartSeconds}
+            copyStartStatus={copyStartStatus}
+            mediaCount={mediaCount}
+            disabled={!canEdit}
+            onChange={onTrimChange}
+            onError={onTrimError}
+          />
           <ProfileBar
             profiles={profiles}
             selectedProfileId={selectedProfileId}
@@ -286,6 +325,7 @@ export function ConvertView({
               {audioMode === "none" || trackSelection.audioStreamIndexes.length === 0
                 ? " · No audio"
                 : ` · ${audioModeLabel(audioMode)} audio`}
+              {trimSummary(shownTrim) ? ` · ${trimSummary(shownTrim)}` : ""}
             </strong>
           </span>
           {isActive ? (
@@ -308,7 +348,7 @@ export function ConvertView({
               className="primary-button"
               type="button"
               onClick={onStartEncoding}
-              disabled={!isReady || !isEncodingSupported}
+              disabled={!isReady || !isEncodingSupported || segmentError !== null || copyStartBlocksEncode}
             >
               {mediaCount > 1 ? `Choose folder and encode ${mediaCount} videos` : "Choose output and encode"} <span>→</span>
             </button>

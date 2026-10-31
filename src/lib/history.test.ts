@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyDescription } from "./history";
+import { historyDescription, historySummary } from "./history";
 import type { HistoryEntry } from "../types/media";
 
 const entry = (status: HistoryEntry["status"], error: string | null): HistoryEntry => ({
@@ -31,6 +31,18 @@ const entry = (status: HistoryEntry["status"], error: string | null): HistoryEnt
   },
   error,
   diagnostic: null,
+  trimStartSeconds: null,
+  trimEndSeconds: null,
+});
+
+describe("historySummary", () => {
+  it("shows the trimmed duration and bounds", () => {
+    const trimmed = entry("completed", null);
+    trimmed.trimStartSeconds = 12.5;
+    trimmed.trimEndSeconds = 42.5;
+    expect(historySummary(trimmed)).toContain("Trimmed 0:12.5–0:42.5 (0:30)");
+    expect(historySummary(entry("completed", null))).not.toContain("Trimmed");
+  });
 });
 
 describe("historyDescription", () => {

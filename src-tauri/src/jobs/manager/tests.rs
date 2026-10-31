@@ -36,6 +36,7 @@ fn pending(id: &str) -> PendingJob {
             preserve_chapters: true,
             replace_existing: false,
             allow_insufficient_disk_space: false,
+            trim: None,
         },
         media: MediaInfo {
             path: format!("/{id}.mov"),
@@ -48,9 +49,12 @@ fn pending(id: &str) -> PendingJob {
             audio: vec![],
             subtitles: vec![],
             chapter_count: 0,
+            chapters: Vec::new(),
             has_metadata: false,
         },
         ffmpeg_version: Some("ffmpeg test".to_owned()),
+        segment: None,
+        ffmpeg_command: None,
     }
 }
 
@@ -487,7 +491,9 @@ fn cancelling_a_queued_job_removes_only_that_job() {
     let cancelled = manager.cancel("two").unwrap();
     match cancelled {
         crate::jobs::CancelledJob::Pending(job) => assert_eq!(job.id, "two"),
-        crate::jobs::CancelledJob::Active { .. } => panic!("a queued job has no encoder"),
+        crate::jobs::CancelledJob::Active { .. } | crate::jobs::CancelledJob::Preparing => {
+            panic!("a queued job has no encoder")
+        }
     }
 
     assert_eq!(pending_id(manager.reserve_next().unwrap().unwrap()), "one");
@@ -534,7 +540,9 @@ fn cancelling_a_running_job_stops_it_and_keeps_the_slot_until_it_finishes() {
 
     match manager.cancel("running").unwrap() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
-        crate::jobs::CancelledJob::Pending(_) => panic!("the running job should be active"),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the running job should be active")
+        }
     }
 
     assert!(stopped.load(Ordering::Relaxed));
@@ -605,7 +613,9 @@ fn a_poisoned_lock_still_reports_cancellation() {
         .unwrap();
     match manager.cancel("running").unwrap() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
-        crate::jobs::CancelledJob::Pending(_) => panic!("the running job should be active"),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the running job should be active")
+        }
     }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _guard = manager.state.lock().unwrap();
@@ -735,7 +745,9 @@ fn pause_and_resume_bookkeeping_keeps_a_single_active_encoder() {
 
     match manager.cancel("active").unwrap() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
-        crate::jobs::CancelledJob::Pending(_) => panic!("the resumed job should be active"),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the resumed job should be active")
+        }
     }
     assert!(stopped.load(Ordering::Relaxed));
     let _ = sleep.0.wait();
@@ -954,4 +966,53 @@ fn shutdown_recovers_a_poisoned_lock_and_still_stops_the_encoder() {
     assert!(!state.update_in_progress);
     drop(state);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_step_after_the_encoder_can_attach_a_process_and_be_cancelled() {
+    use crate::jobs::process::RunningProcess;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    let manager = JobManager::default();
+    manager.append(vec![pending("running")]).unwrap();
+    assert_eq!(
+        pending_id(manager.reserve_next().unwrap().unwrap()),
+        "running"
+    );
+    manager
+        .attach_running("running", RunningProcess::from_stop(5, || Ok(())))
+        .unwrap();
+
+    // The encoder has exited. A remux needs its own preparation window.
+    let refused = manager
+        .attach_preparing("running", RunningProcess::from_stop(6, || Ok(())))
+        .unwrap_err();
+    assert_eq!(refused.code, "job_state_error");
+
+    manager.begin_preparation("running").unwrap();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&stopped);
+    manager
+        .attach_preparing(
+            "running",
+            RunningProcess::from_stop(7, move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            }),
+        )
+        .unwrap();
+
+    match manager.cancel("running").unwrap() {
+        crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the remux process should be returned")
+        }
+    }
+    assert!(stopped.load(Ordering::Relaxed));
+    manager.end_preparation("running");
+    assert!(manager.take_cancelled("running"));
+    manager.finish_active("running").unwrap();
 }

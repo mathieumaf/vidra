@@ -30,8 +30,27 @@ describe("pending queue persistence", () => {
         sourceName: item.media.name,
         settings: item.settings,
         trackSelection: item.trackSelection,
+        trim: null,
+        copyStartSeconds: null,
       }],
     });
+  });
+
+  it("keeps a segment across a restart and still reads queues saved before trimming existed", () => {
+    const item = queueItemFixture({
+      status: "queued",
+      trim: { startSeconds: 5, endSeconds: 20 },
+    });
+    const saved = JSON.parse(serializePendingQueue(pendingQueueEntries([item]))) as {
+      entries: Array<Record<string, unknown>>;
+    };
+    expect(parsePendingQueue(JSON.stringify(saved))?.entries[0].trim).toEqual({
+      startSeconds: 5,
+      endSeconds: 20,
+    });
+
+    delete saved.entries[0].trim;
+    expect(parsePendingQueue(JSON.stringify(saved))?.entries[0].trim).toBeNull();
   });
 
   it("keeps waiting work but never persists interrupted or finished jobs", () => {

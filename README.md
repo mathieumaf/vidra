@@ -42,6 +42,7 @@ Each public release ships the Apple Silicon FFmpeg recipe pinned for that releas
 - Advanced mode can also lower the frame rate to 24, 25, 30, 50, or 60 fps when that is slower than the source. It does not raise the frame rate.
 - Audio can follow the source, be encoded as AAC or Opus, or be removed. Compatible tracks are copied when the container allows it. When a track must be encoded, Vidra does not raise a known source bitrate.
 - Choose which audio and subtitle tracks to keep. Chapters and container metadata are kept by default and can be turned off.
+- Optionally convert only part of a video. Set a start and end time, or drag the segment slider. Progress, the time remaining, and history use the real output length. Re-encoded video is cut on the selected frames. Original video is copied unchanged, so it starts on the previous saved picture and still ends at the selected time. The choice is described in [Segment trimming](docs/TRIM.md).
 - Three built-in profiles — Balanced, Smaller file, and Fast export — plus personal profiles stored on the device.
 - A sequential queue. One encode runs at a time. Waiting jobs can be reordered or removed, the current job can be paused, resumed, or cancelled, and more videos can be added while a job is running. Each job shows progress and an estimate of the time remaining.
 - Videos that were waiting and had not started can be restored after Vidra restarts. Restoring does not start encoding by itself.
