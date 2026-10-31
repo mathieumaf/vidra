@@ -1,3 +1,4 @@
+import { useQueueAnnouncements } from "../../hooks/useQueueAnnouncements";
 import type { EncodeQueueItem } from "../../types/media";
 import { qualityLevel } from "../../config/quality";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
@@ -6,6 +7,7 @@ import { outputFrameRateLabel } from "../../config/advanced";
 import { formatDuration, formatEta, formatFrameCount, outputFileName } from "../../lib/format";
 import { colorConversionNotice } from "../../lib/color";
 import { queueTrackSummary } from "../../lib/tracks";
+import { LiveRegion } from "../ui/LiveRegion";
 import { Icon } from "../ui/Icon";
 import { EmptyState } from "./shared";
 import { DiagnosticDetails } from "./DiagnosticDetails";
@@ -55,9 +57,21 @@ export function QueueView({
   onEdit,
   onGoToConvert,
 }: QueueViewProps) {
+  const announcement = useQueueAnnouncements(
+    items.map((item) => ({
+      id: item.clientId,
+      name: item.media.name,
+      status: item.status,
+      percent: item.status === "encoding" && !item.progress.indeterminate ? item.progress.percent : null,
+    })),
+    statusLabels,
+  );
+  const activityMessage = [announcement, isProbing ? "Reading videos" : ""].filter(Boolean).join(". ");
+
   if (items.length === 0) {
     return (
       <div className="queue-view">
+        <LiveRegion message={activityMessage} />
         {notice && <div className="notice-message queue-message" role="status">{notice}</div>}
         {error && <div className="error-message queue-message" role="alert">{error}</div>}
         <div className="utility-view">
@@ -80,6 +94,7 @@ export function QueueView({
 
   return (
     <div className="queue-view">
+      <LiveRegion message={activityMessage} />
       <section className="queue-summary">
         <div>
           <span className="section-label">BATCH QUEUE</span>
@@ -98,7 +113,7 @@ export function QueueView({
         </div>
       </section>
 
-      <div className="queue-stats" aria-label="Queue summary">
+      <div className="queue-stats" role="group" aria-label="Queue summary">
         <span><strong>{runningCount}</strong> in queue</span>
         <span><strong>{readyCount}</strong> ready</span>
         <span><strong>{completeCount}</strong> complete</span>
@@ -213,8 +228,8 @@ export function QueueView({
                     aria-valuemax={100}
                     aria-valuenow={item.progress.indeterminate ? undefined : Math.round(item.progress.percent)}
                     aria-valuetext={item.progress.indeterminate
-                      ? `${formatDuration(item.progress.outTimeSeconds)} processed`
-                      : undefined}
+                      ? `${formatDuration(item.progress.outTimeSeconds)} processed${item.status === "paused" ? ", paused" : ""}`
+                      : `${Math.round(item.progress.percent)} percent${item.status === "paused" ? ", paused" : ""}`}
                   >
                     <div
                       className={`progress-value${item.progress.indeterminate ? " indeterminate" : ""}${item.status === "paused" ? " paused" : ""}`}
