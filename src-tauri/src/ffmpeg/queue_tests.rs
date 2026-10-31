@@ -829,13 +829,15 @@ fn a_missing_destination_volume_fails_without_touching_the_source() {
         .unwrap();
     fs::remove_dir_all(&volume).unwrap();
     let launches = Cell::new(0);
+    // macOS reaches this directory through /var, which resolves to /private/var.
+    let root = directory.path().canonicalize().unwrap();
 
     run_drive(
         &mut session,
         |_job, partial| {
             launches.set(launches.get() + 1);
-            assert!(partial.path.starts_with(directory.path()));
-            assert!(!partial.path.starts_with(&volume));
+            assert!(partial.path.starts_with(&root));
+            assert!(!partial.path.starts_with(root.join("ejected")));
             Ok(())
         },
         |_spawned, watched| {
