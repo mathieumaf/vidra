@@ -2,6 +2,15 @@
 
 All notable changes to Vidra are documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Confirm replacement only when the chosen output name is already in the destination folder. Choosing a new name does not replace a file that appears later.
+- Reject a source that cannot be read before encoding starts, and leave that file unchanged.
+- Explain when the destination runs out of space, the destination volume is unavailable, or a source or destination file disappears during a conversion.
+- Stop an encoder that could not be tracked, remove its unfinished file, and continue with the next queued video. A cancelled conversion stays cancelled even if the queue lock was interrupted.
+
 ## 0.2.0-beta.1 - 2026-10-25
 
 Prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.1`. Windows, Linux, and Intel Mac builds are not included.

@@ -253,21 +253,27 @@ impl JobManager {
         process: process::RunningProcess,
     ) -> ApiResult<()> {
         let process_id = process.process_id();
-        let mut state = self.lock()?;
-        let active = state.active.as_mut().ok_or_else(|| {
-            ApiError::new(
-                "job_state_error",
-                "The reserved encoding job is unavailable.",
-            )
-        })?;
-
-        if active.id != job_id {
-            return Err(ApiError::new(
-                "job_state_error",
-                "The reserved encoding job changed unexpectedly.",
-            ));
+        let mut state = match self.lock() {
+            Ok(state) => state,
+            Err(error) => {
+                stop_untracked(process);
+                return Err(error);
+            }
+        };
+        let failure = if state.active.is_none() {
+            Some("The reserved encoding job is unavailable.")
+        } else if state.active.as_ref().map(|job| job.id.as_str()) != Some(job_id) {
+            Some("The reserved encoding job changed unexpectedly.")
+        } else {
+            None
+        };
+        if let Some(message) = failure {
+            drop(state);
+            stop_untracked(process);
+            return Err(ApiError::new("job_state_error", message));
         }
 
+        let active = state.active.as_mut().expect("the active job was checked");
         active.process = Some(process);
         active.process_id = Some(process_id);
         Ok(())
@@ -438,10 +444,13 @@ impl JobManager {
     }
 
     pub fn take_cancelled(&self, job_id: &str) -> bool {
+        // A poisoned lock still records the cancellation. Dropping that flag
+        // would let a successful exit publish the output after the user cancelled.
         self.state
             .lock()
-            .map(|mut state| state.cancelled.remove(job_id))
-            .unwrap_or(false)
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .cancelled
+            .remove(job_id)
     }
 
     pub fn shutdown(&self) {
@@ -481,6 +490,14 @@ impl JobManager {
         self.state
             .lock()
             .map_err(|_| ApiError::new("job_state_error", "Unable to access the job queue."))
+    }
+}
+
+fn stop_untracked(process: process::RunningProcess) {
+    // Dropping the handle leaves FFmpeg running. Stop it before the queue
+    // forgets the process, or the partial file keeps growing with no owner.
+    if let Err(error) = process.stop() {
+        eprintln!("Unable to stop FFmpeg after it could not be tracked: {error}");
     }
 }
 

@@ -321,19 +321,35 @@ where
 
         match launch(&job, &prepared.partial) {
             Ok(spawned) => {
-                watch(
+                // `watch` returns an error only when the encoder was not left
+                // running. The partial is then removed and the queue continues.
+                let partial = prepared.partial.clone();
+                let history_if_unwatched = history.clone();
+                match watch(
                     spawned,
                     WatchJob {
-                        job_id,
-                        output_path,
+                        job_id: job_id.clone(),
+                        output_path: output_path.clone(),
                         duration_seconds,
                         history,
                         job,
                         partial: prepared.partial,
                         replace_identity: prepared.replace_identity,
                     },
-                )?;
-                return Ok(());
+                ) {
+                    Ok(()) => return Ok(()),
+                    Err(error) => {
+                        rollback_unlaunched_partial(state, &job_id, &partial);
+                        report_blocked_start(
+                            state,
+                            emits,
+                            job_id,
+                            output_path,
+                            history_if_unwatched,
+                            error,
+                        );
+                    }
+                }
             }
             Err(LaunchError::Prepare(error)) => {
                 rollback_unlaunched_partial(state, &job_id, &prepared.partial);

@@ -281,6 +281,23 @@ fn create_partial_supported(
 }
 
 fn create_error(error: &io::Error) -> ApiError {
+    if is_storage_full(error) {
+        return ApiError::new(
+            "insufficient_disk_space",
+            "The destination does not have enough free space to start this conversion. Free up space or choose another folder.",
+        );
+    }
+    if is_unavailable_volume(error) {
+        return ApiError::new(
+            "output_unavailable",
+            "The destination volume is unavailable. Reconnect it or choose another folder.",
+        );
+    }
+    if error.kind() == io::ErrorKind::NotFound {
+        return ApiError::invalid_input(
+            "The output directory does not exist or is not accessible.",
+        );
+    }
     if is_read_only_filesystem(error) {
         return ApiError::new("output_unavailable", READ_ONLY_FOLDER);
     }
@@ -295,6 +312,37 @@ fn create_error(error: &io::Error) -> ApiError {
         "output_unavailable",
         "The conversion could not be started in the destination folder.",
     )
+}
+
+fn is_storage_full(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::StorageFull {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        // `EDQUOT` does not have its own `ErrorKind` on the supported toolchain.
+        error.raw_os_error() == Some(libc::EDQUOT)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = error;
+        false
+    }
+}
+
+fn is_unavailable_volume(error: &io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        matches!(
+            error.raw_os_error(),
+            Some(libc::EIO | libc::ENXIO | libc::ENODEV | libc::ENOTCONN | libc::ESTALE)
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = error;
+        false
+    }
 }
 
 fn is_read_only_filesystem(error: &io::Error) -> bool {
@@ -1369,6 +1417,26 @@ mod tests {
         let privacy = create_error(&io::Error::from_raw_os_error(libc::EPERM));
         assert!(privacy.message.contains("cannot be written to"));
         assert!(!privacy.message.contains("read-only"));
+
+        let full = create_error(&io::Error::from_raw_os_error(libc::ENOSPC));
+        assert_eq!(full.code, "insufficient_disk_space");
+        assert!(full.message.contains("enough free space"));
+        let quota = create_error(&io::Error::from_raw_os_error(libc::EDQUOT));
+        assert_eq!(quota.code, "insufficient_disk_space");
+
+        let disconnected = create_error(&io::Error::from_raw_os_error(libc::EIO));
+        assert_eq!(disconnected.code, "output_unavailable");
+        assert!(disconnected.message.contains("volume is unavailable"));
+        assert!(create_error(&io::Error::from_raw_os_error(libc::ENXIO))
+            .message
+            .contains("volume is unavailable"));
+        assert!(create_error(&io::Error::from_raw_os_error(libc::ESTALE))
+            .message
+            .contains("volume is unavailable"));
+
+        let missing = create_error(&io::Error::from_raw_os_error(libc::ENOENT));
+        assert_eq!(missing.code, "invalid_input");
+        assert!(missing.message.contains("not accessible"));
     }
 
     #[test]
