@@ -6,22 +6,24 @@ The interface shows the bounds as times and on a slider. It does not ask the use
 
 ## Re-encoded video
 
-H.264, H.265, and AV1 use FFmpeg's default accurate seek. Vidra places `-ss` before the input, so FFmpeg seeks to the previous keyframe and then drops decoded frames until the requested start. `-t` limits the written duration to the selected length. The picture therefore starts and ends on the requested frames, without decoding the whole file from the beginning.
+H.264, H.265, and AV1 use FFmpeg's default accurate seek. Vidra places `-ss` before the input, so FFmpeg seeks to the previous keyframe and then drops decoded frames until the requested start. `-t` limits the written duration to the selected length. The picture therefore starts and ends on the requested frames.
 
-Compatible audio is still copied when the existing audio rules say to copy it. Copied packets from before the start would otherwise begin earlier than the re-encoded picture, because accurate seek only discards frames on streams that are decoded. Vidra sets `-copypriorss:a 0` and `-copypriorss:s 0` so copied audio and subtitle packets before the start are dropped. The first kept audio packet is the first one at or after the start, which is within one audio packet of the picture. Subtitles that are converted rather than copied, such as text written into MP4, are decoded and follow the same accurate start.
+Compatible audio is still copied when the existing audio rules say to copy it. Vidra drops copied audio packets from before the start so they do not lead the picture. The first kept audio packet is the first one at or after the start.
+
+Text subtitles are rewritten onto that same timeline. A cue already on screen at the start is kept and shortened so it begins with the clip. A cue that would run past the end is shortened so the container duration stays with the video. Styled ASS and SSA cues are saved as plain SubRip when a segment is selected, because that is what makes the clip reliable. Image subtitles stay copied and are not rewritten.
 
 ## Original video
 
-Original video copies the encoded picture, including HDR metadata, and remains the path required for Dolby Vision sources that cannot be re-encoded. A copied video stream cannot begin between keyframes and still be decodable.
+Original video copies the encoded picture, including HDR metadata, and remains the path required for Dolby Vision sources that cannot be re-encoded. A copied picture cannot begin between keyframes.
 
-For that case Vidra disables accurate seek and reads from the previous keyframe through the requested end (`-ss` and `-to` before the input). The output includes the selected segment and can start slightly earlier, by at most the distance to that keyframe. Re-encoded audio uses the same start, so it stays aligned with the copied picture instead of being trimmed more tightly than the video. The interface says that Original video may start a little earlier and still ends at the selected time.
+Vidra finds the keyframe at or before the chosen start and reads from there through the chosen end. The file is therefore longer than the times typed in the fields: it starts at that keyframe, which can be a full keyframe interval earlier (several seconds, and 10 seconds or more on some camera files), and it still ends at the chosen time. The segment card, the queue, progress, the estimated time remaining, and history use that real length. The card states the earlier start.
+
+Chapters are moved onto that same timeline and clipped to the file. A chapter that would start before the keyframe or end after the chosen time is shortened or dropped. Text subtitles are clipped the same way and added after the picture and audio timestamps have been normalized, so a cue is not shifted by the gap between the typed start and the keyframe.
 
 ## Progress, space, and history
 
-Progress and the estimated time remaining use the selected length, not the full source duration. The destination space estimate is scaled by that same fraction. History stores the start and end and shows the segment length. A selection that covers the whole video is stored as no trim.
+Progress and the estimated time remaining use the output length: the typed length for a re-encode, and the keyframe-to-end length for Original video. History stores those same bounds. A selection that covers the whole video is stored as no trim.
 
-An invalid range is rejected before FFmpeg starts: a negative time, a start that is not earlier than the end, a time past the video's duration, or a segment on a video whose duration is unknown. Times within half a millisecond of the real duration are accepted.
-
-Chapter markers are still copied when that option is on. Their timestamps stay on the source timeline, so a marker can fall outside the segment.
+An invalid range is rejected before FFmpeg starts: a negative time, a start that is not earlier than the end, a time past the video's duration, or a segment on a video whose duration is unknown. Times within half a millisecond of the real duration are accepted. Leaving a time field while its text is invalid restores the last valid time, so the field shows the segment that will actually be encoded.
 
 Waiting queue entries keep the segment and restore it after a restart. If the source duration no longer contains those times, Vidra restores the video without the segment and says so.

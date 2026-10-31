@@ -26,6 +26,7 @@ const smallMedia: MediaInfo = {
   audio: [],
   subtitles: [],
   chapterCount: 0,
+  chapters: [],
   hasMetadata: false,
 };
 

@@ -1,7 +1,7 @@
 use super::{
-    disk_space, encode, probe, progress::ProgressParser, validate_input, validate_output,
+    disk_space, encode, probe, progress::ProgressParser, segment, validate_input, validate_output,
     EncodeFinished, EncodePauseChanged, EncodeRequest, EncodeStarted, ExistingOutput, MediaInfo,
-    QueuedEncode,
+    OutputContainer, QueuedEncode,
 };
 use crate::output::partial::{self, FinalizeRequest};
 use crate::{
@@ -183,6 +183,17 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
         let mut progress = ProgressParser::default();
         let mut log = BoundedLog::default();
         let mut exit_code = None;
+        let mut history = history;
+        let mut duration_seconds = duration_seconds;
+        if let Some((start, end)) = segment::peek(&job_id) {
+            history.trim_start_seconds = Some(start);
+            history.trim_end_seconds = Some(end);
+            duration_seconds = segment::watched_duration(
+                job.request.trim,
+                job.media.duration_seconds,
+                Some(start),
+            );
+        }
 
         while let Some(event) = receiver.recv().await {
             match event {
@@ -202,6 +213,15 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
                 _ => {}
             }
         }
+
+        if exit_code == Some(0) {
+            let mov_text = job.request.container == OutputContainer::Mp4;
+            if let Err(error) = segment::remux_prepared(&job_id, &partial.path, mov_text) {
+                log.push(&error.message);
+                exit_code = Some(1);
+            }
+        }
+        segment::discard(&job_id);
 
         finish_job(
             &task_app,
@@ -337,10 +357,12 @@ where
                 return Ok(());
             }
             Err(LaunchError::Prepare(error)) => {
+                segment::discard(&job_id);
                 rollback_unlaunched_partial(state, &job_id, &prepared.partial);
                 report_blocked_start(state, emits, job_id, output_path, history, error);
             }
             Err(LaunchError::Spawn(error)) => {
+                segment::discard(&job_id);
                 release_partial(state, &job_id, &prepared.partial);
                 report_spawn_failure(state, emits, &job, job_id, output_path, history, error);
             }

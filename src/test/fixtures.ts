@@ -14,6 +14,7 @@ export function mediaFixture(name = "clip.mov"): MediaInfo {
     audio: [],
     subtitles: [],
     chapterCount: 0,
+    chapters: [],
     hasMetadata: false,
   };
 }
@@ -35,6 +36,7 @@ export function queueItemFixture(overrides: Partial<EncodeQueueItem> = {}): Enco
     },
     trackSelection: { audioStreamIndexes: [], subtitleStreamIndexes: [] },
     trim: null,
+    copyStartSeconds: null,
     outputPath: null,
     status: "ready",
     progress: emptyProgress(),

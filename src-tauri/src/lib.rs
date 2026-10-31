@@ -47,6 +47,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_ffmpeg_status,
             commands::probe_media,
+            commands::segment_keyframe,
             commands::enqueue_encodes,
             commands::start_encode_queue,
             commands::cancel_encode,

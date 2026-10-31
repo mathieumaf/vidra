@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assessTrim,
+  effectiveSegment,
   END_AFTER_VIDEO,
   END_NOT_AFTER_START,
   formatTimestamp,
@@ -65,7 +66,15 @@ describe("segment bounds", () => {
     expect(formatTimestamp(90)).toBe("1:30");
     expect(formatTimestamp(1.5)).toBe("0:01.5");
     expect(formatTimestamp(3723.25)).toBe("1:02:03.25");
-    expect(trimSummary({ startSeconds: 10, endSeconds: 70 })).toBe("Trimmed 0:10–1:10");
+    expect(trimSummary({ startSeconds: 10, endSeconds: 70 })).toBe("Trimmed 0:10–1:10 (1:00)");
     expect(trimSummary(null)).toBeNull();
+    expect(effectiveSegment({ startSeconds: 7.3, endSeconds: 12.8 }, 5)).toEqual({
+      startSeconds: 5,
+      endSeconds: 12.8,
+    });
+    expect(effectiveSegment({ startSeconds: 7.3, endSeconds: 12.8 }, null)).toEqual({
+      startSeconds: 7.3,
+      endSeconds: 12.8,
+    });
   });
 });

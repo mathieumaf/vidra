@@ -31,6 +31,7 @@ describe("pending queue persistence", () => {
         settings: item.settings,
         trackSelection: item.trackSelection,
         trim: null,
+        copyStartSeconds: null,
       }],
     });
   });

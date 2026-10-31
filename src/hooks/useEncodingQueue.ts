@@ -362,6 +362,7 @@ export function useEncodingQueue({
           ...createQueueItem(probe.value, entry.settings),
           trackSelection: normalizedTrackSelection(probe.value, entry.trackSelection),
           trim: assessment.ok ? assessment.trim : null,
+          copyStartSeconds: entry.copyStartSeconds,
         }];
       });
       const droppedEntries = entries.filter((_, index) => probes[index].status === "rejected");
@@ -644,7 +645,15 @@ export function useEncodingQueue({
   function updateItemTrim(item: EncodeQueueItem, trim: SegmentTrim | null) {
     if (item.status !== "ready") return;
     setItems((current) => current.map((candidate) => (
-      candidate.clientId === item.clientId ? { ...candidate, trim } : candidate
+      candidate.clientId === item.clientId
+        ? { ...candidate, trim, copyStartSeconds: null }
+        : candidate
+    )));
+  }
+
+  function setCopyStart(clientId: string, copyStartSeconds: number | null) {
+    setItems((current) => current.map((candidate) => (
+      candidate.clientId === clientId ? { ...candidate, copyStartSeconds } : candidate
     )));
   }
 
@@ -734,6 +743,7 @@ export function useEncodingQueue({
     selectItem,
     updateItemSettings,
     updateItemTrim,
+    setCopyStart,
     updateItemTrackSelection,
     reset,
     setError,

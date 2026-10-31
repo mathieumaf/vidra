@@ -14,6 +14,7 @@ export type PendingQueueEntry = {
   settings: EncodingSettings;
   trackSelection: TrackSelection;
   trim: SegmentTrim | null;
+  copyStartSeconds: number | null;
 };
 
 export type PendingQueueSnapshot = {
@@ -33,6 +34,7 @@ export function pendingQueueEntries(items: EncodeQueueItem[]): PendingQueueEntry
             subtitleStreamIndexes: [...item.trackSelection.subtitleStreamIndexes],
           },
           trim: item.trim ? { ...item.trim } : null,
+          copyStartSeconds: item.copyStartSeconds,
         }]
       : []
   ));
@@ -49,6 +51,8 @@ export function parsePendingQueue(value: string | null): PendingQueueSnapshot | 
       if (!isPendingQueueEntry(candidate)) return [];
       const trim = readTrim(candidate);
       if (trim === undefined) return [];
+      const copyStartSeconds = readCopyStart(candidate);
+      if (copyStartSeconds === undefined) return [];
       return [{
         sourcePath: candidate.sourcePath,
         sourceName: candidate.sourceName,
@@ -58,6 +62,7 @@ export function parsePendingQueue(value: string | null): PendingQueueSnapshot | 
           subtitleStreamIndexes: [...candidate.trackSelection.subtitleStreamIndexes],
         },
         trim,
+        copyStartSeconds,
       }];
     });
     return entries.length > 0 ? { version: 1, entries } : null;
@@ -107,6 +112,15 @@ function isPendingQueueEntry(value: unknown): value is PendingQueueEntry {
     && value.sourceName.length > 0
     && isEncodingSettings(value.settings)
     && isTrackSelection(value.trackSelection);
+}
+
+function readCopyStart(value: { copyStartSeconds?: unknown }): number | null | undefined {
+  if (!("copyStartSeconds" in value) || value.copyStartSeconds === null || value.copyStartSeconds === undefined) {
+    return null;
+  }
+  return typeof value.copyStartSeconds === "number" && Number.isFinite(value.copyStartSeconds)
+    ? value.copyStartSeconds
+    : undefined;
 }
 
 function readTrim(value: { trim?: unknown }): SegmentTrim | null | undefined {

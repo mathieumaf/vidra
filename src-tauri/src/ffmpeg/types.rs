@@ -23,7 +23,17 @@ pub struct MediaInfo {
     pub audio: Vec<AudioStream>,
     pub subtitles: Vec<SubtitleStream>,
     pub chapter_count: usize,
+    #[serde(default)]
+    pub chapters: Vec<ChapterMark>,
     pub has_metadata: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterMark {
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -627,6 +637,7 @@ mod tests {
                 is_forced: false,
             }],
             chapter_count: 3,
+            chapters: vec![],
             has_metadata: true,
         };
         let value = serde_json::to_value(&media).unwrap();

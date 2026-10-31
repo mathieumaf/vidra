@@ -102,6 +102,7 @@ fn media_info(input: &Path) -> MediaInfo {
         audio: vec![],
         subtitles: vec![],
         chapter_count: 0,
+        chapters: Vec::new(),
         has_metadata: false,
     }
 }

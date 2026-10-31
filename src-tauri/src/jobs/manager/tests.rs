@@ -49,6 +49,7 @@ fn pending(id: &str) -> PendingJob {
             audio: vec![],
             subtitles: vec![],
             chapter_count: 0,
+            chapters: Vec::new(),
             has_metadata: false,
         },
         ffmpeg_version: Some("ffmpeg test".to_owned()),

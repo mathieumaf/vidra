@@ -101,5 +101,17 @@ export function formatTimestamp(seconds: number): string {
 
 export function trimSummary(trim: SegmentTrim | null): string | null {
   if (!trim) return null;
-  return `Trimmed ${formatTimestamp(trim.startSeconds)}–${formatTimestamp(trim.endSeconds)}`;
+  const length = trim.endSeconds - trim.startSeconds;
+  return `Trimmed ${formatTimestamp(trim.startSeconds)}–${formatTimestamp(trim.endSeconds)} (${formatTimestamp(length)})`;
+}
+
+export function effectiveSegment(
+  trim: SegmentTrim | null,
+  copyStartSeconds: number | null,
+): SegmentTrim | null {
+  if (!trim) return null;
+  if (copyStartSeconds === null || !Number.isFinite(copyStartSeconds)) return trim;
+  const startSeconds = Math.min(copyStartSeconds, trim.startSeconds);
+  if (trim.endSeconds - startSeconds < 0.001) return trim;
+  return { startSeconds, endSeconds: trim.endSeconds };
 }

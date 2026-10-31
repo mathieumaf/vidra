@@ -29,7 +29,7 @@ import { AdvancedOptions } from "./AdvancedOptions";
 import { ProfileBar } from "./ProfileBar";
 import { TrackSelectionOptions } from "./TrackSelectionOptions";
 import { SegmentOptions } from "./SegmentOptions";
-import { trimSummary } from "../../lib/trim";
+import { effectiveSegment, trimSummary } from "../../lib/trim";
 
 type ConvertViewProps = {
   media: MediaInfo | null;
@@ -45,6 +45,7 @@ type ConvertViewProps = {
   advancedSettings: AdvancedEncodingSettings;
   trackSelection: TrackSelection;
   trim: SegmentTrim | null;
+  copyStartSeconds: number | null;
   segmentError: string | null;
   profiles: EncodingProfile[];
   selectedProfileId: string | null;
@@ -100,6 +101,7 @@ export function ConvertView({
   advancedSettings,
   trackSelection,
   trim,
+  copyStartSeconds,
   segmentError,
   profiles,
   selectedProfileId,
@@ -168,6 +170,7 @@ export function ConvertView({
   }
 
   const colorNotice = colorConversionNotice(media.video, videoCodec);
+  const shownTrim = videoCodec === "copy" ? effectiveSegment(trim, copyStartSeconds) : trim;
 
   return (
     <div className="convert-view">
@@ -179,6 +182,7 @@ export function ConvertView({
             durationSeconds={media.durationSeconds}
             videoCodec={videoCodec}
             trim={trim}
+            copyStartSeconds={copyStartSeconds}
             mediaCount={mediaCount}
             disabled={!canEdit}
             onChange={onTrimChange}
@@ -307,7 +311,7 @@ export function ConvertView({
               {audioMode === "none" || trackSelection.audioStreamIndexes.length === 0
                 ? " · No audio"
                 : ` · ${audioModeLabel(audioMode)} audio`}
-              {trimSummary(trim) ? ` · ${trimSummary(trim)}` : ""}
+              {trimSummary(shownTrim) ? ` · ${trimSummary(shownTrim)}` : ""}
             </strong>
           </span>
           {isActive ? (

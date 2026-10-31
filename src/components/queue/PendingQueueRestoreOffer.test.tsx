@@ -14,6 +14,7 @@ const snapshot = {
       settings: BUILT_IN_PROFILES[0].settings,
       trackSelection: { audioStreamIndexes: [1], subtitleStreamIndexes: [] },
       trim: null,
+      copyStartSeconds: null,
     },
     {
       sourcePath: "/Movies/interview.mkv",
@@ -21,6 +22,7 @@ const snapshot = {
       settings: BUILT_IN_PROFILES[1].settings,
       trackSelection: { audioStreamIndexes: [], subtitleStreamIndexes: [2] },
       trim: null,
+      copyStartSeconds: null,
     },
   ],
 };

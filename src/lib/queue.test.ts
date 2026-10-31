@@ -39,6 +39,7 @@ const media: MediaInfo = {
     { index: 4, codec: "subrip", language: "en", title: null, isDefault: true, isForced: false },
   ],
   chapterCount: 0,
+  chapters: [],
   hasMetadata: false,
 };
 

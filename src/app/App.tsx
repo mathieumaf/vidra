@@ -24,6 +24,7 @@ import {
   encodingSettingsEqual,
 } from "../config/profiles";
 import { useEncodingQueue } from "../hooks/useEncodingQueue";
+import { segmentKeyframe } from "../services/encoding";
 import { useConversionHistory } from "../hooks/useConversionHistory";
 import { useEncodingProfiles } from "../hooks/useEncodingProfiles";
 import { useApplicationInfo } from "../hooks/useApplicationInfo";
@@ -103,6 +104,36 @@ export default function App() {
   const runtimeFailure = useRuntimeFailure();
   const activity = conversionActivity(queue.items);
   const [title, subtitle] = viewMeta(view, queue.items, history.items.length);
+
+  useEffect(() => {
+    const item = queue.primaryItem;
+    if (!item || item.status !== "ready" || item.settings.videoCodec !== "copy" || !item.trim) {
+      return;
+    }
+    const startSeconds = item.trim.startSeconds;
+    const clientId = item.clientId;
+    const path = item.media.path;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void segmentKeyframe(path, startSeconds)
+        .then((keyframe) => {
+          if (!cancelled) queue.setCopyStart(clientId, keyframe);
+        })
+        .catch(() => {
+          if (!cancelled) queue.setCopyStart(clientId, null);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    queue.primaryItem?.clientId,
+    queue.primaryItem?.status,
+    queue.primaryItem?.settings.videoCodec,
+    queue.primaryItem?.trim?.startSeconds,
+    queue.primaryItem?.media.path,
+  ]);
 
   useEffect(() => {
     const item = queue.primaryItem;
@@ -456,6 +487,9 @@ export default function App() {
                   subtitleStreamIndexes: [],
                 }}
                 trim={primaryItem?.trim ?? null}
+                copyStartSeconds={primaryItem?.settings.videoCodec === "copy"
+                  ? primaryItem.copyStartSeconds
+                  : null}
                 segmentError={segmentError}
                 profiles={profileStore.profiles}
                 selectedProfileId={selectedProfileId}

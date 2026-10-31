@@ -12,6 +12,7 @@ type SegmentOptionsProps = {
   durationSeconds: number;
   videoCodec: VideoCodec;
   trim: SegmentTrim | null;
+  copyStartSeconds: number | null;
   mediaCount: number;
   disabled: boolean;
   onChange: (trim: SegmentTrim | null) => void;
@@ -24,6 +25,7 @@ export function SegmentOptions({
   durationSeconds,
   videoCodec,
   trim,
+  copyStartSeconds,
   mediaCount,
   disabled,
   onChange,
@@ -84,8 +86,12 @@ export function SegmentOptions({
     setDrafts(null);
   }
 
-  const length = Math.max(0, end - start);
-  const startPercent = known ? (start / durationSeconds) * 100 : 0;
+  const outputStart = videoCodec === "copy" && copyStartSeconds !== null
+    ? Math.min(copyStartSeconds, start)
+    : start;
+  const lengthPending = videoCodec === "copy" && trim !== null && copyStartSeconds === null;
+  const length = Math.max(0, end - outputStart);
+  const startPercent = known ? (outputStart / durationSeconds) * 100 : 0;
   const endPercent = known ? (end / durationSeconds) * 100 : 100;
 
   return (
@@ -94,7 +100,7 @@ export function SegmentOptions({
         <div>
           <span className="section-label">SEGMENT</span>
           <strong>{trim ? "Convert a segment" : "Convert the whole video"}</strong>
-          <p>{segmentNote(videoCodec, known)}</p>
+          <p>{segmentNote(videoCodec, known, trim, copyStartSeconds)}</p>
         </div>
         <button
           type="button"
@@ -177,7 +183,7 @@ export function SegmentOptions({
         </label>
         <div className="segment-length">
           <span>Length</span>
-          <strong>{known ? formatTimestamp(length) : "Unknown"}</strong>
+          <strong>{!known ? "Unknown" : lengthPending ? "Checking…" : formatTimestamp(length)}</strong>
         </div>
       </div>
 
@@ -189,12 +195,23 @@ export function SegmentOptions({
   );
 }
 
-function segmentNote(videoCodec: VideoCodec, known: boolean): string {
+function segmentNote(
+  videoCodec: VideoCodec,
+  known: boolean,
+  trim: SegmentTrim | null,
+  copyStartSeconds: number | null,
+): string {
   if (!known) {
     return "This video's duration is unknown, so Vidra converts the whole file.";
   }
+  if (videoCodec === "copy" && trim && copyStartSeconds !== null) {
+    const earlier = trim.startSeconds - copyStartSeconds;
+    if (earlier > 0.05) {
+      return `Original video can only start on a saved picture. This clip starts at ${formatTimestamp(copyStartSeconds)}, ${formatTimestamp(earlier)} before the time you chose, and lasts ${formatTimestamp(trim.endSeconds - copyStartSeconds)}.`;
+    }
+  }
   if (videoCodec === "copy") {
-    return "Original video is copied unchanged, so the clip may start a little earlier than the time you choose. It still ends at that time.";
+    return "Original video is copied unchanged. It starts on the previous saved picture, which can be several seconds earlier, and it ends at the time you choose.";
   }
   return "The converted picture starts and ends on these times. Audio and subtitles follow the same segment.";
 }

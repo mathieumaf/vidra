@@ -20,6 +20,7 @@ describe("SegmentOptions", () => {
         durationSeconds={125}
         videoCodec="h264"
         trim={null}
+        copyStartSeconds={null}
         mediaCount={1}
         disabled={false}
         onChange={onChange}
@@ -38,6 +39,7 @@ describe("SegmentOptions", () => {
         durationSeconds={125}
         videoCodec="h264"
         trim={{ startSeconds: 10, endSeconds: 125 }}
+        copyStartSeconds={null}
         mediaCount={1}
         disabled={false}
         onChange={onChange}
@@ -56,6 +58,7 @@ describe("SegmentOptions", () => {
         durationSeconds={30}
         videoCodec="copy"
         trim={{ startSeconds: 5, endSeconds: 20 }}
+        copyStartSeconds={5}
         mediaCount={2}
         disabled={false}
         onChange={vi.fn()}
@@ -68,7 +71,7 @@ describe("SegmentOptions", () => {
     act(() => setInputValue(end, "0:04"));
 
     expect(tree.text()).toContain(END_NOT_AFTER_START);
-    expect(tree.text()).toContain("may start a little earlier");
+    expect(tree.text()).toContain("previous saved picture");
     expect(tree.text()).toContain("applies only to the video shown above");
     tree.unmount();
   });

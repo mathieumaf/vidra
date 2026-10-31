@@ -3,8 +3,8 @@ mod video;
 
 use self::{audio::audio_arguments, video::video_arguments};
 use super::{
-    trim, validate_input, validate_output, AudioMode, AudioStream, EncodeRequest, ExistingOutput,
-    MediaInfo, OutputContainer, SubtitleStream, VideoCodec,
+    segment, trim, validate_input, validate_output, AudioMode, AudioStream, EncodeRequest,
+    ExistingOutput, MediaInfo, OutputContainer, SubtitleStream, VideoCodec,
 };
 use crate::{
     error::{ApiError, ApiResult},
@@ -70,20 +70,37 @@ fn validate_subtitle_streams(streams: &[SubtitleStream], indexes: &[u32]) -> Api
     Ok(())
 }
 
-fn mapping_arguments(request: &EncodeRequest, subtitles: &[SubtitleStream]) -> Vec<String> {
+fn mapping_arguments(
+    request: &EncodeRequest,
+    subtitles: &[SubtitleStream],
+    segment: Option<&segment::SegmentInputs>,
+) -> Vec<String> {
     let mut arguments = vec!["-map".to_owned(), "0:v:0?".to_owned()];
     if request.audio_mode != AudioMode::None {
         for index in &request.audio_stream_indexes {
             arguments.extend(["-map".to_owned(), format!("0:{index}")]);
         }
     }
+    let chapters = if let Some(segment) = segment {
+        // A trimmed conversion supplies clipped chapters, or none when every
+        // marker falls outside the output.
+        segment
+            .chapter_index
+            .map(|index| index.to_string())
+            .unwrap_or_else(|| "-1".to_owned())
+    } else if request.preserve_chapters {
+        "0".to_owned()
+    } else {
+        "-1".to_owned()
+    };
     arguments.extend([
         "-map_metadata".to_owned(),
         if request.preserve_metadata { "0" } else { "-1" }.to_owned(),
         "-map_chapters".to_owned(),
-        if request.preserve_chapters { "0" } else { "-1" }.to_owned(),
+        chapters,
     ]);
     if request.preserve_subtitles {
+        let replace_text = segment.is_some_and(|segment| segment.replace_text);
         let mapped_subtitles = request
             .subtitle_stream_indexes
             .iter()
@@ -91,15 +108,41 @@ fn mapping_arguments(request: &EncodeRequest, subtitles: &[SubtitleStream]) -> V
             .filter(|stream| {
                 request.container == OutputContainer::Mkv || is_mp4_text_subtitle(&stream.codec)
             })
+            .filter(|stream| !replace_text || !segment::is_text_subtitle(&stream.codec))
             .collect::<Vec<_>>();
         for stream in &mapped_subtitles {
             arguments.extend(["-map".to_owned(), format!("0:{}", stream.index)]);
+        }
+        let text_count = segment
+            .map(|segment| segment.text_indexes.len())
+            .unwrap_or(0);
+        if let Some(segment) = segment {
+            for index in &segment.text_indexes {
+                arguments.extend(["-map".to_owned(), format!("{index}:0")]);
+            }
         }
         if !mapped_subtitles.is_empty() {
             arguments.extend(subtitle_codec_arguments(
                 request.container,
                 &mapped_subtitles,
             ));
+        }
+        if text_count > 0 {
+            let codec = if request.container == OutputContainer::Mp4 {
+                "mov_text"
+            } else {
+                "srt"
+            };
+            if mapped_subtitles.is_empty() {
+                arguments.extend(["-c:s".to_owned(), codec.to_owned()]);
+            } else {
+                for offset in 0..text_count {
+                    arguments.extend([
+                        format!("-c:s:{}", mapped_subtitles.len() + offset),
+                        codec.to_owned(),
+                    ]);
+                }
+            }
         }
     }
     arguments
@@ -146,6 +189,14 @@ pub(super) fn build_command(
     job: &PendingJob,
     partial_output: &Path,
 ) -> ApiResult<tauri_plugin_shell::process::Command> {
+    match segment::prepare(app, job) {
+        Ok(Some(prepared)) => segment::store(&job.id, prepared),
+        Ok(None) => segment::discard(&job.id),
+        Err(error) => {
+            segment::discard(&job.id);
+            return Err(error);
+        }
+    }
     let arguments = command_arguments(job, partial_output)?;
     Ok(app
         .shell()
@@ -170,11 +221,16 @@ pub(super) fn command_arguments(
         ExistingOutput::for_request(&job.request),
     )?;
     crate::output::partial::ensure_partial_target(&output, partial_output)?;
-    let segment = prepared_trim(job)?;
+    let trim_command = prepared_trim(job)?;
+    let segment_inputs = segment::inputs_for(&job.id);
     Ok(ffmpeg_arguments(
         &input,
         partial_output,
-        &segment.input,
+        &trim_command.input,
+        segment_inputs
+            .as_ref()
+            .map(|inputs| inputs.extra.as_slice())
+            .unwrap_or(&[]),
         &encoding_arguments(job)?,
     ))
 }
@@ -190,11 +246,16 @@ pub(super) fn command_preview(
         Path::new(&job.request.output_path),
         partial_output,
     )?;
-    let segment = prepared_trim(job)?;
+    let trim_command = prepared_trim(job)?;
+    let segment_inputs = segment::inputs_for(&job.id);
     let arguments = ffmpeg_arguments(
         source,
         partial_output,
-        &segment.input,
+        &trim_command.input,
+        segment_inputs
+            .as_ref()
+            .map(|inputs| inputs.extra.as_slice())
+            .unwrap_or(&[]),
         &encoding_arguments(job)?,
     );
     Ok(arguments
@@ -207,11 +268,13 @@ fn ffmpeg_arguments(
     source: &Path,
     partial_output: &Path,
     trim_input: &[String],
+    extra_inputs: &[std::path::PathBuf],
     encoding: &[String],
 ) -> Vec<OsString> {
     debug_assert_eq!(GLOBAL_ARGUMENTS.last().copied(), Some("-i"));
-    let mut arguments =
-        Vec::with_capacity(GLOBAL_ARGUMENTS.len() + trim_input.len() + encoding.len() + 2);
+    let mut arguments = Vec::with_capacity(
+        GLOBAL_ARGUMENTS.len() + trim_input.len() + extra_inputs.len() * 2 + encoding.len() + 2,
+    );
     arguments.extend(
         GLOBAL_ARGUMENTS[..GLOBAL_ARGUMENTS.len() - 1]
             .iter()
@@ -221,6 +284,10 @@ fn ffmpeg_arguments(
     arguments.extend(trim_input.iter().map(OsString::from));
     arguments.push(OsString::from("-i"));
     arguments.push(source.as_os_str().to_os_string());
+    for input in extra_inputs {
+        arguments.push(OsString::from("-i"));
+        arguments.push(input.as_os_str().to_os_string());
+    }
     arguments.extend(encoding.iter().map(OsString::from));
     arguments.push(partial_output.as_os_str().to_os_string());
     arguments
@@ -237,8 +304,25 @@ fn prepared_trim(job: &PendingJob) -> ApiResult<trim::TrimCommand> {
 fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
     let request = &job.request;
     let audio_streams = selected_audio_streams(&job.media.audio, &request.audio_stream_indexes)?;
-    let mut arguments = prepared_trim(job)?.output;
-    arguments.extend(mapping_arguments(request, &job.media.subtitles));
+    let mut trim_output = prepared_trim(job)?.output;
+    let segment_inputs = segment::inputs_for(&job.id);
+    if segment_inputs
+        .as_ref()
+        .is_some_and(|inputs| inputs.replace_text && !inputs.copy_source_subtitles)
+    {
+        while let Some(index) = trim_output
+            .windows(2)
+            .position(|pair| pair == ["-copypriorss:s", "0"])
+        {
+            trim_output.drain(index..index + 2);
+        }
+    }
+    let mut arguments = trim_output;
+    arguments.extend(mapping_arguments(
+        request,
+        &job.media.subtitles,
+        segment_inputs.as_ref(),
+    ));
     arguments.extend(video_arguments(request, job.media.video.as_ref())?);
     arguments.extend(audio_arguments(
         &audio_streams,
@@ -257,7 +341,8 @@ fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
 
 pub(crate) fn redacted_command(job: &PendingJob) -> ApiResult<String> {
     validate_settings(&job.request, &job.media)?;
-    let segment = prepared_trim(job)?;
+    let trim_command = prepared_trim(job)?;
+    let segment_inputs = segment::inputs_for(&job.id);
     let mut arguments = vec!["ffmpeg".to_owned()];
     arguments.extend(
         GLOBAL_ARGUMENTS[..GLOBAL_ARGUMENTS.len() - 1]
@@ -265,9 +350,15 @@ pub(crate) fn redacted_command(job: &PendingJob) -> ApiResult<String> {
             .copied()
             .map(str::to_owned),
     );
-    arguments.extend(segment.input);
+    arguments.extend(trim_command.input);
     arguments.push("-i".to_owned());
     arguments.push("<source>".to_owned());
+    if let Some(inputs) = &segment_inputs {
+        for input in &inputs.extra {
+            arguments.push("-i".to_owned());
+            arguments.push(input.display().to_string());
+        }
+    }
     arguments.extend(encoding_arguments(job)?);
     arguments.push("<output>".to_owned());
     Ok(arguments.join(" "))
@@ -342,6 +433,7 @@ mod tests {
                 audio,
                 subtitles: vec![],
                 chapter_count: 0,
+                chapters: Vec::new(),
                 has_metadata: false,
             },
             request,
@@ -409,7 +501,7 @@ mod tests {
         request.preserve_metadata = false;
         request.preserve_chapters = false;
         let subtitles = vec![subtitle(3, "subrip"), subtitle(4, "hdmv_pgs_subtitle")];
-        let arguments = mapping_arguments(&request, &subtitles);
+        let arguments = mapping_arguments(&request, &subtitles, None);
 
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:2"]));
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
@@ -423,12 +515,12 @@ mod tests {
             .any(|pair| pair == ["-map_chapters", "-1"]));
 
         request.container = OutputContainer::Mp4;
-        assert!(!mapping_arguments(&request, &subtitles)
+        assert!(!mapping_arguments(&request, &subtitles, None)
             .iter()
             .any(|argument| argument == "0:4"));
 
         request.audio_mode = AudioMode::None;
-        assert!(!mapping_arguments(&request, &subtitles)
+        assert!(!mapping_arguments(&request, &subtitles, None)
             .iter()
             .any(|argument| argument == "0:2"));
     }
@@ -445,7 +537,7 @@ mod tests {
             subtitle(7, "webvtt"),
         ];
 
-        let arguments = mapping_arguments(&request, &subtitles);
+        let arguments = mapping_arguments(&request, &subtitles, None);
 
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:3"]));
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
@@ -463,7 +555,7 @@ mod tests {
         request.subtitle_stream_indexes = vec![3, 4];
         let subtitles = vec![subtitle(3, "ass"), subtitle(4, "hdmv_pgs_subtitle")];
 
-        let arguments = mapping_arguments(&request, &subtitles);
+        let arguments = mapping_arguments(&request, &subtitles, None);
 
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:3"]));
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:4"]));
@@ -477,7 +569,7 @@ mod tests {
         request.subtitle_stream_indexes = vec![3, 4];
         let subtitles = vec![subtitle(3, "mov_text"), subtitle(4, "hdmv_pgs_subtitle")];
 
-        let arguments = mapping_arguments(&request, &subtitles);
+        let arguments = mapping_arguments(&request, &subtitles, None);
 
         assert!(arguments
             .windows(2)
@@ -755,6 +847,71 @@ mod tests {
         pending.media.duration_seconds = 0.0;
         let error = super::command_preview(&pending, source, partial).unwrap_err();
         assert_eq!(error.message, super::trim::UNKNOWN_DURATION);
+    }
+
+    #[test]
+    fn a_prepared_segment_maps_clipped_subtitles_and_chapters() {
+        use std::path::{Path, PathBuf};
+
+        let mut request = request(OutputContainer::Mkv);
+        request.output_path = "/videos/holiday-vidra.mkv".to_owned();
+        request.trim = Some(SegmentTrim {
+            start_seconds: 7.3,
+            end_seconds: 12.8,
+        });
+        request.audio_stream_indexes = vec![1];
+        request.subtitle_stream_indexes = vec![3];
+        let mut pending = job(
+            request,
+            vec![AudioStream {
+                index: 1,
+                codec: "aac".to_owned(),
+                channels: Some(2),
+                sample_rate: Some(48_000),
+                bit_rate: Some(160_000),
+                language: None,
+                title: None,
+            }],
+        );
+        pending.id = "segment-map".to_owned();
+        pending.media.duration_seconds = 20.0;
+        pending.media.subtitles = vec![subtitle(3, "subrip")];
+        super::segment::store(
+            "segment-map",
+            super::segment::PreparedSegment {
+                output_start: 7.3,
+                output_end: 12.8,
+                directory: PathBuf::from("/tmp/vidra-segment-test"),
+                chapter_file: Some(PathBuf::from("/tmp/vidra-segment-test/chapters.txt")),
+                text_subtitle_files: vec![PathBuf::from("/tmp/vidra-segment-test/clipped-3.srt")],
+                image_subtitle_count: 0,
+                remux_text_subtitles: false,
+            },
+        );
+        let preview = super::command_preview(
+            &pending,
+            Path::new("/videos/holiday.mov"),
+            Path::new("/videos/.vidra-partial-job-1-abc123.mkv"),
+        );
+        super::segment::discard("segment-map");
+        let arguments = preview.unwrap();
+
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-i", "/tmp/vidra-segment-test/clipped-3.srt"]));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-i", "/tmp/vidra-segment-test/chapters.txt"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "1:0"]));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-map_chapters", "2"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:s", "srt"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:a", "copy"]));
+        assert!(!arguments
+            .iter()
+            .any(|argument| argument == "-copypriorss:s"));
+        assert!(!arguments.iter().any(|argument| argument == "0:3"));
     }
 
     fn subtitle(index: u32, codec: &str) -> SubtitleStream {

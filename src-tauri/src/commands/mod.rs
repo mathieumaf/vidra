@@ -19,6 +19,11 @@ pub async fn probe_media(app: AppHandle, path: String) -> ApiResult<MediaInfo> {
 }
 
 #[tauri::command]
+pub async fn segment_keyframe(app: AppHandle, path: String, start_seconds: f64) -> ApiResult<f64> {
+    ffmpeg::segment::keyframe_before(&app, &path, start_seconds).await
+}
+
+#[tauri::command]
 pub async fn enqueue_encodes(
     app: AppHandle,
     jobs: State<'_, JobManager>,

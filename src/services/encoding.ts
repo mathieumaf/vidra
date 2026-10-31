@@ -43,6 +43,10 @@ export function probeMedia(path: string): Promise<MediaInfo> {
   return invoke("probe_media", { path });
 }
 
+export function segmentKeyframe(path: string, startSeconds: number): Promise<number> {
+  return invoke("segment_keyframe", { path, startSeconds });
+}
+
 export function enqueueEncodes(requests: EncodeRequest[]): Promise<QueuedEncode[]> {
   return invoke("enqueue_encodes", { requests });
 }

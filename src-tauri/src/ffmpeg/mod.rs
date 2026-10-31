@@ -5,6 +5,7 @@ pub(crate) mod paths;
 pub mod probe;
 mod progress;
 pub mod queue;
+pub(crate) mod segment;
 pub(crate) mod trim;
 mod types;
 mod version;

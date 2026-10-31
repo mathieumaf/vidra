@@ -29,6 +29,7 @@ const media: MediaInfo = {
   audio: [],
   subtitles: [],
   chapterCount: 0,
+  chapters: [],
   hasMetadata: false,
 };
 
@@ -50,6 +51,7 @@ describe("ConvertView", () => {
         advancedSettings={DEFAULT_ADVANCED_SETTINGS}
         trackSelection={{ audioStreamIndexes: [], subtitleStreamIndexes: [] }}
         trim={null}
+        copyStartSeconds={null}
         segmentError={null}
         profiles={[BUILT_IN_PROFILES[0]]}
         selectedProfileId={BUILT_IN_PROFILES[0].id}
@@ -126,6 +128,7 @@ describe("ConvertView", () => {
         advancedSettings={DEFAULT_ADVANCED_SETTINGS}
         trackSelection={{ audioStreamIndexes: [], subtitleStreamIndexes: [] }}
         trim={null}
+        copyStartSeconds={null}
         segmentError={null}
         profiles={[BUILT_IN_PROFILES[0]]}
         selectedProfileId={BUILT_IN_PROFILES[0].id}

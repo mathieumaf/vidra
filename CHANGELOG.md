@@ -6,7 +6,7 @@ All notable changes to Vidra are documented in this file.
 
 ### Added
 
-- Choose an optional start and end time before conversion. The output contains that segment, and progress, the estimated time remaining, and history use its length. Re-encoded video starts and ends on the selected frames. Original video is copied unchanged, so the clip can start slightly earlier and still ends at the selected time. The source file is not modified.
+- Choose an optional start and end time before conversion. The output contains that segment, and progress, the estimated time remaining, and history use the real output length. Re-encoded video starts and ends on the selected frames. Original video is copied unchanged, so it starts on the previous saved picture, which can be several seconds earlier, and still ends at the selected time. Chapters and text subtitles are moved onto that timeline and clipped to the file. The source file is not modified.
 
 ## 0.2.0-beta.1 - 2026-10-25
 

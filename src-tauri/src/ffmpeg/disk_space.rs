@@ -375,6 +375,7 @@ mod tests {
             audio: vec![],
             subtitles: vec![],
             chapter_count: 0,
+            chapters: Vec::new(),
             has_metadata: false,
         }
     }

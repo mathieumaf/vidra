@@ -99,7 +99,14 @@ export type MediaInfo = {
   audio: AudioStream[];
   subtitles: SubtitleStream[];
   chapterCount: number;
+  chapters: ChapterMark[];
   hasMetadata: boolean;
+};
+
+export type ChapterMark = {
+  startSeconds: number;
+  endSeconds: number;
+  title: string | null;
 };
 
 export type EncodeProgress = {
@@ -165,6 +172,7 @@ export type EncodeQueueItem = {
   settings: EncodingSettings;
   trackSelection: TrackSelection;
   trim: SegmentTrim | null;
+  copyStartSeconds: number | null;
   outputPath: string | null;
   status: EncodeJobStatus;
   progress: EncodeProgress;
