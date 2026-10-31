@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from "react";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { THIRD_PARTY_NOTICE_GROUPS } from "../../config/legal";
 import type { EncodingProfile } from "../../config/profiles";
@@ -9,6 +9,8 @@ import { localComputerPhrase } from "../../lib/platform";
 import type { ThemePreference } from "../../lib/theme";
 import type { UpdateChannel } from "../../types/applicationUpdate";
 import type { FfmpegStatus } from "../../types/media";
+import { useModalDialog } from "../../hooks/useModalDialog";
+import { useRadioGroup } from "../../hooks/useRadioGroup";
 import { Icon } from "../ui/Icon";
 
 type SettingsViewProps = {
@@ -66,9 +68,9 @@ export function SettingsView({
   return (
     <div className="settings-view">
       <div className="settings-scroll" inert={showNotices}>
-        <section className="settings-section">
+        <section className="settings-section" aria-labelledby="settings-profiles-heading">
           <div className="settings-section-heading">
-            <div><strong>Encoding profiles</strong><p>Reusable conversion settings stored on {localComputerPhrase()}.</p></div>
+            <div><strong id="settings-profiles-heading">Encoding profiles</strong><p>Reusable conversion settings stored on {localComputerPhrase()}.</p></div>
             <span>{userProfiles.length} personal</span>
           </div>
 
@@ -137,9 +139,9 @@ export function SettingsView({
           </div>
         </section>
 
-        <section className="settings-section">
+        <section className="settings-section" aria-labelledby="settings-application-heading">
           <div className="settings-section-heading">
-            <div><strong>Application</strong><p>Local engine and default behavior.</p></div>
+            <div><strong id="settings-application-heading">Application</strong><p>Local engine and default behavior.</p></div>
           </div>
           <section className="settings-card">
             <div className="settings-row settings-appearance-row">
@@ -147,19 +149,10 @@ export function SettingsView({
                 <strong>Appearance</strong>
                 <p>Auto follows your system appearance as it changes.</p>
               </div>
-              <div className="theme-switch" role="group" aria-label="Appearance">
-                {(["auto", "light", "dark"] as const).map((preference) => (
-                  <button
-                    key={preference}
-                    className={themePreference === preference ? "active" : ""}
-                    type="button"
-                    aria-pressed={themePreference === preference}
-                    onClick={() => onThemePreferenceChange(preference)}
-                  >
-                    {preference[0].toUpperCase() + preference.slice(1)}
-                  </button>
-                ))}
-              </div>
+              <AppearanceSwitch
+                preference={themePreference}
+                onChange={onThemePreferenceChange}
+              />
             </div>
             <div className="settings-row">
               <div>
@@ -224,9 +217,9 @@ export function SettingsView({
           </section>
         </section>
 
-        <section className="settings-section">
+        <section className="settings-section" aria-labelledby="settings-about-heading">
           <div className="settings-section-heading">
-            <div><strong>About Vidra</strong><p>Open-source software and bundled components.</p></div>
+            <div><strong id="settings-about-heading">About Vidra</strong><p>Open-source software and bundled components.</p></div>
           </div>
           <section className="settings-card">
             <div className="settings-row about-row">
@@ -326,14 +319,39 @@ function updateDescription(state: ApplicationUpdaterState, isBlocked: boolean): 
   return "Signed releases are checked automatically when Vidra starts.";
 }
 
+function AppearanceSwitch({
+  preference,
+  onChange,
+}: {
+  preference: ThemePreference;
+  onChange: (preference: ThemePreference) => void;
+}) {
+  const options = (["auto", "light", "dark"] as const).map((id) => ({ id }));
+  const radio = useRadioGroup(options, preference, onChange);
+  return (
+    <div
+      className="theme-switch"
+      role="radiogroup"
+      aria-label="Appearance"
+      onKeyDown={radio.onKeyDown}
+    >
+      {options.map((option) => (
+        <button
+          key={option.id}
+          className={preference === option.id ? "active" : ""}
+          type="button"
+          {...radio.optionProps(option.id)}
+          onClick={() => onChange(option.id)}
+        >
+          {option.id[0].toUpperCase() + option.id.slice(1)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ThirdPartyNotices({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  const dialogRef = useModalDialog(onClose);
 
   return (
     <div className="notices-overlay">
@@ -342,6 +360,7 @@ function ThirdPartyNotices({ onClose }: { onClose: () => void }) {
         aria-labelledby="third-party-notices-title"
         aria-modal="true"
         className="notices-panel"
+        ref={dialogRef}
         role="dialog"
       >
         <header className="notices-heading">
@@ -356,7 +375,7 @@ function ThirdPartyNotices({ onClose }: { onClose: () => void }) {
           </button>
         </header>
 
-        <div className="notices-content">
+        <div className="notices-content" tabIndex={0} role="region" aria-labelledby="third-party-notices-title">
           {THIRD_PARTY_NOTICE_GROUPS.map((group) => (
             <section className="notices-group" key={group.title}>
               <span>{group.title}</span>
@@ -395,17 +414,30 @@ function SettingsProfileRow({
 }) {
   const [editor, setEditor] = useState<"rename" | "delete" | null>(null);
   const [name, setName] = useState(profile.name);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameErrorId = useId();
 
   useEffect(() => {
     setEditor(null);
     setName(profile.name);
+    setNameError(null);
   }, [profile.id, profile.name]);
 
   function submitRename(event: FormEvent) {
     event.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setNameError("Enter a profile name.");
+      return;
+    }
     onRename?.(name);
     setEditor(null);
+  }
+
+  function closeEditor(event?: KeyboardEvent) {
+    if (event && event.key !== "Escape") return;
+    event?.preventDefault();
+    setEditor(null);
+    setNameError(null);
   }
 
   return (
@@ -427,6 +459,7 @@ function SettingsProfileRow({
           <>
             <button type="button" onClick={() => {
               setName(profile.name);
+              setNameError(null);
               setEditor("rename");
             }}>Rename</button>
             <button className="danger" type="button" onClick={() => setEditor("delete")}>Delete</button>
@@ -435,24 +468,36 @@ function SettingsProfileRow({
       </div>
 
       {editor === "rename" && (
-        <form className="settings-profile-editor" onSubmit={submitRename}>
-          <input
-            autoFocus
-            aria-label="Profile name"
-            maxLength={60}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
+        <form className="settings-profile-editor" onSubmit={submitRename} onKeyDown={closeEditor}>
+          <label className="settings-name-field">
+            <input
+              autoFocus
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? nameErrorId : undefined}
+              aria-label="Profile name"
+              aria-required="true"
+              maxLength={60}
+              value={name}
+              onBlur={() => {
+                if (!name.trim()) setNameError("Enter a profile name.");
+              }}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (event.target.value.trim()) setNameError(null);
+              }}
+            />
+            {nameError && <p className="field-error" id={nameErrorId} role="alert">{nameError}</p>}
+          </label>
           <button className="confirm" type="submit" disabled={!name.trim()}>Rename</button>
-          <button type="button" onClick={() => setEditor(null)}>Cancel</button>
+          <button type="button" onClick={() => closeEditor()}>Cancel</button>
         </form>
       )}
 
       {editor === "delete" && (
-        <div className="settings-profile-editor delete" role="alert">
+        <div className="settings-profile-editor delete" role="alert" onKeyDown={closeEditor}>
           <span>Delete “{profile.name}”? Conversions and media will not be affected.</span>
           <button className="danger" type="button" onClick={() => onDelete?.()}>Delete profile</button>
-          <button type="button" onClick={() => setEditor(null)}>Cancel</button>
+          <button type="button" onClick={() => closeEditor()}>Cancel</button>
         </div>
       )}
     </div>

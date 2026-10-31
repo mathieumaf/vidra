@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   conversionActivityMessage,
   isConversionInProgress,
@@ -29,6 +30,11 @@ export function FailureState({
   onRetry,
   onReload,
 }: FailureStateProps) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    retryRef.current?.focus();
+  }, []);
+
   return (
     <div className="failure-state" role="alert">
       <div className="failure-mark"><Icon name="warning" /></div>
@@ -40,7 +46,7 @@ export function FailureState({
       </p>
 
       <div className="failure-actions">
-        <button className="primary-button" type="button" onClick={onRetry}>{retryLabel}</button>
+        <button className="primary-button" type="button" ref={retryRef} onClick={onRetry}>{retryLabel}</button>
         {onReload && (
           <button className="secondary-button" type="button" onClick={onReload}>
             Reload the window

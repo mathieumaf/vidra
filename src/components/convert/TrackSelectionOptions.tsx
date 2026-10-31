@@ -111,7 +111,7 @@ export function TrackSelectionOptions({
             selected={audioMode === "none" ? 0 : selection.audioStreamIndexes.length}
             total={audio.length}
           />
-          <div className="track-shortcuts" aria-label="Audio track shortcuts">
+          <div className="track-shortcuts" role="group" aria-label="Audio track shortcuts">
             <Shortcut
               label="All"
               active={allAudioSelected}
@@ -154,7 +154,7 @@ export function TrackSelectionOptions({
             selected={selectedAvailableSubtitleIndexes.length}
             total={subtitles.length}
           />
-          <div className="track-shortcuts" aria-label="Subtitle track shortcuts">
+          <div className="track-shortcuts" role="group" aria-label="Subtitle track shortcuts">
             <Shortcut
               label="All"
               active={allSubtitlesSelected}

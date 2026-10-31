@@ -32,7 +32,7 @@ export function HistoryView({
   onClear,
 }: HistoryViewProps) {
   if (isLoading && items.length === 0) {
-    return <div className="utility-view history-loading">Loading conversion history…</div>;
+    return <div className="utility-view history-loading" role="status">Loading conversion history…</div>;
   }
 
   if (items.length === 0 && !error) {
