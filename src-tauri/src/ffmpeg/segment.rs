@@ -308,7 +308,7 @@ async fn prepare_files(
             return Err(cancelled());
         }
         let extracted = directory.join(format!("source-{}.srt", subtitle.index));
-        extract_srt(
+        let offset = extract_srt(
             app,
             &job.id,
             &job.request.input_path,
@@ -319,7 +319,10 @@ async fn prepare_files(
         )
         .await?;
         let cues = clip_cues(
-            &parse_srt(&fs::read_to_string(&extracted).unwrap_or_default()),
+            &shift_cues(
+                &parse_srt(&fs::read_to_string(&extracted).unwrap_or_default()),
+                offset,
+            ),
             output_start,
             output_end,
         );
@@ -450,6 +453,9 @@ async fn read_keyframe(
     Ok(0.0)
 }
 
+/// Extracts one subtitle track around the clip and returns the source time
+/// where the extracted file starts. Input seeking moves cue times so that this
+/// time becomes zero.
 async fn extract_srt(
     app: &AppHandle,
     job_id: &str,
@@ -458,34 +464,14 @@ async fn extract_srt(
     destination: &Path,
     window_start: f64,
     window_end: f64,
-) -> ApiResult<()> {
+) -> ApiResult<f64> {
     let source = super::paths::validate_input(source)?;
-    let from = (window_start - SUBTITLE_LOOKBACK_SECONDS).max(0.0);
-    let from_text = format_timestamp(from);
-    let to_text = format_timestamp(window_end);
-    let map = format!("0:{index}");
+    let from = subtitle_window_start(window_start);
     let output = run_sidecar(
         app,
         Some(job_id),
         "ffmpeg",
-        vec![
-            os("-hide_banner"),
-            os("-nostdin"),
-            os("-y"),
-            os("-ss"),
-            os(&from_text),
-            os("-to"),
-            os(&to_text),
-            os("-i"),
-            source.as_os_str().to_os_string(),
-            os("-map"),
-            os(&map),
-            os("-vn"),
-            os("-an"),
-            os("-f"),
-            os("srt"),
-            destination.as_os_str().to_os_string(),
-        ],
+        extract_srt_arguments(&source, index, destination, from, window_end),
     )
     .await?;
     if !output.success {
@@ -493,7 +479,49 @@ async fn extract_srt(
             "Could not read a subtitle track for the selected segment.",
         ));
     }
-    Ok(())
+    Ok(from)
+}
+
+fn subtitle_window_start(window_start: f64) -> f64 {
+    (window_start - SUBTITLE_LOOKBACK_SECONDS).max(0.0)
+}
+
+fn extract_srt_arguments(
+    source: &Path,
+    index: u32,
+    destination: &Path,
+    from: f64,
+    to: f64,
+) -> Vec<std::ffi::OsString> {
+    vec![
+        os("-hide_banner"),
+        os("-nostdin"),
+        os("-y"),
+        os("-ss"),
+        os(&format_timestamp(from)),
+        os("-to"),
+        os(&format_timestamp(to)),
+        os("-i"),
+        source.as_os_str().to_os_string(),
+        os("-map"),
+        os(&format!("0:{index}")),
+        os("-vn"),
+        os("-an"),
+        os("-f"),
+        os("srt"),
+        destination.as_os_str().to_os_string(),
+    ]
+}
+
+/// Moves extracted cues back onto the source timeline.
+pub(crate) fn shift_cues(cues: &[Cue], offset: f64) -> Vec<Cue> {
+    cues.iter()
+        .map(|cue| Cue {
+            start: cue.start + offset,
+            end: cue.end + offset,
+            body: cue.body.clone(),
+        })
+        .collect()
 }
 
 pub(crate) struct SubtitleRemux {
@@ -510,6 +538,14 @@ pub(crate) async fn remux_text_subtitles(
 ) -> ApiResult<Option<SubtitleRemux>> {
     let Some(plan) = remux_plan(partial, segment, mov_text) else {
         return Ok(None);
+    };
+    // The encoder has exited, so the remux runs as a preparation step. This
+    // lets the job accept its process and lets Cancel stop it.
+    let jobs = app.state::<JobManager>();
+    jobs.begin_preparation(job_id)?;
+    let _guard = PreparationGuard {
+        jobs,
+        job_id: job_id.to_owned(),
     };
     let output = match run_sidecar(app, Some(job_id), "ffmpeg", plan.arguments).await {
         Ok(output) => output,
@@ -1110,6 +1146,91 @@ mod tests {
             "remuxed file has no text subtitle ({codec})"
         );
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn extracted_cues_return_to_the_source_timeline() {
+        assert_eq!(super::subtitle_window_start(42.0), 0.0);
+        assert_eq!(super::subtitle_window_start(402.0), 102.0);
+        let cues = vec![Cue {
+            start: 299.0,
+            end: 302.0,
+            body: "late".to_owned(),
+        }];
+        let shifted = super::shift_cues(&cues, 102.0);
+        assert!((shifted[0].start - 401.0).abs() < 0.001);
+        assert!((shifted[0].end - 404.0).abs() < 0.001);
+        assert_eq!(shifted[0].body, "late");
+    }
+
+    #[test]
+    fn late_subtitles_are_extracted_on_the_source_timeline_with_ffmpeg() {
+        use std::{fs, process::Command};
+
+        let Some(ffmpeg) = prepared_binary("ffmpeg") else {
+            if std::env::var("VIDRA_CORPUS_REQUIRED").ok().as_deref() == Some("1") {
+                panic!("FFmpeg is required to extract late subtitles");
+            }
+            eprintln!("skipping late subtitles: prepared FFmpeg sidecar is missing");
+            return;
+        };
+
+        let directory = std::env::temp_dir().join(format!(
+            "vidra-late-subtitles-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&directory).expect("subtitle directory");
+        let cues = directory.join("cues.srt");
+        fs::write(
+            &cues,
+            "1\n00:06:35,000 --> 00:06:38,000\nbefore\n\n\
+             2\n00:06:41,000 --> 00:06:44,000\nopening\n\n\
+             3\n00:06:52,000 --> 00:06:56,000\nclosing\n",
+        )
+        .expect("cues");
+        let source = directory.join("source.mkv");
+        let generated = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+            .arg(&cues)
+            .args(["-c:s", "srt"])
+            .arg(&source)
+            .output()
+            .expect("ffmpeg should run");
+        assert!(
+            generated.status.success(),
+            "could not prepare a late subtitle source\n{}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+
+        let (start, end) = (402.0, 414.0);
+        let from = super::subtitle_window_start(start);
+        let extracted = directory.join("extracted.srt");
+        let output = Command::new(&ffmpeg)
+            .args(super::extract_srt_arguments(
+                &source, 0, &extracted, from, end,
+            ))
+            .output()
+            .expect("ffmpeg extract");
+        assert!(
+            output.status.success(),
+            "FFmpeg could not extract the subtitle window\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = fs::read_to_string(&extracted).expect("extracted subtitles");
+        let clipped = clip_cues(&super::shift_cues(&parse_srt(&text), from), start, end);
+        let _ = fs::remove_dir_all(&directory);
+
+        assert_eq!(clipped.len(), 2, "unexpected cues: {clipped:?}");
+        assert_eq!(clipped[0].body, "opening");
+        assert!((clipped[0].start - 0.0).abs() < 0.001);
+        assert!((clipped[0].end - 2.0).abs() < 0.001);
+        assert_eq!(clipped[1].body, "closing");
+        assert!((clipped[1].start - 10.0).abs() < 0.001);
+        assert!((clipped[1].end - 12.0).abs() < 0.001);
     }
 
     fn subtitle_segment(subtitle: &std::path::Path) -> crate::jobs::PreparedSegment {
