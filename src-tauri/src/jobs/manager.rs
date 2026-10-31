@@ -22,6 +22,9 @@ struct JobState {
     waiting_order: VecDeque<String>,
     cancelled: HashSet<String>,
     update_in_progress: bool,
+    /// Set while a reserved job is probing or extracting segment files.
+    preparing_job: Option<String>,
+    preparing_process: Option<process::RunningProcess>,
 }
 
 pub struct UpdateGuard<'a> {
@@ -351,10 +354,94 @@ impl JobManager {
         Ok(())
     }
 
+    /// Marks a reserved job as preparing segment files so cancel can stop it
+    /// before the encoder is attached.
+    pub(crate) fn begin_preparation(&self, job_id: &str) -> ApiResult<()> {
+        let mut state = self.lock()?;
+        let active = state.active.as_ref().ok_or_else(|| {
+            ApiError::new(
+                "job_state_error",
+                "The reserved encoding job is unavailable.",
+            )
+        })?;
+        if active.id != job_id {
+            return Err(ApiError::new(
+                "job_state_error",
+                "The reserved encoding job changed unexpectedly.",
+            ));
+        }
+        state.preparing_job = Some(job_id.to_owned());
+        Ok(())
+    }
+
+    pub(crate) fn end_preparation(&self, job_id: &str) {
+        let process = {
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if state.preparing_job.as_deref() != Some(job_id) {
+                return;
+            }
+            state.preparing_job = None;
+            state.preparing_process.take()
+        };
+        if let Some(process) = process {
+            let _ = process.stop();
+        }
+    }
+
+    pub(crate) fn attach_preparing(
+        &self,
+        job_id: &str,
+        process: process::RunningProcess,
+    ) -> ApiResult<()> {
+        let mut state = self.lock()?;
+        if state.preparing_job.as_deref() != Some(job_id) {
+            drop(state);
+            let _ = process.stop();
+            return Err(ApiError::new(
+                "job_state_error",
+                "The reserved encoding job is unavailable.",
+            ));
+        }
+        if let Some(previous) = state.preparing_process.replace(process) {
+            drop(state);
+            let _ = previous.stop();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn take_preparing_process(&self, job_id: &str) -> Option<process::RunningProcess> {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if state.preparing_job.as_deref() != Some(job_id) {
+            return None;
+        }
+        state.preparing_process.take()
+    }
+
+    pub(crate) fn is_cancelled(&self, job_id: &str) -> bool {
+        self.state
+            .lock()
+            .map(|state| state.cancelled.contains(job_id))
+            .unwrap_or(false)
+    }
+
     pub fn cancel(&self, job_id: &str) -> ApiResult<CancelledJob> {
         let mut state = self.lock()?;
 
         if state.active.as_ref().map(|job| job.id.as_str()) == Some(job_id) {
+            if state.preparing_job.as_deref() == Some(job_id) {
+                state.preparing_job = None;
+                state.cancelled.insert(job_id.to_owned());
+                return match state.preparing_process.take() {
+                    Some(process) => Ok(CancelledJob::Active { process }),
+                    None => Ok(CancelledJob::Preparing),
+                };
+            }
             let active = state.active.as_mut().expect("the active job was checked");
             if active.process_id.is_none() {
                 return Err(ApiError::new(
@@ -457,19 +544,26 @@ impl JobManager {
         // A poisoned lock still holds the running encoders. Leaving them
         // running would keep writing a partial file after the application
         // exits. `reserved_output_paths` recovers the same lock.
-        let running = {
+        let (running, preparing) = {
             let mut state = self
                 .state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             let mut running = state.active.take().into_iter().collect::<Vec<_>>();
             running.extend(state.suspended.drain(..));
+            let preparing = state.preparing_process.take();
+            state.preparing_job = None;
             state.pending.clear();
             state.waiting_order.clear();
             state.cancelled.clear();
             state.update_in_progress = false;
-            running
+            (running, preparing)
         };
+        if let Some(process) = preparing {
+            if let Err(error) = process.stop() {
+                eprintln!("Unable to stop FFmpeg during shutdown: {error}");
+            }
+        }
 
         for mut job in running {
             if let Some(process) = job.process.take() {

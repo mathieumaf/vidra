@@ -57,8 +57,10 @@ pub fn failure_report(
     let raw_log = log.finish();
     let (code, summary) = classify_failure(&raw_log);
     let redacted_log = redact_paths(&raw_log, job, partial_path);
-    let command = crate::ffmpeg::encode::redacted_command(job)
-        .unwrap_or_else(|_| "ffmpeg <command unavailable>".to_owned());
+    let command = job.ffmpeg_command.clone().unwrap_or_else(|| {
+        crate::ffmpeg::encode::redacted_command(job)
+            .unwrap_or_else(|_| "ffmpeg <command unavailable>".to_owned())
+    });
     let report = format!(
         "Vidra diagnostic report\n\
          Privacy: source and output paths are redacted.\n\n\
@@ -407,6 +409,8 @@ mod tests {
                 has_metadata: false,
             },
             ffmpeg_version: Some("ffmpeg test".to_owned()),
+            segment: None,
+            ffmpeg_command: None,
         }
     }
 
@@ -490,6 +494,25 @@ mod tests {
         assert!(diagnostic.report.contains("<output>"));
         assert!(diagnostic.report.len() <= MAX_REPORT_BYTES);
         assert!(diagnostic.report.contains("Segment: entire video"));
+    }
+
+    #[test]
+    fn failure_report_keeps_the_command_that_ran_after_segment_files_are_removed() {
+        let mut job = pending_job();
+        job.segment = None;
+        job.ffmpeg_command = Some(
+            "ffmpeg -hide_banner -nostdin -y -ss 7.3 -i <source> -i /tmp/vidra-segment/chapters.txt -map_chapters 1 <output>\n\nSubtitle remux\nffmpeg -i <output> -i /tmp/vidra-segment/clipped.srt -c copy -c:s srt -f matroska <output>"
+                .to_owned(),
+        );
+
+        let diagnostic = failure_report(&job, BoundedLog::default(), Some(1), None);
+
+        assert!(diagnostic.report.contains("chapters.txt"));
+        assert!(diagnostic.report.contains("-map_chapters 1"));
+        assert!(diagnostic.report.contains("Subtitle remux"));
+        assert!(diagnostic.report.contains("clipped.srt"));
+        assert!(diagnostic.report.contains("-f matroska"));
+        assert!(!diagnostic.report.contains("-map_chapters 0"));
     }
 
     #[test]

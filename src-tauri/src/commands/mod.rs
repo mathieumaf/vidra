@@ -33,8 +33,8 @@ pub async fn enqueue_encodes(
 }
 
 #[tauri::command]
-pub fn start_encode_queue(app: AppHandle) -> ApiResult<()> {
-    ffmpeg::queue::start_next(app)
+pub async fn start_encode_queue(app: AppHandle) -> ApiResult<()> {
+    ffmpeg::queue::start_next(app).await
 }
 
 #[tauri::command]

@@ -37,6 +37,7 @@ export function queueItemFixture(overrides: Partial<EncodeQueueItem> = {}): Enco
     trackSelection: { audioStreamIndexes: [], subtitleStreamIndexes: [] },
     trim: null,
     copyStartSeconds: null,
+    copyStartStatus: "unknown",
     outputPath: null,
     status: "ready",
     progress: emptyProgress(),

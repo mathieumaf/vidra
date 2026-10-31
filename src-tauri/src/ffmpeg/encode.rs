@@ -184,20 +184,20 @@ fn subtitle_codec_arguments(
     }
 }
 
-pub(super) fn build_command(
+pub(super) async fn build_command(
     app: &AppHandle,
-    job: &PendingJob,
+    job: &mut PendingJob,
     partial_output: &Path,
 ) -> ApiResult<tauri_plugin_shell::process::Command> {
-    match segment::prepare(app, job) {
-        Ok(Some(prepared)) => segment::store(&job.id, prepared),
-        Ok(None) => segment::discard(&job.id),
+    match segment::prepare(app, job).await {
+        Ok(prepared) => job.segment = prepared,
         Err(error) => {
-            segment::discard(&job.id);
+            job.discard_segment_files();
             return Err(error);
         }
     }
     let arguments = command_arguments(job, partial_output)?;
+    job.ffmpeg_command = Some(redacted_command(job)?);
     Ok(app
         .shell()
         .sidecar("ffmpeg")
@@ -222,7 +222,7 @@ pub(super) fn command_arguments(
     )?;
     crate::output::partial::ensure_partial_target(&output, partial_output)?;
     let trim_command = prepared_trim(job)?;
-    let segment_inputs = segment::inputs_for(&job.id);
+    let segment_inputs = job.segment.as_ref().map(segment::segment_inputs);
     Ok(ffmpeg_arguments(
         &input,
         partial_output,
@@ -247,7 +247,7 @@ pub(super) fn command_preview(
         partial_output,
     )?;
     let trim_command = prepared_trim(job)?;
-    let segment_inputs = segment::inputs_for(&job.id);
+    let segment_inputs = job.segment.as_ref().map(segment::segment_inputs);
     let arguments = ffmpeg_arguments(
         source,
         partial_output,
@@ -305,7 +305,7 @@ fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
     let request = &job.request;
     let audio_streams = selected_audio_streams(&job.media.audio, &request.audio_stream_indexes)?;
     let mut trim_output = prepared_trim(job)?.output;
-    let segment_inputs = segment::inputs_for(&job.id);
+    let segment_inputs = job.segment.as_ref().map(segment::segment_inputs);
     if segment_inputs
         .as_ref()
         .is_some_and(|inputs| inputs.replace_text && !inputs.copy_source_subtitles)
@@ -342,7 +342,7 @@ fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
 pub(crate) fn redacted_command(job: &PendingJob) -> ApiResult<String> {
     validate_settings(&job.request, &job.media)?;
     let trim_command = prepared_trim(job)?;
-    let segment_inputs = segment::inputs_for(&job.id);
+    let segment_inputs = job.segment.as_ref().map(segment::segment_inputs);
     let mut arguments = vec!["ffmpeg".to_owned()];
     arguments.extend(
         GLOBAL_ARGUMENTS[..GLOBAL_ARGUMENTS.len() - 1]
@@ -438,6 +438,8 @@ mod tests {
             },
             request,
             ffmpeg_version: None,
+            segment: None,
+            ffmpeg_command: None,
         }
     }
 
@@ -876,24 +878,20 @@ mod tests {
         pending.id = "segment-map".to_owned();
         pending.media.duration_seconds = 20.0;
         pending.media.subtitles = vec![subtitle(3, "subrip")];
-        super::segment::store(
-            "segment-map",
-            super::segment::PreparedSegment {
-                output_start: 7.3,
-                output_end: 12.8,
-                directory: PathBuf::from("/tmp/vidra-segment-test"),
-                chapter_file: Some(PathBuf::from("/tmp/vidra-segment-test/chapters.txt")),
-                text_subtitle_files: vec![PathBuf::from("/tmp/vidra-segment-test/clipped-3.srt")],
-                image_subtitle_count: 0,
-                remux_text_subtitles: false,
-            },
-        );
+        pending.segment = Some(crate::jobs::PreparedSegment {
+            output_start: 7.3,
+            output_end: 12.8,
+            directory: PathBuf::from("/tmp/vidra-segment-test"),
+            chapter_file: Some(PathBuf::from("/tmp/vidra-segment-test/chapters.txt")),
+            text_subtitle_files: vec![PathBuf::from("/tmp/vidra-segment-test/clipped-3.srt")],
+            image_subtitle_count: 0,
+            remux_text_subtitles: false,
+        });
         let preview = super::command_preview(
             &pending,
             Path::new("/videos/holiday.mov"),
             Path::new("/videos/.vidra-partial-job-1-abc123.mkv"),
         );
-        super::segment::discard("segment-map");
         let arguments = preview.unwrap();
 
         assert!(arguments

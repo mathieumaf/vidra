@@ -160,7 +160,9 @@ export function QueueView({
             : ` · ${outputFrameRateLabel(item.settings.outputFrameRate)}`;
           const segmentSummary = trimSummary(
             item.settings.videoCodec === "copy"
-              ? effectiveSegment(item.trim, item.copyStartSeconds)
+              ? (item.copyStartStatus === "ready"
+                ? effectiveSegment(item.trim, item.copyStartSeconds)
+                : null)
               : item.trim,
           );
           const settingsSummary = `${item.settings.container.toUpperCase()} · ${videoSummary} · ${outputResolutionLabel(item.settings.outputResolution)}${frameRateSummary} · ${audioSummary}${segmentSummary ? ` · ${segmentSummary}` : ""}`;

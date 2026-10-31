@@ -901,6 +901,8 @@ fn pending_job(id: &str, request: EncodeRequest, media: MediaInfo) -> PendingJob
         request,
         media,
         ffmpeg_version: None,
+        segment: None,
+        ffmpeg_command: None,
     }
 }
 

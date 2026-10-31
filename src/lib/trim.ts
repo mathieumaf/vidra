@@ -9,6 +9,8 @@ export const END_NOT_AFTER_START = "The end time must be later than the start ti
 export const START_AFTER_VIDEO = "The start time is past the end of the video.";
 export const END_AFTER_VIDEO = "The end time is past the end of the video.";
 export const UNKNOWN_DURATION = "This video's duration is unknown, so a segment cannot be selected.";
+export const COPY_START_UNAVAILABLE = "Vidra could not find where Original video will start, so this conversion was not started. Change the start time to try again, or choose a format that re-encodes the video.";
+export const COPY_START_CHECKING = "Vidra is still checking where Original video will start.";
 
 export type TrimAssessment =
   | { ok: true; trim: SegmentTrim | null }

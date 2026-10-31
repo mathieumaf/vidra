@@ -6,36 +6,28 @@
 
 use super::{
     trim::{self, format_timestamp},
-    version::host_target_triple,
     SegmentTrim, VideoCodec,
 };
 use crate::{
     error::{ApiError, ApiResult},
-    jobs::PendingJob,
+    jobs::{process::RunningProcess, JobManager, PendingJob, PreparedSegment},
 };
 use std::{
-    fs,
-    io::Write,
+    fs, io,
     path::{Path, PathBuf},
-    process::Command,
-    sync::Mutex,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
+use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 const MILLISECOND: f64 = 0.001;
+/// First probe window. A later start only reads this far back, then wider
+/// windows if that range has no keyframe.
+const KEYFRAME_LOOKBACKS: [f64; 3] = [30.0, 120.0, 600.0];
+/// Cues are packets at their start time. Reading this far before the clip
+/// keeps a cue that is already on screen without scanning the whole file.
+const SUBTITLE_LOOKBACK_SECONDS: f64 = 300.0;
 
-#[derive(Debug)]
-pub(crate) struct PreparedSegment {
-    pub output_start: f64,
-    pub output_end: f64,
-    pub directory: PathBuf,
-    pub chapter_file: Option<PathBuf>,
-    pub text_subtitle_files: Vec<PathBuf>,
-    pub image_subtitle_count: usize,
-    /// Stream copy normalizes timestamps while muxing. Text cues are added in
-    /// a second copy after that, so their times stay on the output timeline.
-    pub remux_text_subtitles: bool,
-}
+pub(crate) const COPY_START_UNAVAILABLE: &str = "Vidra could not find where Original video will start, so this conversion was not started. Change the start time to try again, or choose a format that re-encodes the video.";
 
 pub(crate) struct SegmentInputs {
     pub extra: Vec<PathBuf>,
@@ -50,34 +42,6 @@ pub(crate) struct Cue {
     pub start: f64,
     pub end: f64,
     pub body: String,
-}
-
-static PREPARED: Mutex<Vec<(String, PreparedSegment)>> = Mutex::new(Vec::new());
-
-pub(crate) fn store(job_id: &str, segment: PreparedSegment) {
-    let mut prepared = PREPARED.lock().unwrap_or_else(|error| error.into_inner());
-    prepared.retain(|(id, _)| id != job_id);
-    prepared.push((job_id.to_owned(), segment));
-}
-
-pub(crate) fn peek(job_id: &str) -> Option<(f64, f64)> {
-    let prepared = PREPARED.lock().unwrap_or_else(|error| error.into_inner());
-    prepared
-        .iter()
-        .find(|(id, _)| id == job_id)
-        .map(|(_, segment)| (segment.output_start, segment.output_end))
-}
-
-pub(crate) fn take(job_id: &str) -> Option<PreparedSegment> {
-    let mut prepared = PREPARED.lock().unwrap_or_else(|error| error.into_inner());
-    let index = prepared.iter().position(|(id, _)| id == job_id)?;
-    Some(prepared.remove(index).1)
-}
-
-pub(crate) fn discard(job_id: &str) {
-    if let Some(segment) = take(job_id) {
-        let _ = fs::remove_dir_all(segment.directory);
-    }
 }
 
 /// The source time where the output picture starts.
@@ -263,17 +227,40 @@ pub(crate) fn is_text_subtitle(codec: &str) -> bool {
     )
 }
 
-pub(crate) fn prepare(app: &AppHandle, job: &PendingJob) -> ApiResult<Option<PreparedSegment>> {
+pub(crate) async fn prepare(
+    app: &AppHandle,
+    job: &PendingJob,
+) -> ApiResult<Option<PreparedSegment>> {
     let Some(segment) = trim::normalize_trim(job.request.trim, job.media.duration_seconds)? else {
         return Ok(None);
     };
+    let jobs = app.state::<JobManager>();
+    jobs.begin_preparation(&job.id)?;
+    let guard = PreparationGuard {
+        jobs,
+        job_id: job.id.clone(),
+    };
+    let prepared = prepare_segment(app, job, segment).await;
+    drop(guard);
+    prepared
+}
+
+async fn prepare_segment(
+    app: &AppHandle,
+    job: &PendingJob,
+    segment: SegmentTrim,
+) -> ApiResult<Option<PreparedSegment>> {
     let copy_video = job.request.video_codec == VideoCodec::Copy;
     let keyframe = if copy_video {
-        Some(read_keyframe(
-            app,
-            &job.request.input_path,
-            segment.start_seconds,
-        )?)
+        Some(
+            read_keyframe(
+                app,
+                Some(&job.id),
+                &super::paths::validate_input(&job.request.input_path)?,
+                segment.start_seconds,
+            )
+            .await?,
+        )
     } else {
         None
     };
@@ -286,10 +273,26 @@ pub(crate) fn prepare(app: &AppHandle, job: &PendingJob) -> ApiResult<Option<Pre
     .unwrap_or(segment.start_seconds);
     let output_end = segment.end_seconds;
     let directory = std::env::temp_dir().join(format!("vidra-segment-{}", sanitize(&job.id)));
-    fs::create_dir_all(&directory).map_err(|error| {
-        ApiError::ffmpeg(format!("Could not prepare the segment files: {error}"))
-    })?;
+    if let Err(error) = fs::create_dir_all(&directory) {
+        return Err(ApiError::ffmpeg(format!(
+            "Could not prepare the segment files: {error}"
+        )));
+    }
+    let prepared = prepare_files(app, job, &directory, output_start, output_end, copy_video).await;
+    if prepared.is_err() {
+        let _ = fs::remove_dir_all(&directory);
+    }
+    prepared
+}
 
+async fn prepare_files(
+    app: &AppHandle,
+    job: &PendingJob,
+    directory: &Path,
+    output_start: f64,
+    output_end: f64,
+    copy_video: bool,
+) -> ApiResult<Option<PreparedSegment>> {
     let chapter_file = if job.request.preserve_chapters {
         chapter_metadata(&job.media.chapters, output_start, output_end)
             .map(|metadata| write_file(&directory.join("chapters.txt"), &metadata))
@@ -301,8 +304,20 @@ pub(crate) fn prepare(app: &AppHandle, job: &PendingJob) -> ApiResult<Option<Pre
     let image_subtitle_count = selected_image_subtitles(job).len();
     let mut text_subtitle_files = Vec::new();
     for subtitle in selected_text_subtitles(job) {
+        if app.state::<JobManager>().is_cancelled(&job.id) {
+            return Err(cancelled());
+        }
         let extracted = directory.join(format!("source-{}.srt", subtitle.index));
-        extract_srt(app, &job.request.input_path, subtitle.index, &extracted)?;
+        extract_srt(
+            app,
+            &job.id,
+            &job.request.input_path,
+            subtitle.index,
+            &extracted,
+            output_start,
+            output_end,
+        )
+        .await?;
         let cues = clip_cues(
             &parse_srt(&fs::read_to_string(&extracted).unwrap_or_default()),
             output_start,
@@ -319,7 +334,7 @@ pub(crate) fn prepare(app: &AppHandle, job: &PendingJob) -> ApiResult<Option<Pre
     Ok(Some(PreparedSegment {
         output_start,
         output_end,
-        directory,
+        directory: directory.to_path_buf(),
         chapter_file,
         text_subtitle_files,
         image_subtitle_count,
@@ -327,13 +342,7 @@ pub(crate) fn prepare(app: &AppHandle, job: &PendingJob) -> ApiResult<Option<Pre
     }))
 }
 
-pub(crate) fn inputs_for(job_id: &str) -> Option<SegmentInputs> {
-    let prepared = PREPARED.lock().unwrap_or_else(|error| error.into_inner());
-    let segment = prepared.iter().find(|(id, _)| id == job_id)?;
-    Some(segment_inputs(&segment.1))
-}
-
-fn segment_inputs(segment: &PreparedSegment) -> SegmentInputs {
+pub(crate) fn segment_inputs(segment: &PreparedSegment) -> SegmentInputs {
     let extra = extra_inputs(segment);
     let text_indexes = text_input_indexes(segment);
     let chapter_index = chapter_input_index(segment);
@@ -378,57 +387,108 @@ pub(crate) async fn keyframe_before(
     start_seconds: f64,
 ) -> ApiResult<f64> {
     let input = super::paths::validate_input(path)?;
-    read_keyframe_from_path(app, &input, start_seconds)
+    read_keyframe(app, None, &input, start_seconds).await
 }
 
-fn read_keyframe(app: &AppHandle, path: &str, start_seconds: f64) -> ApiResult<f64> {
-    let input = super::paths::validate_input(path)?;
-    read_keyframe_from_path_sync(app, &input, start_seconds)
+/// `START%END` reads only that interval. The end is the chosen start, and the
+/// beginning is a bounded lookback so a late start does not scan the file.
+pub(crate) fn keyframe_read_interval(start_seconds: f64, lookback_seconds: f64) -> String {
+    let start = start_seconds.max(0.0);
+    let from = (start - lookback_seconds.max(0.0)).max(0.0);
+    format!("{}%{}", format_timestamp(from), format_timestamp(start))
 }
 
-fn read_keyframe_from_path(app: &AppHandle, input: &Path, start_seconds: f64) -> ApiResult<f64> {
-    // The async command and the synchronous encode path share the parser.
-    read_keyframe_from_path_sync(app, input, start_seconds)
-}
-
-fn read_keyframe_from_path_sync(
+async fn read_keyframe(
     app: &AppHandle,
+    job_id: Option<&str>,
     input: &Path,
     start_seconds: f64,
 ) -> ApiResult<f64> {
-    let _ = app;
-    let output = run_sidecar(
-        "ffprobe",
-        &[
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-skip_frame",
-            "nokey",
-            "-read_intervals",
-            &format!("0%{}", format_timestamp(start_seconds.max(0.0))),
-            "-show_entries",
-            "frame=pts_time",
-            "-of",
-            "csv=p=0",
-        ],
-        input,
-    )?;
-    Ok(keyframe_at_or_before(&parse_keyframe_times(&output), start_seconds).unwrap_or(0.0))
+    let start = start_seconds.max(0.0);
+    for lookback in KEYFRAME_LOOKBACKS {
+        let interval = keyframe_read_interval(start, lookback);
+        let output = match run_sidecar(
+            app,
+            job_id,
+            "ffprobe",
+            vec![
+                os("-v"),
+                os("error"),
+                os("-select_streams"),
+                os("v:0"),
+                os("-skip_frame"),
+                os("nokey"),
+                os("-read_intervals"),
+                os(&interval),
+                os("-show_entries"),
+                os("frame=pts_time"),
+                os("-of"),
+                os("csv=p=0"),
+                input.as_os_str().to_os_string(),
+            ],
+        )
+        .await
+        {
+            Ok(output) => output,
+            Err(error) => return Err(keyframe_error(error)),
+        };
+        if !output.success {
+            let detail = output.stderr.trim();
+            return Err(keyframe_error(ApiError::ffmpeg(if detail.is_empty() {
+                COPY_START_UNAVAILABLE.to_owned()
+            } else {
+                detail.to_owned()
+            })));
+        }
+        if let Some(time) = keyframe_at_or_before(&parse_keyframe_times(&output.stdout), start) {
+            return Ok(time);
+        }
+        if start <= lookback + MILLISECOND {
+            return Ok(0.0);
+        }
+    }
+    Ok(0.0)
 }
 
-fn extract_srt(app: &AppHandle, source: &str, index: u32, destination: &Path) -> ApiResult<()> {
-    let _ = app;
+async fn extract_srt(
+    app: &AppHandle,
+    job_id: &str,
+    source: &str,
+    index: u32,
+    destination: &Path,
+    window_start: f64,
+    window_end: f64,
+) -> ApiResult<()> {
     let source = super::paths::validate_input(source)?;
-    let status = Command::new(sidecar_path("ffmpeg")?)
-        .args(["-hide_banner", "-nostdin", "-y", "-i"])
-        .arg(&source)
-        .args(["-map", &format!("0:{index}"), "-f", "srt"])
-        .arg(destination)
-        .output()
-        .map_err(|error| ApiError::ffmpeg(error.to_string()))?;
-    if !status.status.success() {
+    let from = (window_start - SUBTITLE_LOOKBACK_SECONDS).max(0.0);
+    let from_text = format_timestamp(from);
+    let to_text = format_timestamp(window_end);
+    let map = format!("0:{index}");
+    let output = run_sidecar(
+        app,
+        Some(job_id),
+        "ffmpeg",
+        vec![
+            os("-hide_banner"),
+            os("-nostdin"),
+            os("-y"),
+            os("-ss"),
+            os(&from_text),
+            os("-to"),
+            os(&to_text),
+            os("-i"),
+            source.as_os_str().to_os_string(),
+            os("-map"),
+            os(&map),
+            os("-vn"),
+            os("-an"),
+            os("-f"),
+            os("srt"),
+            destination.as_os_str().to_os_string(),
+        ],
+    )
+    .await?;
+    if !output.success {
         return Err(ApiError::ffmpeg(
             "Could not read a subtitle track for the selected segment.",
         ));
@@ -436,102 +496,258 @@ fn extract_srt(app: &AppHandle, source: &str, index: u32, destination: &Path) ->
     Ok(())
 }
 
-pub(crate) fn remux_prepared(job_id: &str, partial: &Path, mov_text: bool) -> ApiResult<()> {
-    let segment = {
-        let prepared = PREPARED.lock().unwrap_or_else(|error| error.into_inner());
-        let Some((_, segment)) = prepared.iter().find(|(id, _)| id == job_id) else {
-            return Ok(());
-        };
-        if !segment.remux_text_subtitles || segment.text_subtitle_files.is_empty() {
-            return Ok(());
-        }
-        PreparedSegment {
-            output_start: segment.output_start,
-            output_end: segment.output_end,
-            directory: segment.directory.clone(),
-            chapter_file: segment.chapter_file.clone(),
-            text_subtitle_files: segment.text_subtitle_files.clone(),
-            image_subtitle_count: segment.image_subtitle_count,
-            remux_text_subtitles: segment.remux_text_subtitles,
-        }
-    };
-    remux_text_subtitles(partial, &segment, mov_text)
+pub(crate) struct SubtitleRemux {
+    pub command: String,
+    pub error: Option<ApiError>,
 }
 
-pub(crate) fn remux_text_subtitles(
+pub(crate) async fn remux_text_subtitles(
+    app: &AppHandle,
+    job_id: &str,
     partial: &Path,
     segment: &PreparedSegment,
     mov_text: bool,
-) -> ApiResult<()> {
+) -> ApiResult<Option<SubtitleRemux>> {
+    let Some(plan) = remux_plan(partial, segment, mov_text) else {
+        return Ok(None);
+    };
+    let output = match run_sidecar(app, Some(job_id), "ffmpeg", plan.arguments).await {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = fs::remove_file(&plan.output);
+            return Ok(Some(SubtitleRemux {
+                command: plan.command,
+                error: Some(error),
+            }));
+        }
+    };
+    if !output.success {
+        let _ = fs::remove_file(&plan.output);
+        return Ok(Some(SubtitleRemux {
+            command: plan.command,
+            error: Some(ApiError::ffmpeg(
+                "Could not add the trimmed subtitles to the converted video.",
+            )),
+        }));
+    }
+    if let Err(error) = publish_remux(partial, &plan.output) {
+        let _ = fs::remove_file(&plan.output);
+        return Ok(Some(SubtitleRemux {
+            command: plan.command,
+            error: Some(ApiError::ffmpeg(format!(
+                "Could not add the trimmed subtitles to the converted video: {error}"
+            ))),
+        }));
+    }
+    Ok(Some(SubtitleRemux {
+        command: plan.command,
+        error: None,
+    }))
+}
+
+struct RemuxPlan {
+    arguments: Vec<std::ffi::OsString>,
+    output: PathBuf,
+    command: String,
+}
+
+fn remux_plan(partial: &Path, segment: &PreparedSegment, mov_text: bool) -> Option<RemuxPlan> {
     let text_subtitles = &segment.text_subtitle_files;
-    let chapter_file = segment.chapter_file.as_deref();
-    let image_count = segment.image_subtitle_count;
     if text_subtitles.is_empty() {
-        return Ok(());
+        return None;
     }
-    let remuxed = partial.with_extension("remux");
-    let mut command = Command::new(sidecar_path("ffmpeg")?);
-    command
-        .args(["-hide_banner", "-nostdin", "-y", "-i"])
-        .arg(partial);
+    let output = remux_destination(partial);
+    let format = if mov_text { "mp4" } else { "matroska" };
+    let mut arguments = Vec::new();
+    arguments.extend(["-hide_banner", "-nostdin", "-y", "-i"].map(os));
+    arguments.push(partial.as_os_str().to_os_string());
     for subtitle in text_subtitles {
-        command.arg("-i").arg(subtitle);
+        arguments.push(os("-i"));
+        arguments.push(subtitle.as_os_str().to_os_string());
     }
-    if let Some(chapters) = chapter_file {
-        command.arg("-i").arg(chapters);
+    if let Some(chapters) = &segment.chapter_file {
+        arguments.push(os("-i"));
+        arguments.push(chapters.as_os_str().to_os_string());
     }
-    command.args(["-map", "0:v?", "-map", "0:a?", "-map", "0:s?"]);
+    arguments.extend(["-map", "0:v?", "-map", "0:a?", "-map", "0:s?"].map(os));
     for index in 1..=text_subtitles.len() {
-        command.args(["-map", &format!("{index}:0")]);
+        arguments.push(os("-map"));
+        arguments.push(os(&format!("{index}:0")));
     }
-    if chapter_file.is_some() {
+    if segment.chapter_file.is_some() {
         let chapter_index = 1 + text_subtitles.len();
-        command.args(["-map_chapters", &chapter_index.to_string()]);
+        arguments.push(os("-map_chapters"));
+        arguments.push(os(&chapter_index.to_string()));
     } else {
-        command.args(["-map_chapters", "0"]);
+        arguments.extend(["-map_chapters", "0"].map(os));
     }
+    arguments.extend(["-c", "copy"].map(os));
     let text_codec = if mov_text { "mov_text" } else { "srt" };
-    command.args(["-c", "copy"]);
-    if image_count == 0 {
-        command.arg("-c:s").arg(text_codec);
+    if segment.image_subtitle_count == 0 {
+        arguments.push(os("-c:s"));
+        arguments.push(os(text_codec));
     } else {
-        for index in 0..image_count {
-            command.arg(format!("-c:s:{index}")).arg("copy");
+        for index in 0..segment.image_subtitle_count {
+            arguments.push(os(&format!("-c:s:{index}")));
+            arguments.push(os("copy"));
         }
         for offset in 0..text_subtitles.len() {
-            command
-                .arg(format!("-c:s:{}", image_count + offset))
-                .arg(text_codec);
+            arguments.push(os(&format!(
+                "-c:s:{}",
+                segment.image_subtitle_count + offset
+            )));
+            arguments.push(os(text_codec));
         }
     }
-    let status = command
-        .arg(&remuxed)
-        .output()
-        .map_err(|error| ApiError::ffmpeg(error.to_string()))?;
-    if !status.status.success() {
-        let _ = fs::remove_file(&remuxed);
-        return Err(ApiError::ffmpeg(
-            "Could not add the trimmed subtitles to the converted video.",
-        ));
+    arguments.push(os("-f"));
+    arguments.push(os(format));
+    arguments.push(output.as_os_str().to_os_string());
+    let command = redacted_remux_command(&arguments, partial, &output);
+    Some(RemuxPlan {
+        arguments,
+        output,
+        command,
+    })
+}
+
+pub(crate) fn remux_destination(partial: &Path) -> PathBuf {
+    let extension = partial
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .filter(|extension| !extension.is_empty())
+        .unwrap_or("mkv");
+    let stem = partial
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("output");
+    partial.with_file_name(format!("{stem}.remux.{extension}"))
+}
+
+fn redacted_remux_command(
+    arguments: &[std::ffi::OsString],
+    partial: &Path,
+    output: &Path,
+) -> String {
+    let mut parts = vec!["ffmpeg".to_owned()];
+    for argument in arguments {
+        if argument.as_os_str() == partial.as_os_str() || argument.as_os_str() == output.as_os_str()
+        {
+            parts.push("<output>".to_owned());
+        } else {
+            parts.push(argument.to_string_lossy().into_owned());
+        }
     }
-    replace_file_keep_inode(partial, &remuxed).map_err(|error| {
-        ApiError::ffmpeg(format!(
-            "Could not add the trimmed subtitles to the converted video: {error}"
-        ))
-    })?;
+    parts.join(" ")
+}
+
+fn publish_remux(partial: &Path, remuxed: &Path) -> io::Result<()> {
+    replace_file_keep_inode(partial, remuxed)?;
     let _ = fs::remove_file(remuxed);
     Ok(())
 }
 
-fn replace_file_keep_inode(target: &Path, source: &Path) -> std::io::Result<()> {
-    let bytes = fs::read(source)?;
-    let mut file = fs::OpenOptions::new()
+fn replace_file_keep_inode(target: &Path, source: &Path) -> io::Result<()> {
+    let mut input = fs::File::open(source)?;
+    let mut output = fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(target)?;
-    file.write_all(&bytes)?;
-    file.sync_all()?;
+    io::copy(&mut input, &mut output)?;
+    output.sync_all()?;
     Ok(())
+}
+
+struct ToolOutput {
+    success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+async fn run_sidecar(
+    app: &AppHandle,
+    job_id: Option<&str>,
+    binary: &str,
+    arguments: Vec<std::ffi::OsString>,
+) -> ApiResult<ToolOutput> {
+    let command = app
+        .shell()
+        .sidecar(binary)
+        .map_err(|_| ApiError::ffmpeg(format!("The {binary} tool is not available.")))?
+        .args(arguments)
+        .kill_on_drop(true);
+    if job_id.is_none() {
+        let output = command
+            .output()
+            .await
+            .map_err(|error| ApiError::ffmpeg(error.to_string()))?;
+        return Ok(ToolOutput {
+            success: output.status.success(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    let job_id = job_id.expect("a preparation job id");
+    let (mut receiver, child) = command
+        .spawn()
+        .map_err(|error| ApiError::ffmpeg(error.to_string()))?;
+    app.state::<JobManager>()
+        .attach_preparing(job_id, RunningProcess::from_shell(child))?;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut code = None;
+    while let Some(event) = receiver.recv().await {
+        match event {
+            CommandEvent::Stdout(line) => push_line(&mut stdout, &line),
+            CommandEvent::Stderr(line) => push_line(&mut stderr, &line),
+            CommandEvent::Terminated(payload) => code = payload.code,
+            CommandEvent::Error(_) => {}
+            _ => {}
+        }
+    }
+    let _ = app.state::<JobManager>().take_preparing_process(job_id);
+    if app.state::<JobManager>().is_cancelled(job_id) {
+        return Err(cancelled());
+    }
+    Ok(ToolOutput {
+        success: code == Some(0),
+        stdout: String::from_utf8_lossy(&stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr).into_owned(),
+    })
+}
+
+fn push_line(buffer: &mut Vec<u8>, line: &[u8]) {
+    buffer.extend_from_slice(line);
+    if !buffer.ends_with(b"\n") {
+        buffer.push(b'\n');
+    }
+}
+
+fn os(value: &str) -> std::ffi::OsString {
+    std::ffi::OsString::from(value)
+}
+
+fn cancelled() -> ApiError {
+    ApiError::new("cancelled", "The conversion was cancelled.")
+}
+
+fn keyframe_error(error: ApiError) -> ApiError {
+    if error.code == "cancelled" || error.message.contains("not available") {
+        error
+    } else {
+        ApiError::ffmpeg(COPY_START_UNAVAILABLE)
+    }
+}
+
+struct PreparationGuard<'a> {
+    jobs: tauri::State<'a, JobManager>,
+    job_id: String,
+}
+
+impl Drop for PreparationGuard<'_> {
+    fn drop(&mut self) {
+        self.jobs.end_preparation(&self.job_id);
+    }
 }
 
 fn selected_image_subtitles(job: &PendingJob) -> Vec<&super::SubtitleStream> {
@@ -571,39 +787,6 @@ fn write_file(path: &Path, contents: &str) -> ApiResult<PathBuf> {
         ApiError::ffmpeg(format!("Could not prepare the segment files: {error}"))
     })?;
     Ok(path.to_path_buf())
-}
-
-fn run_sidecar(binary: &str, arguments: &[&str], input: &Path) -> ApiResult<String> {
-    let output = Command::new(sidecar_path(binary)?)
-        .args(arguments)
-        .arg(input)
-        .output()
-        .map_err(|error| ApiError::ffmpeg(error.to_string()))?;
-    if !output.status.success() {
-        return Err(ApiError::ffmpeg(
-            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-fn sidecar_path(binary: &str) -> ApiResult<PathBuf> {
-    let name = format!("{binary}-{}", host_target_triple());
-    let candidates = [
-        std::env::current_exe()
-            .ok()
-            .and_then(|executable| executable.parent().map(|directory| directory.join(&name))),
-        Some(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("binaries")
-                .join(&name),
-        ),
-    ];
-    candidates
-        .into_iter()
-        .flatten()
-        .find(|path| path.is_file())
-        .ok_or_else(|| ApiError::ffmpeg(format!("The {binary} tool is not available.")))
 }
 
 fn sanitize(value: &str) -> String {
@@ -672,6 +855,7 @@ mod tests {
         parse_keyframe_times, parse_srt, watched_duration, write_srt, Cue,
     };
     use crate::ffmpeg::{ChapterMark, SegmentTrim};
+    use std::path::PathBuf;
 
     fn trim(start: f64, end: f64) -> Option<SegmentTrim> {
         Some(SegmentTrim {
@@ -759,5 +943,197 @@ mod tests {
         assert!(metadata.contains("START=7000\nEND=7800"));
         assert!(metadata.contains("title=C"));
         assert!(!metadata.contains("title=A"));
+    }
+
+    #[test]
+    fn keyframe_probe_reads_a_bounded_window_before_the_start() {
+        assert_eq!(super::keyframe_read_interval(7.3, 30.0), "0%7.3");
+        assert_eq!(super::keyframe_read_interval(90.0, 30.0), "60%90");
+        assert_eq!(super::keyframe_read_interval(0.0, 30.0), "0%0");
+    }
+
+    #[test]
+    fn remux_keeps_the_container_extension_and_names_the_muxer() {
+        use std::path::Path;
+
+        let partial = Path::new("/tmp/.vidra-partial-t.mkv");
+        let destination = super::remux_destination(partial);
+        assert_eq!(
+            destination
+                .extension()
+                .and_then(|extension| extension.to_str()),
+            Some("mkv")
+        );
+        assert!(destination.ends_with(".vidra-partial-t.remux.mkv"));
+        assert_eq!(
+            super::remux_destination(Path::new("/tmp/.vidra-partial-t.mp4"))
+                .extension()
+                .and_then(|extension| extension.to_str()),
+            Some("mp4")
+        );
+
+        let segment = subtitle_segment(Path::new("/tmp/vidra-segment/clipped.srt"));
+        let plan = super::remux_plan(partial, &segment, false).expect("remux plan");
+        let arguments = plan
+            .arguments
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(arguments.windows(2).any(|pair| pair == ["-f", "matroska"]));
+        assert!(arguments
+            .last()
+            .is_some_and(|argument| argument.ends_with(".remux.mkv")));
+        assert!(!arguments
+            .iter()
+            .any(|argument| argument.ends_with(".remux") && !argument.ends_with(".mkv")));
+        assert!(plan.command.contains("-f matroska"));
+        assert!(plan.command.contains("<output>"));
+        assert!(plan.command.contains("clipped.srt"));
+        assert!(!plan.command.contains(".vidra-partial-t.mkv"));
+
+        let mp4 = super::remux_plan(Path::new("/tmp/.vidra-partial-t.mp4"), &segment, true)
+            .expect("mp4 plan");
+        let mp4_arguments = mp4
+            .arguments
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(mp4_arguments.windows(2).any(|pair| pair == ["-f", "mp4"]));
+    }
+
+    #[test]
+    fn remux_text_subtitles_with_ffmpeg() {
+        use std::{fs, process::Command};
+
+        let Some(ffmpeg) = prepared_binary("ffmpeg") else {
+            if std::env::var("VIDRA_CORPUS_REQUIRED").ok().as_deref() == Some("1") {
+                panic!("FFmpeg is required to remux trimmed subtitles");
+            }
+            eprintln!("skipping subtitle remux: prepared FFmpeg sidecar is missing");
+            return;
+        };
+        let Some(ffprobe) = prepared_binary("ffprobe") else {
+            if std::env::var("VIDRA_CORPUS_REQUIRED").ok().as_deref() == Some("1") {
+                panic!("FFprobe is required to check a remuxed subtitle");
+            }
+            eprintln!("skipping subtitle remux: prepared FFprobe sidecar is missing");
+            return;
+        };
+
+        let directory = std::env::temp_dir().join(format!(
+            "vidra-remux-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&directory).expect("remux directory");
+        let source = directory.join("source.mkv");
+        let generated = Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=10:duration=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=channel_layout=mono:sample_rate=44100",
+                "-t",
+                "1",
+                "-c:v",
+                "mpeg4",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ])
+            .arg(&source)
+            .output()
+            .expect("ffmpeg should run");
+        assert!(
+            generated.status.success(),
+            "could not prepare a subtitle remux source\n{}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+
+        let partial = directory.join(".vidra-partial-t.mkv");
+        fs::copy(&source, &partial).expect("partial copy");
+        let subtitle = directory.join("clipped.srt");
+        fs::write(&subtitle, "1\n00:00:00,000 --> 00:00:00,400\nhello\n").expect("subtitle");
+        let segment = subtitle_segment(&subtitle);
+        let plan = super::remux_plan(&partial, &segment, false).expect("remux plan");
+        assert!(
+            plan.output
+                .extension()
+                .is_some_and(|extension| extension == "mkv"),
+            "FFmpeg was asked to mux {}",
+            plan.output.display()
+        );
+        let remuxed = Command::new(&ffmpeg)
+            .args(&plan.arguments)
+            .output()
+            .expect("ffmpeg remux");
+        assert!(
+            remuxed.status.success(),
+            "FFmpeg could not mux trimmed subtitles into {}\n{}",
+            plan.output.display(),
+            String::from_utf8_lossy(&remuxed.stderr)
+        );
+        super::publish_remux(&partial, &plan.output).expect("publish remux");
+        assert!(
+            !plan.output.exists(),
+            "the temporary remux file should be removed"
+        );
+
+        let probed = Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "s:0",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&partial)
+            .output()
+            .expect("ffprobe");
+        let codec = String::from_utf8_lossy(&probed.stdout);
+        assert!(
+            probed.status.success() && (codec.contains("subrip") || codec.contains("srt")),
+            "remuxed file has no text subtitle ({codec})"
+        );
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    fn subtitle_segment(subtitle: &std::path::Path) -> crate::jobs::PreparedSegment {
+        crate::jobs::PreparedSegment {
+            output_start: 0.0,
+            output_end: 1.0,
+            directory: subtitle
+                .parent()
+                .unwrap_or(std::path::Path::new("/tmp"))
+                .to_path_buf(),
+            chapter_file: None,
+            text_subtitle_files: vec![subtitle.to_path_buf()],
+            image_subtitle_count: 0,
+            remux_text_subtitles: true,
+        }
+    }
+
+    fn prepared_binary(name: &str) -> Option<PathBuf> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(format!(
+                "{name}-{}",
+                super::super::version::host_target_triple()
+            ));
+        path.is_file().then_some(path)
     }
 }

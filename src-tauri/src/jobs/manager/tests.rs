@@ -53,6 +53,8 @@ fn pending(id: &str) -> PendingJob {
             has_metadata: false,
         },
         ffmpeg_version: Some("ffmpeg test".to_owned()),
+        segment: None,
+        ffmpeg_command: None,
     }
 }
 
@@ -489,7 +491,9 @@ fn cancelling_a_queued_job_removes_only_that_job() {
     let cancelled = manager.cancel("two").unwrap();
     match cancelled {
         crate::jobs::CancelledJob::Pending(job) => assert_eq!(job.id, "two"),
-        crate::jobs::CancelledJob::Active { .. } => panic!("a queued job has no encoder"),
+        crate::jobs::CancelledJob::Active { .. } | crate::jobs::CancelledJob::Preparing => {
+            panic!("a queued job has no encoder")
+        }
     }
 
     assert_eq!(pending_id(manager.reserve_next().unwrap().unwrap()), "one");
@@ -536,7 +540,9 @@ fn cancelling_a_running_job_stops_it_and_keeps_the_slot_until_it_finishes() {
 
     match manager.cancel("running").unwrap() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
-        crate::jobs::CancelledJob::Pending(_) => panic!("the running job should be active"),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the running job should be active")
+        }
     }
 
     assert!(stopped.load(Ordering::Relaxed));
@@ -607,7 +613,9 @@ fn a_poisoned_lock_still_reports_cancellation() {
         .unwrap();
     match manager.cancel("running").unwrap() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
-        crate::jobs::CancelledJob::Pending(_) => panic!("the running job should be active"),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the running job should be active")
+        }
     }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _guard = manager.state.lock().unwrap();
@@ -737,7 +745,9 @@ fn pause_and_resume_bookkeeping_keeps_a_single_active_encoder() {
 
     match manager.cancel("active").unwrap() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
-        crate::jobs::CancelledJob::Pending(_) => panic!("the resumed job should be active"),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the resumed job should be active")
+        }
     }
     assert!(stopped.load(Ordering::Relaxed));
     let _ = sleep.0.wait();

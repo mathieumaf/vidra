@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { SegmentTrim, VideoCodec } from "../../types/media";
+import type { CopyStartStatus, SegmentTrim, VideoCodec } from "../../types/media";
 import {
   assessTrim,
+  COPY_START_UNAVAILABLE,
   durationKnown,
   formatTimestamp,
   INVALID_TIME,
@@ -13,6 +14,7 @@ type SegmentOptionsProps = {
   videoCodec: VideoCodec;
   trim: SegmentTrim | null;
   copyStartSeconds: number | null;
+  copyStartStatus: CopyStartStatus;
   mediaCount: number;
   disabled: boolean;
   onChange: (trim: SegmentTrim | null) => void;
@@ -26,6 +28,7 @@ export function SegmentOptions({
   videoCodec,
   trim,
   copyStartSeconds,
+  copyStartStatus,
   mediaCount,
   disabled,
   onChange,
@@ -38,10 +41,13 @@ export function SegmentOptions({
   const [error, setError] = useState<string | null>(null);
   const controlsDisabled = disabled || !known;
 
+  const lengthFailed = videoCodec === "copy" && trim !== null && copyStartStatus === "failed";
+
   useEffect(() => {
-    onError(controlsDisabled ? null : error);
+    const lookupError = lengthFailed ? COPY_START_UNAVAILABLE : null;
+    onError(controlsDisabled ? null : error ?? lookupError);
     return () => onError(null);
-  }, [controlsDisabled, error, onError]);
+  }, [controlsDisabled, error, lengthFailed, onError]);
 
   function report(next: SegmentTrim | null, message: string | null) {
     setError(message);
@@ -86,10 +92,10 @@ export function SegmentOptions({
     setDrafts(null);
   }
 
-  const outputStart = videoCodec === "copy" && copyStartSeconds !== null
+  const outputStart = videoCodec === "copy" && copyStartStatus === "ready" && copyStartSeconds !== null
     ? Math.min(copyStartSeconds, start)
     : start;
-  const lengthPending = videoCodec === "copy" && trim !== null && copyStartSeconds === null;
+  const lengthPending = videoCodec === "copy" && trim !== null && !lengthFailed && copyStartStatus !== "ready";
   const length = Math.max(0, end - outputStart);
   const startPercent = known ? (outputStart / durationSeconds) * 100 : 0;
   const endPercent = known ? (end / durationSeconds) * 100 : 100;
@@ -100,7 +106,7 @@ export function SegmentOptions({
         <div>
           <span className="section-label">SEGMENT</span>
           <strong>{trim ? "Convert a segment" : "Convert the whole video"}</strong>
-          <p>{segmentNote(videoCodec, known, trim, copyStartSeconds)}</p>
+          <p>{segmentNote(videoCodec, known, trim, copyStartSeconds, copyStartStatus)}</p>
         </div>
         <button
           type="button"
@@ -183,7 +189,7 @@ export function SegmentOptions({
         </label>
         <div className="segment-length">
           <span>Length</span>
-          <strong>{!known ? "Unknown" : lengthPending ? "Checking…" : formatTimestamp(length)}</strong>
+          <strong>{!known ? "Unknown" : lengthFailed ? "Unavailable" : lengthPending ? "Checking…" : formatTimestamp(length)}</strong>
         </div>
       </div>
 
@@ -200,11 +206,15 @@ function segmentNote(
   known: boolean,
   trim: SegmentTrim | null,
   copyStartSeconds: number | null,
+  copyStartStatus: CopyStartStatus,
 ): string {
   if (!known) {
     return "This video's duration is unknown, so Vidra converts the whole file.";
   }
-  if (videoCodec === "copy" && trim && copyStartSeconds !== null) {
+  if (videoCodec === "copy" && trim && copyStartStatus === "failed") {
+    return COPY_START_UNAVAILABLE;
+  }
+  if (videoCodec === "copy" && trim && copyStartStatus === "ready" && copyStartSeconds !== null) {
     const earlier = trim.startSeconds - copyStartSeconds;
     if (earlier > 0.05) {
       return `Original video can only start on a saved picture. This clip starts at ${formatTimestamp(copyStartSeconds)}, ${formatTimestamp(earlier)} before the time you chose, and lasts ${formatTimestamp(trim.endSeconds - copyStartSeconds)}.`;

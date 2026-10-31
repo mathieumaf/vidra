@@ -114,6 +114,8 @@ fn pending_job(id: &str, input: &Path, output: &Path) -> crate::jobs::PendingJob
         request: request(input, output),
         media: media_info(input),
         ffmpeg_version: Some("ffmpeg test".to_owned()),
+        segment: None,
+        ffmpeg_command: None,
     }
 }
 
@@ -182,7 +184,7 @@ fn effects(directory: &Path) -> Effects {
 
 fn run_drive<T>(
     effects: &mut Effects,
-    launch: impl FnMut(&crate::jobs::PendingJob, &partial::PartialOutput) -> Result<T, LaunchError>,
+    launch: impl FnMut(&mut crate::jobs::PendingJob, &partial::PartialOutput) -> Result<T, LaunchError>,
     watch: impl FnMut(T, super::WatchJob) -> Result<(), ApiError>,
 ) -> Result<(), ApiError> {
     let jobs = &effects.jobs;
@@ -687,7 +689,9 @@ fn resuming_a_paused_encode_does_not_start_another_one() {
     assert!(effects.jobs.reserve_next().unwrap().is_none());
     match effects.jobs.cancel("paused").unwrap() {
         crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
-        crate::jobs::CancelledJob::Pending(_) => panic!("the resumed job should be active"),
+        crate::jobs::CancelledJob::Pending(_) | crate::jobs::CancelledJob::Preparing => {
+            panic!("the resumed job should be active")
+        }
     }
     let _ = sleep.0.wait();
 }

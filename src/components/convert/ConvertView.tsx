@@ -7,7 +7,13 @@ import {
 import type { EncodingProfile } from "../../config/profiles";
 import { formatDuration, formatEta, formatFrameCount } from "../../lib/format";
 import { colorConversionNotice, type ColorConversionNotice } from "../../lib/color";
-import type { EncodeFinished, EncodeProgress, FfmpegStatus, MediaInfo } from "../../types/media";
+import type {
+  CopyStartStatus,
+  EncodeFinished,
+  EncodeProgress,
+  FfmpegStatus,
+  MediaInfo,
+} from "../../types/media";
 import type {
   AudioMode,
   AudioTrackMode,
@@ -46,6 +52,7 @@ type ConvertViewProps = {
   trackSelection: TrackSelection;
   trim: SegmentTrim | null;
   copyStartSeconds: number | null;
+  copyStartStatus: CopyStartStatus;
   segmentError: string | null;
   profiles: EncodingProfile[];
   selectedProfileId: string | null;
@@ -102,6 +109,7 @@ export function ConvertView({
   trackSelection,
   trim,
   copyStartSeconds,
+  copyStartStatus,
   segmentError,
   profiles,
   selectedProfileId,
@@ -170,7 +178,12 @@ export function ConvertView({
   }
 
   const colorNotice = colorConversionNotice(media.video, videoCodec);
-  const shownTrim = videoCodec === "copy" ? effectiveSegment(trim, copyStartSeconds) : trim;
+  const shownTrim = videoCodec === "copy"
+    ? (copyStartStatus === "ready" ? effectiveSegment(trim, copyStartSeconds) : null)
+    : trim;
+  const copyStartBlocksEncode = videoCodec === "copy"
+    && trim !== null
+    && copyStartStatus !== "ready";
 
   return (
     <div className="convert-view">
@@ -183,6 +196,7 @@ export function ConvertView({
             videoCodec={videoCodec}
             trim={trim}
             copyStartSeconds={copyStartSeconds}
+            copyStartStatus={copyStartStatus}
             mediaCount={mediaCount}
             disabled={!canEdit}
             onChange={onTrimChange}
@@ -334,7 +348,7 @@ export function ConvertView({
               className="primary-button"
               type="button"
               onClick={onStartEncoding}
-              disabled={!isReady || !isEncodingSupported || segmentError !== null}
+              disabled={!isReady || !isEncodingSupported || segmentError !== null || copyStartBlocksEncode}
             >
               {mediaCount > 1 ? `Choose folder and encode ${mediaCount} videos` : "Choose output and encode"} <span>→</span>
             </button>

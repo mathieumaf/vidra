@@ -165,6 +165,9 @@ export type SegmentTrim = {
   endSeconds: number;
 };
 
+/** Original-video keyframe lookup. Pending and failure are different states. */
+export type CopyStartStatus = "unknown" | "checking" | "ready" | "failed";
+
 export type EncodeQueueItem = {
   clientId: string;
   jobId: string | null;
@@ -173,6 +176,7 @@ export type EncodeQueueItem = {
   trackSelection: TrackSelection;
   trim: SegmentTrim | null;
   copyStartSeconds: number | null;
+  copyStartStatus: CopyStartStatus;
   outputPath: string | null;
   status: EncodeJobStatus;
   progress: EncodeProgress;

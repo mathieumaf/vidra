@@ -38,7 +38,8 @@ import {
   startEncodeQueue,
 } from "../services/encoding";
 import { listDestinationFiles, revealOutputFile, takeOpenedFiles } from "../services/files";
-import { assessTrim } from "../lib/trim";
+import { assessTrim, COPY_START_CHECKING, COPY_START_UNAVAILABLE } from "../lib/trim";
+import { useKeyframeLookup, type KeyframeTarget } from "./useKeyframeLookup";
 import type {
   AudioMode,
   EncodingSpeed,
@@ -364,7 +365,8 @@ export function useEncodingQueue({
           ...createQueueItem(probe.value, entry.settings),
           trackSelection: normalizedTrackSelection(probe.value, entry.trackSelection),
           trim: assessment.ok ? assessment.trim : null,
-          copyStartSeconds: entry.copyStartSeconds,
+          copyStartSeconds: null,
+          copyStartStatus: "unknown" as const,
         }];
       });
       const droppedEntries = entries.filter((_, index) => probes[index].status === "rejected");
@@ -397,6 +399,15 @@ export function useEncodingQueue({
     ));
     if (blocked) {
       setError(`${blocked.media.name} requires Original video because its Dolby Vision structure cannot be safely re-encoded.`);
+      return 0;
+    }
+    const unresolvedCopy = readyItems.find((item) => (
+      item.settings.videoCodec === "copy" && item.trim && item.copyStartStatus !== "ready"
+    ));
+    if (unresolvedCopy) {
+      setError(
+        unresolvedCopy.copyStartStatus === "failed" ? COPY_START_UNAVAILABLE : COPY_START_CHECKING,
+      );
       return 0;
     }
     const shouldStartQueue = activeItems.length === 0;
@@ -650,6 +661,12 @@ export function useEncodingQueue({
         ? {
             ...candidate,
             settings: { ...settings },
+            copyStartSeconds: candidate.settings.videoCodec === settings.videoCodec
+              ? candidate.copyStartSeconds
+              : null,
+            copyStartStatus: candidate.settings.videoCodec === settings.videoCodec
+              ? candidate.copyStartStatus
+              : "unknown",
             trackSelection: applyTrackDefaults
               ? defaultTrackSelection(candidate.media, settings)
               : candidate.trackSelection,
@@ -660,17 +677,25 @@ export function useEncodingQueue({
 
   function updateItemTrim(item: EncodeQueueItem, trim: SegmentTrim | null) {
     if (item.status !== "ready") return;
-    setItems((current) => current.map((candidate) => (
-      candidate.clientId === item.clientId
-        ? { ...candidate, trim, copyStartSeconds: null }
-        : candidate
-    )));
+    setItems((current) => current.map((candidate) => {
+      if (candidate.clientId !== item.clientId) return candidate;
+      const startChanged = candidate.trim?.startSeconds !== trim?.startSeconds
+        || (candidate.trim === null) !== (trim === null);
+      return {
+        ...candidate,
+        trim,
+        copyStartSeconds: startChanged ? null : candidate.copyStartSeconds,
+        copyStartStatus: startChanged ? "unknown" : candidate.copyStartStatus,
+      };
+    }));
   }
 
-  function setCopyStart(clientId: string, copyStartSeconds: number | null) {
-    setItems((current) => current.map((candidate) => (
-      candidate.clientId === clientId ? { ...candidate, copyStartSeconds } : candidate
-    )));
+  function keyframeStillMatches(item: EncodeQueueItem, target: KeyframeTarget): boolean {
+    return item.clientId === target.clientId
+      && item.status === "ready"
+      && item.settings.videoCodec === "copy"
+      && item.media.path === target.path
+      && item.trim?.startSeconds === target.startSeconds;
   }
 
   function updateItemTrackSelection(
@@ -722,6 +747,25 @@ export function useEncodingQueue({
     });
   }
 
+  useKeyframeLookup(
+    items,
+    (target) => {
+      setItems((current) => current.map((item) => (
+        keyframeStillMatches(item, target)
+          ? { ...item, copyStartSeconds: null, copyStartStatus: "checking" }
+          : item
+      )));
+    },
+    (target, result) => {
+      setItems((current) => current.map((item) => {
+        if (!keyframeStillMatches(item, target)) return item;
+        return result.status === "ready"
+          ? { ...item, copyStartSeconds: result.seconds, copyStartStatus: "ready" }
+          : { ...item, copyStartSeconds: null, copyStartStatus: "failed" };
+      }));
+    },
+  );
+
   function reset() {
     setItems([]);
     setSelectedClientId(null);
@@ -759,7 +803,6 @@ export function useEncodingQueue({
     selectItem,
     updateItemSettings,
     updateItemTrim,
-    setCopyStart,
     updateItemTrackSelection,
     reset,
     setError,
