@@ -21,6 +21,13 @@
   --icon-large: 24px;
   --icon-stroke: 1.8;
 
+  /* macOS window chrome. Points, equal to CSS pixels in the web view.
+     Keep in sync with src/config/windowChrome.ts and tauri.conf.json. */
+  --header-band-height: 52px;
+  --traffic-light-inset-x: 20px;
+  --sidebar-inline-padding: 12px;
+  --sidebar-header-content-inset: 90px;
+
   /* Spacing */
   --space-1: 4px;
   --space-2: 8px;

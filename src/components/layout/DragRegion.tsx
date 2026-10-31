@@ -1,13 +1,14 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type DragRegionProps = {
   className: string;
+  children?: ReactNode;
 };
 
 const appWindow = getCurrentWindow();
 
-export function DragRegion({ className }: DragRegionProps) {
+export function DragRegion({ className, children }: DragRegionProps) {
   function handleMouseDown(event: MouseEvent<HTMLDivElement>) {
     if (event.buttons !== 1) return;
 
@@ -20,5 +21,13 @@ export function DragRegion({ className }: DragRegionProps) {
     });
   }
 
-  return <div className={className} onMouseDown={handleMouseDown} aria-hidden="true" />;
+  return (
+    <div
+      className={className}
+      onMouseDown={handleMouseDown}
+      {...(children ? {} : { "aria-hidden": true })}
+    >
+      {children}
+    </div>
+  );
 }

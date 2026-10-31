@@ -2,7 +2,7 @@
   width: 100vw;
   height: 100vh;
   display: grid;
-  grid-template-rows: 42px minmax(0, 1fr);
+  grid-template-rows: var(--header-band-height) minmax(0, 1fr);
   overflow: hidden;
   background: var(--canvas);
   -webkit-user-select: none;
