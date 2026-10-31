@@ -548,6 +548,77 @@ fn cancelling_a_running_job_stops_it_and_keeps_the_slot_until_it_finishes() {
 }
 
 #[test]
+fn attaching_to_a_missing_or_different_job_stops_the_encoder() {
+    use crate::jobs::process::RunningProcess;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    let manager = JobManager::default();
+    let stopped = Arc::new(AtomicUsize::new(0));
+    let flag = Arc::clone(&stopped);
+    let error = manager
+        .attach_running(
+            "missing",
+            RunningProcess::from_stop(7, move || {
+                flag.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "job_state_error");
+    assert!(error.message.contains("unavailable"));
+    assert_eq!(stopped.load(Ordering::Relaxed), 1);
+
+    manager.append(vec![pending("active")]).unwrap();
+    assert_eq!(
+        pending_id(manager.reserve_next().unwrap().unwrap()),
+        "active"
+    );
+    let flag = Arc::clone(&stopped);
+    let error = manager
+        .attach_running(
+            "other",
+            RunningProcess::from_stop(8, move || {
+                flag.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }),
+        )
+        .unwrap_err();
+    assert!(error.message.contains("unexpected"));
+    assert_eq!(stopped.load(Ordering::Relaxed), 2);
+    assert!(manager.reserve_next().unwrap().is_none());
+}
+
+#[test]
+fn a_poisoned_lock_still_reports_cancellation() {
+    let manager = JobManager::default();
+    manager.append(vec![pending("running")]).unwrap();
+    assert_eq!(
+        pending_id(manager.reserve_next().unwrap().unwrap()),
+        "running"
+    );
+    manager
+        .attach_running(
+            "running",
+            crate::jobs::process::RunningProcess::from_stop(4, || Ok(())),
+        )
+        .unwrap();
+    match manager.cancel("running").unwrap() {
+        crate::jobs::CancelledJob::Active { process } => process.stop().unwrap(),
+        crate::jobs::CancelledJob::Pending(_) => panic!("the running job should be active"),
+    }
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = manager.state.lock().unwrap();
+        panic!("poison the queue lock");
+    }));
+
+    assert!(manager.take_cancelled("running"));
+    assert!(!manager.take_cancelled("running"));
+}
+
+#[test]
 fn cancelling_before_the_process_exists_leaves_the_job_running() {
     let manager = JobManager::default();
     manager.append(vec![pending("starting")]).unwrap();

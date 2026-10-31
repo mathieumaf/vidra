@@ -8,6 +8,13 @@ All notable changes to Vidra are documented in this file.
 
 - Choose an optional start and end time before conversion. The output contains that segment, and progress, the estimated time remaining, and history use the real output length. Re-encoded video starts and ends on the selected frames. Original video is copied unchanged, so it starts on the previous saved picture, which can be several seconds earlier, and still ends at the selected time. Chapters and text subtitles are moved onto that timeline and clipped to the file. The source file is not modified.
 
+### Fixed
+
+- Confirm replacement only when the chosen output name is already in the destination folder. Choosing a new name does not replace a file that appears later.
+- Reject a source that cannot be read before encoding starts, and leave that file unchanged.
+- Explain when the destination runs out of space, the destination volume is unavailable, or a source or destination file disappears during a conversion.
+- Stop an encoder that could not be tracked, remove its unfinished file, and continue with the next queued video. A cancelled conversion stays cancelled even if the queue lock was interrupted.
+
 ## 0.2.0-beta.1 - 2026-10-25
 
 Prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.1`. Windows, Linux, and Intel Mac builds are not included.

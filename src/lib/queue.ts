@@ -6,7 +6,7 @@ import type {
   MediaInfo,
   TrackSelection,
 } from "../types/media";
-import { defaultOutputName } from "./format";
+import { defaultOutputName, outputFileName } from "./format";
 
 export const TERMINAL_JOB_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
@@ -74,6 +74,22 @@ export type BatchOutputPlan = {
   paths: string[];
   renamedCount: number;
 };
+
+export function outputParentDirectory(path: string): string | null {
+  const separator = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (separator < 0) return null;
+  if (separator === 0) return path.startsWith("/") ? "/" : null;
+  return path.slice(0, separator);
+}
+
+/** A save dialog confirms replacement only for a name that is already in the folder. */
+export function replacementWasConfirmed(
+  existingNames: readonly string[],
+  outputPath: string,
+): boolean {
+  const name = outputFileName(outputPath);
+  return name.length > 0 && existingNames.includes(name);
+}
 
 export async function batchOutputPaths(
   items: EncodeQueueItem[],

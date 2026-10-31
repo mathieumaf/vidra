@@ -809,7 +809,570 @@ fn cancelling_a_running_job_stops_the_encoder_and_finish_removes_the_partial() {
         .iter()
         .any(|name| name.contains("running")));
     assert_eq!(fs::read(&output).unwrap(), b"original destination");
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
     assert!(session.jobs.reserve_next().unwrap().is_none());
+}
+
+#[test]
+fn a_missing_destination_volume_fails_without_touching_the_source() {
+    let directory = TempDir::new("missing-volume");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let volume = directory.path().join("ejected");
+    fs::create_dir(&volume).unwrap();
+    let output = volume.join("clip-vidra.mp4");
+    let next_output = directory.path().join("next-vidra.mp4");
+    session
+        .jobs
+        .append(vec![
+            pending_job("job-1", &input, &output),
+            pending_job("job-2", &input, &next_output),
+        ])
+        .unwrap();
+    fs::remove_dir_all(&volume).unwrap();
+    let launches = Cell::new(0);
+    // macOS reaches this directory through /var, which resolves to /private/var.
+    let root = directory.path().canonicalize().unwrap();
+
+    run_drive(
+        &mut session,
+        |_job, partial| {
+            launches.set(launches.get() + 1);
+            assert!(partial.path.starts_with(&root));
+            assert!(!partial.path.starts_with(root.join("ejected")));
+            Ok(())
+        },
+        |_spawned, watched| {
+            assert_eq!(watched.job_id, "job-2");
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(launches.get(), 1);
+    assert_eq!(session.finished[0].job_id, "job-1");
+    assert_eq!(session.finished[0].status, "failed");
+    assert!(session.finished[0]
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("not accessible"));
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    assert!(!next_output.exists());
+    assert!(partial_names(directory.path())
+        .iter()
+        .all(|name| !name.contains("job-1")));
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_source_fails_before_launch_and_stays_unchanged() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = TempDir::new("unreadable-source");
+    let mut session = effects(directory.path());
+    let blocked = write_source(directory.path(), "blocked.mov");
+    let readable = write_source(directory.path(), "readable.mov");
+    let mut permissions = fs::metadata(&blocked).unwrap().permissions();
+    permissions.set_mode(0o000);
+    fs::set_permissions(&blocked, permissions).unwrap();
+    let _restore = ModeRestore {
+        path: blocked.clone(),
+        mode: 0o644,
+    };
+    if fs::File::open(&blocked).is_ok() {
+        return;
+    }
+    session
+        .jobs
+        .append(vec![
+            pending_job(
+                "job-1",
+                &blocked,
+                &directory.path().join("blocked-vidra.mp4"),
+            ),
+            pending_job(
+                "job-2",
+                &readable,
+                &directory.path().join("readable-vidra.mp4"),
+            ),
+        ])
+        .unwrap();
+    let launches = Cell::new(0);
+
+    run_drive(
+        &mut session,
+        |_job, _partial| {
+            launches.set(launches.get() + 1);
+            Ok(())
+        },
+        |_spawned, watched| {
+            assert_eq!(watched.job_id, "job-2");
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(launches.get(), 1);
+    let message = session.finished[0].error.as_deref().unwrap();
+    assert!(message.contains("cannot be read"));
+    assert!(message.contains("permission"));
+    assert_eq!(
+        fs::metadata(&blocked).unwrap().len(),
+        b"source-media".len() as u64
+    );
+    assert_eq!(fs::read(&readable).unwrap(), b"source-media");
+    assert!(!directory.path().join("blocked-vidra.mp4").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn enqueue_rejects_an_unreadable_input_before_probe() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = TempDir::new("unreadable-enqueue");
+    let input = write_source(directory.path(), "clip.mov");
+    let mut permissions = fs::metadata(&input).unwrap().permissions();
+    permissions.set_mode(0o000);
+    fs::set_permissions(&input, permissions).unwrap();
+    let _restore = ModeRestore {
+        path: input.clone(),
+        mode: 0o644,
+    };
+    if fs::File::open(&input).is_ok() {
+        return;
+    }
+    let jobs = JobManager::default();
+    let trace = trace_enqueue(
+        &jobs,
+        vec![request(&input, &directory.path().join("clip-vidra.mp4"))],
+        |_| unreachable!("probe"),
+        |_, _| unreachable!("disk"),
+    );
+
+    let error = trace
+        .result
+        .expect_err("an unreadable input should stop enqueue");
+    assert_eq!(error.code, "invalid_input");
+    assert!(error.message.contains("cannot be read"));
+    assert!(trace.steps.is_empty());
+    assert!(jobs.reserve_next().unwrap().is_none());
+    assert_eq!(
+        fs::metadata(&input).unwrap().len(),
+        b"source-media".len() as u64
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_read_only_destination_fails_clearly_and_the_next_job_starts() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = TempDir::new("read-only-dest");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let locked = directory.path().join("locked");
+    fs::create_dir(&locked).unwrap();
+    let blocked_output = locked.join("clip-vidra.mp4");
+    let next_output = directory.path().join("next-vidra.mp4");
+    session
+        .jobs
+        .append(vec![
+            pending_job("job-1", &input, &blocked_output),
+            pending_job("job-2", &input, &next_output),
+        ])
+        .unwrap();
+    let mut permissions = fs::metadata(&locked).unwrap().permissions();
+    permissions.set_mode(0o555);
+    fs::set_permissions(&locked, permissions).unwrap();
+    let _restore = ModeRestore {
+        path: locked,
+        mode: 0o755,
+    };
+    let launches = Cell::new(0);
+
+    run_drive(
+        &mut session,
+        |_job, _partial| {
+            launches.set(launches.get() + 1);
+            Ok(())
+        },
+        |_spawned, watched| {
+            assert_eq!(watched.job_id, "job-2");
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(launches.get(), 1);
+    let message = session.finished[0].error.as_deref().unwrap();
+    assert!(
+        message.contains("cannot be written") || message.contains("read-only"),
+        "{message}"
+    );
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    assert!(!blocked_output.exists());
+    assert!(!next_output.exists());
+}
+
+#[test]
+fn a_destination_that_appears_before_start_is_not_replaced() {
+    let directory = TempDir::new("appeared-before");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let output = directory.path().join("clip-vidra.mp4");
+    let next_output = directory.path().join("next-vidra.mp4");
+    session
+        .jobs
+        .append(vec![
+            pending_job("job-1", &input, &output),
+            pending_job("job-2", &input, &next_output),
+        ])
+        .unwrap();
+    fs::write(&output, b"appeared").unwrap();
+    let launches = Cell::new(0);
+
+    run_drive(
+        &mut session,
+        |_job, _partial| {
+            launches.set(launches.get() + 1);
+            Ok(())
+        },
+        |_spawned, watched| {
+            assert_eq!(watched.job_id, "job-2");
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(launches.get(), 1);
+    assert_eq!(session.finished[0].status, "failed");
+    assert!(session.finished[0]
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("already uses"));
+    assert_eq!(fs::read(&output).unwrap(), b"appeared");
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    assert!(partial_names(directory.path())
+        .iter()
+        .all(|name| !name.contains("job-1")));
+}
+
+#[test]
+fn a_confirmed_replacement_is_published_only_after_success() {
+    let directory = TempDir::new("replace-success");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let output = directory.path().join("clip-vidra.mp4");
+    fs::write(&output, b"original destination").unwrap();
+    let mut job = pending_job("job", &input, &output);
+    job.request.replace_existing = true;
+    session.jobs.append(vec![job]).unwrap();
+    let captured = RefCell::new(None);
+
+    run_drive(
+        &mut session,
+        |_job, partial| {
+            fs::write(&partial.path, b"encoded-bytes").unwrap();
+            Ok(())
+        },
+        |_spawned, watched| {
+            *captured.borrow_mut() = Some(watched);
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    let watched = captured.into_inner().expect("the encode should start");
+    assert!(watched.replace_identity.is_some());
+    assert_eq!(fs::read(&output).unwrap(), b"original destination");
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+
+    finish_logged(
+        &mut session,
+        *watched.job,
+        watched.partial,
+        Some(0),
+        watched.replace_identity,
+        "",
+    );
+
+    assert_eq!(session.finished[0].status, "completed");
+    assert!(session.finished[0].error.is_none());
+    assert_eq!(fs::read(&output).unwrap(), b"encoded-bytes");
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    assert!(partial_names(directory.path()).is_empty());
+}
+
+#[test]
+fn a_failed_or_cancelled_encode_does_not_replace_a_confirmed_destination() {
+    let cases = [
+        (Some(1), false, "No space left on device\n", "free space"),
+        (
+            Some(1),
+            false,
+            "av_interleaved_write_frame(): Input/output error\n",
+            "volume is unavailable",
+        ),
+        (
+            Some(1),
+            false,
+            "/clip.mov: No such file or directory\n",
+            "no longer available",
+        ),
+        (Some(0), true, "", ""),
+    ];
+
+    for (exit_code, cancelled, log, message) in cases {
+        let directory = TempDir::new("replace-failure");
+        let mut session = effects(directory.path());
+        let input = write_source(directory.path(), "clip.mov");
+        let output = directory.path().join("clip-vidra.mp4");
+        fs::write(&output, b"original destination").unwrap();
+        let mut job = pending_job("job", &input, &output);
+        job.request.replace_existing = true;
+        session.jobs.append(vec![job]).unwrap();
+        let captured = RefCell::new(None);
+        run_drive(
+            &mut session,
+            |_job, partial| {
+                fs::write(&partial.path, b"unfinished video").unwrap();
+                Ok(())
+            },
+            |_spawned, watched| {
+                *captured.borrow_mut() = Some(watched);
+                Ok(())
+            },
+        )
+        .unwrap();
+        let watched = captured.into_inner().expect("the encode should start");
+        let partial = watched.partial.clone();
+        if cancelled {
+            session
+                .jobs
+                .attach_running(&watched.job.id, RunningProcess::from_stop(4, || Ok(())))
+                .unwrap();
+            cancel_job(&session.jobs, &watched.job.id, |_| Ok(())).unwrap();
+        }
+
+        finish_logged(
+            &mut session,
+            *watched.job,
+            partial.clone(),
+            exit_code,
+            watched.replace_identity,
+            log,
+        );
+
+        assert_eq!(fs::read(&output).unwrap(), b"original destination");
+        assert_eq!(fs::read(&input).unwrap(), b"source-media");
+        assert!(!partial.path.exists());
+        if cancelled {
+            assert_eq!(session.finished[0].status, "cancelled");
+            assert!(session.finished[0].error.is_none());
+        } else {
+            assert_eq!(session.finished[0].status, "failed");
+            assert!(session.finished[0]
+                .error
+                .as_deref()
+                .unwrap()
+                .contains(message));
+            assert!(session.finished[0].diagnostic.is_some());
+        }
+    }
+}
+
+#[test]
+fn an_unconfirmed_file_that_appears_during_the_encode_is_not_replaced() {
+    let directory = TempDir::new("appeared-during");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let output = directory.path().join("clip-vidra.mp4");
+    session
+        .jobs
+        .append(vec![pending_job("job", &input, &output)])
+        .unwrap();
+    let captured = RefCell::new(None);
+
+    run_drive(
+        &mut session,
+        |_job, partial| {
+            fs::write(&output, b"appeared").unwrap();
+            fs::write(&partial.path, b"encoded-bytes").unwrap();
+            Ok(())
+        },
+        |_spawned, watched| {
+            assert!(watched.replace_identity.is_none());
+            *captured.borrow_mut() = Some(watched);
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    let watched = captured.into_inner().expect("the encode should start");
+    finish_logged(
+        &mut session,
+        *watched.job,
+        watched.partial,
+        Some(0),
+        None,
+        "",
+    );
+
+    assert_eq!(session.finished[0].status, "completed");
+    assert_eq!(fs::read(&output).unwrap(), b"appeared");
+    assert_eq!(
+        fs::read(directory.path().join("clip-vidra-2.mp4")).unwrap(),
+        b"encoded-bytes"
+    );
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    assert!(partial_names(directory.path()).is_empty());
+}
+
+#[test]
+fn an_encoder_that_cannot_be_watched_is_cleaned_up_and_the_queue_continues() {
+    let directory = TempDir::new("unwatched");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let first_output = directory.path().join("first-vidra.mp4");
+    let second_output = directory.path().join("second-vidra.mp4");
+    session
+        .jobs
+        .append(vec![
+            pending_job("job-1", &input, &first_output),
+            pending_job("job-2", &input, &second_output),
+        ])
+        .unwrap();
+    let launches = Cell::new(0);
+
+    run_drive(
+        &mut session,
+        |job, partial| {
+            launches.set(launches.get() + 1);
+            assert!(partial.path.exists());
+            if job.id == "job-1" {
+                fs::write(&partial.path, b"unfinished video").unwrap();
+            }
+            Ok(())
+        },
+        |_spawned, watched| {
+            if watched.job_id == "job-1" {
+                Err(ApiError::new(
+                    "job_state_error",
+                    "The conversion could not be started safely.",
+                ))
+            } else {
+                assert_eq!(watched.job_id, "job-2");
+                Ok(())
+            }
+        },
+    )
+    .unwrap();
+
+    assert_eq!(launches.get(), 2);
+    assert_eq!(session.finished[0].status, "failed");
+    assert_eq!(
+        session.finished[0].error.as_deref(),
+        Some("The conversion could not be started safely.")
+    );
+    assert!(!first_output.exists());
+    assert!(!second_output.exists());
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    assert!(partial_names(directory.path())
+        .iter()
+        .all(|name| !name.contains("job-1")));
+    assert!(partial_names(directory.path())
+        .iter()
+        .any(|name| name.contains("job-2")));
+}
+
+#[test]
+fn restart_removes_an_interrupted_partial_and_keeps_the_source_and_destination() {
+    let directory = TempDir::new("restart");
+    let input = write_source(directory.path(), "clip.mov");
+    let output = directory.path().join("clip-vidra.mp4");
+    fs::write(&output, b"original destination").unwrap();
+    let queued_output = directory.path().join("queued-vidra.mp4");
+    fs::write(&queued_output, b"still queued").unwrap();
+    let partial = partial::create_partial(
+        &output,
+        "interrupted",
+        "mp4",
+        &[],
+        std::slice::from_ref(&input),
+    )
+    .unwrap();
+    fs::write(&partial.path, b"interrupted").unwrap();
+    let ledger_path = directory.path().join("partials.json");
+    PartialLedger::open(ledger_path.clone())
+        .record(&partial)
+        .unwrap();
+
+    PartialLedger::open(ledger_path).recover_stale();
+
+    assert!(!partial.path.exists());
+    assert_eq!(fs::read(&output).unwrap(), b"original destination");
+    assert_eq!(fs::read(&queued_output).unwrap(), b"still queued");
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    assert!(partial_names(directory.path()).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn cancelling_a_paused_job_removes_the_partial_and_keeps_the_source() {
+    let directory = TempDir::new("cancel-paused");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let output = directory.path().join("clip-vidra.mp4");
+    fs::write(&output, b"original destination").unwrap();
+    session
+        .jobs
+        .append(vec![pending_job("paused", &input, &output)])
+        .unwrap();
+    let job = match session.jobs.reserve_next().unwrap().unwrap() {
+        ReservedJob::Pending(job) => job,
+        ReservedJob::Resumed(_) => panic!("the job should start pending"),
+    };
+    let partial =
+        partial::create_partial(&output, &job.id, "mp4", &[], std::slice::from_ref(&input))
+            .unwrap();
+    fs::write(&partial.path, b"unfinished video").unwrap();
+    session.ledger.record(&partial).unwrap();
+    session.jobs.set_partial(&job.id, partial.clone()).unwrap();
+    let mut sleep =
+        crate::jobs::process::ChildGuard(Command::new("sleep").arg("30").spawn().unwrap());
+    let process_id = sleep.0.id();
+    session
+        .jobs
+        .attach_running(
+            &job.id,
+            RunningProcess::from_stop(process_id, move || {
+                // SAFETY: the PID belongs to the sleep process spawned above.
+                let _ = unsafe { libc::kill(process_id as libc::pid_t, libc::SIGKILL) };
+                Ok(())
+            }),
+        )
+        .unwrap();
+    session.jobs.set_paused(&job.id, true).unwrap();
+
+    cancel_job(&session.jobs, &job.id, |_| {
+        unreachable!("a paused cancel does not emit yet")
+    })
+    .unwrap();
+
+    assert!(partial.path.exists());
+    assert_eq!(fs::read(&output).unwrap(), b"original destination");
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
+    let _ = sleep.0.wait();
+
+    finish_encode(&mut session, *job, partial, Some(0));
+
+    assert_eq!(session.finished[0].status, "cancelled");
+    assert!(session.finished[0].error.is_none());
+    assert!(partial_names(directory.path()).is_empty());
+    assert_eq!(fs::read(&output).unwrap(), b"original destination");
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
 }
 
 #[test]
@@ -869,11 +1432,42 @@ fn finish_maps_exit_codes_to_queue_status_and_cleans_the_partial() {
     }
 }
 
+struct ModeRestore {
+    path: PathBuf,
+    mode: u32,
+}
+
+impl Drop for ModeRestore {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let Ok(metadata) = fs::metadata(&self.path) else {
+                return;
+            };
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(self.mode);
+            let _ = fs::set_permissions(&self.path, permissions);
+        }
+    }
+}
+
 fn finish_encode(
     session: &mut Effects,
     job: crate::jobs::PendingJob,
     partial: partial::PartialOutput,
     exit_code: Option<i32>,
+) {
+    finish_logged(session, job, partial, exit_code, None, "");
+}
+
+fn finish_logged(
+    session: &mut Effects,
+    job: crate::jobs::PendingJob,
+    partial: partial::PartialOutput,
+    exit_code: Option<i32>,
+    replace_identity: Option<partial::DestinationIdentity>,
+    log: &str,
 ) {
     let jobs = &session.jobs;
     let history = &session.history;
@@ -895,6 +1489,10 @@ fn finish_encode(
         history: &mut history_event,
     };
     let history = crate::history::HistoryDraft::from_job(&job, 1);
+    let mut bounded = BoundedLog::default();
+    if !log.is_empty() {
+        bounded.push(log);
+    }
     finish_with(
         &state,
         &mut emits,
@@ -904,8 +1502,8 @@ fn finish_encode(
             history,
             job: Box::new(job),
             partial,
-            replace_identity: None,
-            log: BoundedLog::default(),
+            replace_identity,
+            log: bounded,
             exit_code,
         },
     );

@@ -17,6 +17,8 @@ import {
   defaultTrackSelection,
   emptyProgress,
   normalizedTrackSelection,
+  outputParentDirectory,
+  replacementWasConfirmed,
   TERMINAL_JOB_STATUSES,
 } from "../lib/queue";
 import {
@@ -422,8 +424,22 @@ export function useEncodingQueue({
         filters: [{ name: container.filterName, extensions: [container.extension] }],
       });
       if (!outputPath) return 0;
+      const directory = outputParentDirectory(outputPath);
+      if (!directory) {
+        setError("Choose a file inside a destination folder.");
+        return 0;
+      }
+      let existingNames: string[];
+      try {
+        existingNames = await listDestinationFiles(directory);
+      } catch (destinationError) {
+        setError(errorMessage(destinationError));
+        return 0;
+      }
       outputPaths = [outputPath];
-      replaceExisting = true;
+      // The save dialog asks before replacing a file that is already there.
+      // A new name is not permission to replace a file that appears later.
+      replaceExisting = replacementWasConfirmed(existingNames, outputPath);
     } else {
       const directory = await open({
         multiple: false,
