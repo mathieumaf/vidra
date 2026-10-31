@@ -14,33 +14,18 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--sidebar-inline-padding) 14px;
+  padding: 0 12px 14px;
   border-right: 1px solid #dde2dd;
   background: var(--sidebar);
 }
 
-.sidebar-header, .native-titlebar {
+.window-drag-region, .native-titlebar {
   cursor: default;
-  border-bottom: 1px solid rgba(226, 230, 226, 0.65);
 }
-.sidebar-header {
-  height: var(--header-band-height);
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  min-width: 0;
-  margin-inline: calc(var(--sidebar-inline-padding) * -1);
-  padding-left: var(--sidebar-header-content-inset);
-  padding-right: var(--sidebar-inline-padding);
-}
-.native-titlebar {
-  height: var(--header-band-height);
-  min-height: var(--header-band-height);
-  background: rgba(250, 251, 249, 0.96);
-}
+.window-drag-region { height: 42px; flex: 0 0 auto; }
+.native-titlebar { min-height: 42px; border-bottom: 1px solid rgba(226, 230, 226, 0.65); background: rgba(250, 251, 249, 0.96); }
 
-.brand { min-width: 0; display: flex; align-items: center; gap: 10px; font-size: var(--text-title); font-weight: var(--weight-bold); letter-spacing: -0.02em; }
-.brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand { height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: var(--text-title); font-weight: var(--weight-bold); letter-spacing: -0.02em; }
 .brand-mark { width: 32px; height: 32px; display: block; flex: 0 0 auto; }
 
 .new-conversion {
@@ -78,7 +63,7 @@ nav button.active { color: #1e5f43; background: #ddeae2; font-weight: var(--weig
 .engine-status.ready .status-dot { background: #36a56f; box-shadow: 0 0 0 3px rgba(54, 165, 111, 0.1); }
 .engine-status.unavailable .status-dot { background: #c86156; }
 
-.main-panel { min-width: 0; min-height: 0; display: grid; grid-template-rows: var(--header-band-height) 62px minmax(0, 1fr); background: var(--canvas); }
+.main-panel { min-width: 0; min-height: 0; display: grid; grid-template-rows: 42px 62px minmax(0, 1fr); background: var(--canvas); }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 11px 26px 10px; border-bottom: 1px solid #e7eae7; background: rgba(250, 251, 249, 0.92); }
 .toolbar h1 { margin: 0; font-size: var(--text-title); font-weight: var(--weight-bold); letter-spacing: -0.025em; }
 .toolbar p { max-width: 540px; margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7f8882; font-size: var(--text-small); }

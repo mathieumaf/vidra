@@ -25,12 +25,11 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside className="sidebar">
-      <DragRegion className="sidebar-header">
-        <div className="brand">
-          <img className="brand-mark" src={vidraMark} alt="" />
-          <span>Vidra</span>
-        </div>
-      </DragRegion>
+      <DragRegion className="window-drag-region" />
+      <div className="brand">
+        <img className="brand-mark" src={vidraMark} alt="" />
+        <span>Vidra</span>
+      </div>
 
       <button
         className="new-conversion"

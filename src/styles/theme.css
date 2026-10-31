@@ -39,7 +39,6 @@
 :root[data-theme="dark"] .toolbar { background: rgba(18, 23, 20, 0.94); }
 
 :root[data-theme="dark"] .sidebar,
-:root[data-theme="dark"] .sidebar-header,
 :root[data-theme="dark"] .native-titlebar,
 :root[data-theme="dark"] .toolbar,
 :root[data-theme="dark"] .conversion-actions,
