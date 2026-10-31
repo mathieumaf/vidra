@@ -21,6 +21,19 @@ ignore = [
     { id = "RUSTSEC-2026-0371", reason = "zbus_names 4 was folded into zbus 6 and has no patched release. It is only present because Tauri's Linux opener and single-instance plugins depend on zbus 5. This is an unmaintained-crate notice, not a vulnerability advisory. Remove this ignore when those plugins move to zbus 6." },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5 was folded into zbus 6 and has no patched release. It is only present because Tauri's Linux opener and single-instance plugins depend on zbus 5. This is an unmaintained-crate notice, not a vulnerability advisory. Remove this ignore when those plugins move to zbus 6." },
 ]
+# RUSTSEC-2024-0429 (GHSA-wrw7-89jp-8q8g) is unsoundness in glib::VariantStrIter
+# for glib 0.15.0 through 0.19.x. The patched release is glib 0.20.0, and 0.18.5
+# is the last 0.18 release. Tauri 2.12.5 requires gtk 0.18, which requires glib
+# 0.18, so 0.20.0 does not fit this graph. Every current Tauri 2 release and the
+# 3.0 alphas still use that gtk 0.18 dependency. glib is MIT and is linked only
+# into the Linux GTK backend. The Apple Silicon application does not include it.
+# VariantStrIter is constructed only by Variant::array_iter_str. Vidra, Tauri
+# 2.12.5, wry 0.57.0, the gtk-rs 0.18 crates in this lockfile, and the Tauri
+# plugins here do not call that method, so the unsound iterator is not on a
+# reachable path. cargo-deny 0.20.2 reports unsound advisories for workspace
+# crates only, so this transitive crate does not fail the advisory check.
+# Listing the id in ignore would be an unused ignore and would warn. Remove
+# this note when Tauri no longer depends on gtk-rs 0.18.
 
 [licenses]
 version = 2
