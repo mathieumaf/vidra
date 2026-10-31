@@ -7,6 +7,7 @@ import type {
   MediaInfo,
   OutputContainer,
   QueuedEncode,
+  SegmentTrim,
   VideoCodec,
 } from "../types/media";
 
@@ -31,6 +32,7 @@ export type EncodeRequest = {
   preserveChapters: boolean;
   replaceExisting: boolean;
   allowInsufficientDiskSpace: boolean;
+  trim: SegmentTrim | null;
 };
 
 export function getFfmpegStatus(): Promise<FfmpegStatus> {

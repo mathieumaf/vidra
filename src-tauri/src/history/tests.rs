@@ -50,6 +50,8 @@ fn draft(id: usize, directory: &std::path::Path) -> HistoryDraft {
             preserve_metadata: true,
             preserve_chapters: true,
         },
+        trim_start_seconds: None,
+        trim_end_seconds: None,
     }
 }
 
@@ -203,6 +205,32 @@ fn history_without_resolution_defaults_to_original() {
     assert!(entries[0].settings.preserve_metadata);
     assert!(entries[0].settings.preserve_chapters);
     assert!(entries[0].diagnostic.is_none());
+    assert_eq!(entries[0].trim_start_seconds, None);
+    assert_eq!(entries[0].trim_end_seconds, None);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn trimmed_conversions_record_their_bounds() {
+    let directory = test_directory();
+    fs::create_dir_all(&directory).unwrap();
+    let history_path = directory.join("history.json");
+    let manager = HistoryManager::new(history_path.clone());
+    let mut item = draft(1, &directory);
+    item.media_duration_seconds = 90.0;
+    item.trim_start_seconds = Some(12.5);
+    item.trim_end_seconds = Some(42.5);
+
+    let entry = manager
+        .record(item, HistoryStatus::Completed, None, None)
+        .unwrap();
+
+    assert_eq!(entry.media_duration_seconds, 90.0);
+    assert_eq!(entry.trim_start_seconds, Some(12.5));
+    assert_eq!(entry.trim_end_seconds, Some(42.5));
+    let reloaded = HistoryManager::new(history_path).list().unwrap();
+    assert_eq!(reloaded[0].trim_start_seconds, Some(12.5));
+    assert_eq!(reloaded[0].trim_end_seconds, Some(42.5));
     fs::remove_dir_all(directory).unwrap();
 }
 

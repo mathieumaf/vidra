@@ -82,6 +82,7 @@ fn request(input: &Path, output: &Path) -> EncodeRequest {
         preserve_chapters: true,
         replace_existing: false,
         allow_insufficient_disk_space: false,
+        trim: None,
     }
 }
 

@@ -34,6 +34,7 @@ export function queueItemFixture(overrides: Partial<EncodeQueueItem> = {}): Enco
       ...DEFAULT_ADVANCED_SETTINGS,
     },
     trackSelection: { audioStreamIndexes: [], subtitleStreamIndexes: [] },
+    trim: null,
     outputPath: null,
     status: "ready",
     progress: emptyProgress(),

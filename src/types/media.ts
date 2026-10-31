@@ -153,12 +153,18 @@ export type TrackSelection = {
   subtitleStreamIndexes: number[];
 };
 
+export type SegmentTrim = {
+  startSeconds: number;
+  endSeconds: number;
+};
+
 export type EncodeQueueItem = {
   clientId: string;
   jobId: string | null;
   media: MediaInfo;
   settings: EncodingSettings;
   trackSelection: TrackSelection;
+  trim: SegmentTrim | null;
   outputPath: string | null;
   status: EncodeJobStatus;
   progress: EncodeProgress;
@@ -182,6 +188,8 @@ export type HistoryEntry = {
   settings: EncodingSettings;
   error: string | null;
   diagnostic: DiagnosticReport | null;
+  trimStartSeconds: number | null;
+  trimEndSeconds: number | null;
 };
 
 export type ApiError = {

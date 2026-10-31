@@ -133,6 +133,26 @@ mod tests {
     }
 
     #[test]
+    fn measures_progress_against_the_trimmed_duration() {
+        let mut parser = ProgressParser::default();
+        let segment_seconds = 30.0;
+        assert!(parser
+            .update("job-1", segment_seconds, "out_time_us=15000000")
+            .is_none());
+        assert!(parser
+            .update("job-1", segment_seconds, "speed=1.0x")
+            .is_none());
+
+        let progress = parser
+            .update("job-1", segment_seconds, "progress=continue")
+            .expect("a progress payload");
+
+        assert_eq!(progress.percent, 50.0);
+        assert_eq!(progress.eta_seconds, Some(15.0));
+        assert_eq!(progress.out_time_seconds, 15.0);
+    }
+
+    #[test]
     fn reports_one_hundred_percent_at_the_end() {
         let mut parser = ProgressParser::default();
         let progress = parser

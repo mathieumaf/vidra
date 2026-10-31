@@ -3,8 +3,8 @@ mod video;
 
 use self::{audio::audio_arguments, video::video_arguments};
 use super::{
-    validate_input, validate_output, AudioMode, AudioStream, EncodeRequest, ExistingOutput,
-    MediaInfo, OutputContainer, SubtitleStream,
+    trim, validate_input, validate_output, AudioMode, AudioStream, EncodeRequest, ExistingOutput,
+    MediaInfo, OutputContainer, SubtitleStream, VideoCodec,
 };
 use crate::{
     error::{ApiError, ApiResult},
@@ -20,6 +20,7 @@ use tauri_plugin_shell::ShellExt;
 const GLOBAL_ARGUMENTS: [&str; 4] = ["-hide_banner", "-nostdin", "-y", "-i"];
 
 pub(super) fn validate_settings(request: &EncodeRequest, media: &MediaInfo) -> ApiResult<()> {
+    trim::normalize_trim(request.trim, media.duration_seconds)?;
     video_arguments(request, media.video.as_ref())?;
     let audio_streams = selected_audio_streams(&media.audio, &request.audio_stream_indexes)?;
     validate_subtitle_streams(&media.subtitles, &request.subtitle_stream_indexes)?;
@@ -169,9 +170,11 @@ pub(super) fn command_arguments(
         ExistingOutput::for_request(&job.request),
     )?;
     crate::output::partial::ensure_partial_target(&output, partial_output)?;
+    let segment = prepared_trim(job)?;
     Ok(ffmpeg_arguments(
         &input,
         partial_output,
+        &segment.input,
         &encoding_arguments(job)?,
     ))
 }
@@ -187,26 +190,55 @@ pub(super) fn command_preview(
         Path::new(&job.request.output_path),
         partial_output,
     )?;
-    let arguments = ffmpeg_arguments(source, partial_output, &encoding_arguments(job)?);
+    let segment = prepared_trim(job)?;
+    let arguments = ffmpeg_arguments(
+        source,
+        partial_output,
+        &segment.input,
+        &encoding_arguments(job)?,
+    );
     Ok(arguments
         .iter()
         .map(|argument| argument.to_string_lossy().into_owned())
         .collect())
 }
 
-fn ffmpeg_arguments(source: &Path, partial_output: &Path, encoding: &[String]) -> Vec<OsString> {
-    let mut arguments = Vec::with_capacity(GLOBAL_ARGUMENTS.len() + encoding.len() + 2);
-    arguments.extend(GLOBAL_ARGUMENTS.iter().copied().map(OsString::from));
+fn ffmpeg_arguments(
+    source: &Path,
+    partial_output: &Path,
+    trim_input: &[String],
+    encoding: &[String],
+) -> Vec<OsString> {
+    debug_assert_eq!(GLOBAL_ARGUMENTS.last().copied(), Some("-i"));
+    let mut arguments =
+        Vec::with_capacity(GLOBAL_ARGUMENTS.len() + trim_input.len() + encoding.len() + 2);
+    arguments.extend(
+        GLOBAL_ARGUMENTS[..GLOBAL_ARGUMENTS.len() - 1]
+            .iter()
+            .copied()
+            .map(OsString::from),
+    );
+    arguments.extend(trim_input.iter().map(OsString::from));
+    arguments.push(OsString::from("-i"));
     arguments.push(source.as_os_str().to_os_string());
     arguments.extend(encoding.iter().map(OsString::from));
     arguments.push(partial_output.as_os_str().to_os_string());
     arguments
 }
 
+fn prepared_trim(job: &PendingJob) -> ApiResult<trim::TrimCommand> {
+    trim::command_options(
+        job.request.trim,
+        job.media.duration_seconds,
+        job.request.video_codec == VideoCodec::Copy,
+    )
+}
+
 fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
     let request = &job.request;
     let audio_streams = selected_audio_streams(&job.media.audio, &request.audio_stream_indexes)?;
-    let mut arguments = mapping_arguments(request, &job.media.subtitles);
+    let mut arguments = prepared_trim(job)?.output;
+    arguments.extend(mapping_arguments(request, &job.media.subtitles));
     arguments.extend(video_arguments(request, job.media.video.as_ref())?);
     arguments.extend(audio_arguments(
         &audio_streams,
@@ -225,8 +257,16 @@ fn encoding_arguments(job: &PendingJob) -> ApiResult<Vec<String>> {
 
 pub(crate) fn redacted_command(job: &PendingJob) -> ApiResult<String> {
     validate_settings(&job.request, &job.media)?;
+    let segment = prepared_trim(job)?;
     let mut arguments = vec!["ffmpeg".to_owned()];
-    arguments.extend(GLOBAL_ARGUMENTS.into_iter().map(str::to_owned));
+    arguments.extend(
+        GLOBAL_ARGUMENTS[..GLOBAL_ARGUMENTS.len() - 1]
+            .iter()
+            .copied()
+            .map(str::to_owned),
+    );
+    arguments.extend(segment.input);
+    arguments.push("-i".to_owned());
     arguments.push("<source>".to_owned());
     arguments.extend(encoding_arguments(job)?);
     arguments.push("<output>".to_owned());
@@ -242,8 +282,8 @@ mod tests {
     use crate::{
         ffmpeg::{
             AudioBitrate, AudioChannels, AudioMode, AudioStream, AudioTrackMode, EncodeRequest,
-            EncodingSpeed, MediaInfo, OutputContainer, OutputFrameRate, OutputResolution,
-            QualityLevel, SubtitleStream, VideoCodec, VideoStream,
+            EncodingSpeed, HdrFormat, MediaInfo, OutputContainer, OutputFrameRate,
+            OutputResolution, QualityLevel, SegmentTrim, SubtitleStream, VideoCodec, VideoStream,
         },
         jobs::PendingJob,
     };
@@ -270,6 +310,7 @@ mod tests {
             preserve_chapters: true,
             replace_existing: false,
             allow_insufficient_disk_space: false,
+            trim: None,
         }
     }
 
@@ -507,6 +548,213 @@ mod tests {
         assert!(validate_subtitle_streams(&subtitles, &[2]).is_ok());
         assert!(validate_subtitle_streams(&subtitles, &[2, 2]).is_err());
         assert!(validate_subtitle_streams(&subtitles, &[3]).is_err());
+    }
+
+    #[test]
+    fn a_re_encoded_segment_is_frame_accurate_and_keeps_audio_subtitles_and_hdr() {
+        use std::path::Path;
+
+        let mut request = request(OutputContainer::Mkv);
+        request.output_path = "/videos/holiday-vidra.mkv".to_owned();
+        request.trim = Some(SegmentTrim {
+            start_seconds: 1.5,
+            end_seconds: 4.0,
+        });
+        request.audio_stream_indexes = vec![1];
+        request.subtitle_stream_indexes = vec![3];
+        let mut pending = job(
+            request,
+            vec![AudioStream {
+                index: 1,
+                codec: "aac".to_owned(),
+                channels: Some(2),
+                sample_rate: Some(48_000),
+                bit_rate: Some(160_000),
+                language: None,
+                title: None,
+            }],
+        );
+        pending.media.duration_seconds = 10.0;
+        pending.media.subtitles = vec![subtitle(3, "subrip")];
+        pending.media.video = Some(VideoStream {
+            codec: "hevc".to_owned(),
+            width: 3840,
+            height: 2160,
+            frame_rate: Some(24.0),
+            pixel_format: Some("yuv420p10le".to_owned()),
+            bit_depth: Some(10),
+            color_range: Some("tv".to_owned()),
+            color_space: Some("bt2020nc".to_owned()),
+            color_transfer: Some("arib-std-b67".to_owned()),
+            color_primaries: Some("bt2020".to_owned()),
+            hdr_format: Some(HdrFormat::Hlg),
+            dolby_vision: None,
+        });
+
+        let arguments = super::command_preview(
+            &pending,
+            Path::new("/videos/holiday.mov"),
+            Path::new("/videos/.vidra-partial-job-1-abc123.mkv"),
+        )
+        .unwrap();
+
+        let input_at = arguments
+            .iter()
+            .position(|argument| argument == "-i")
+            .unwrap();
+        assert_eq!(&arguments[input_at - 2..input_at], ["-ss", "1.5"]);
+        assert!(!arguments
+            .iter()
+            .any(|argument| argument == "-noaccurate_seek"));
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| *argument == "/videos/holiday.mov")
+                .count(),
+            1
+        );
+        assert_eq!(arguments[input_at + 1], "/videos/holiday.mov");
+        assert!(arguments.windows(2).any(|pair| pair == ["-t", "2.5"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:a", "copy"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:3"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:s", "copy"]));
+        assert!(arguments
+            .iter()
+            .any(|argument| argument.contains("tonemap=")));
+        assert!(!arguments
+            .iter()
+            .any(|argument| argument == "/videos/holiday-vidra.mkv"));
+        assert_eq!(
+            arguments.last().map(String::as_str),
+            Some("/videos/.vidra-partial-job-1-abc123.mkv")
+        );
+    }
+
+    #[test]
+    fn copied_video_keeps_the_leading_keyframe_and_stops_at_the_requested_end() {
+        use std::path::Path;
+
+        let mut request = request(OutputContainer::Mp4);
+        request.output_path = "/videos/holiday-vidra.mp4".to_owned();
+        request.video_codec = VideoCodec::Copy;
+        request.audio_mode = AudioMode::Aac;
+        request.audio_stream_indexes = vec![1];
+        request.subtitle_stream_indexes.clear();
+        request.preserve_subtitles = false;
+        request.trim = Some(SegmentTrim {
+            start_seconds: 2.0,
+            end_seconds: 5.0,
+        });
+        let pending = job(
+            request,
+            vec![AudioStream {
+                index: 1,
+                codec: "ac3".to_owned(),
+                channels: Some(2),
+                sample_rate: Some(48_000),
+                bit_rate: Some(192_000),
+                language: None,
+                title: None,
+            }],
+        );
+
+        let arguments = super::command_preview(
+            &pending,
+            Path::new("/videos/holiday.mov"),
+            Path::new("/videos/.vidra-partial-job-1-abc123.mp4"),
+        )
+        .unwrap();
+
+        let input_at = arguments
+            .iter()
+            .position(|argument| argument == "-i")
+            .unwrap();
+        assert_eq!(
+            &arguments[input_at - 5..input_at],
+            ["-noaccurate_seek", "-ss", "2", "-to", "5"]
+        );
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:v", "copy"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:a:0", "aac"]));
+        assert!(!arguments.iter().any(|argument| argument == "-t"));
+        assert!(!arguments
+            .iter()
+            .any(|argument| argument.contains("tonemap=")));
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| *argument == "/videos/holiday.mov")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn invalid_segments_are_rejected_before_a_command_is_built() {
+        use std::path::Path;
+
+        let source = Path::new("/videos/holiday.mov");
+        let partial = Path::new("/videos/.vidra-partial-job-1-abc123.mp4");
+        let mut request = request(OutputContainer::Mp4);
+        request.output_path = "/videos/holiday-vidra.mp4".to_owned();
+        request.audio_stream_indexes.clear();
+        request.subtitle_stream_indexes.clear();
+        request.preserve_subtitles = false;
+
+        let cases = [
+            (
+                SegmentTrim {
+                    start_seconds: -1.0,
+                    end_seconds: 2.0,
+                },
+                super::trim::NEGATIVE_TIME,
+            ),
+            (
+                SegmentTrim {
+                    start_seconds: 4.0,
+                    end_seconds: 4.0,
+                },
+                super::trim::END_NOT_AFTER_START,
+            ),
+            (
+                SegmentTrim {
+                    start_seconds: 6.0,
+                    end_seconds: 4.0,
+                },
+                super::trim::END_NOT_AFTER_START,
+            ),
+            (
+                SegmentTrim {
+                    start_seconds: 12.0,
+                    end_seconds: 13.0,
+                },
+                super::trim::START_AFTER_VIDEO,
+            ),
+            (
+                SegmentTrim {
+                    start_seconds: 1.0,
+                    end_seconds: 11.0,
+                },
+                super::trim::END_AFTER_VIDEO,
+            ),
+        ];
+        for (selection, message) in cases {
+            let mut rejected = request.clone();
+            rejected.trim = Some(selection);
+            let error =
+                super::command_preview(&job(rejected, vec![]), source, partial).unwrap_err();
+            assert_eq!(error.code, "invalid_input");
+            assert_eq!(error.message, message);
+        }
+
+        let mut unknown = request;
+        unknown.trim = Some(SegmentTrim {
+            start_seconds: 1.0,
+            end_seconds: 2.0,
+        });
+        let mut pending = job(unknown, vec![]);
+        pending.media.duration_seconds = 0.0;
+        let error = super::command_preview(&pending, source, partial).unwrap_err();
+        assert_eq!(error.message, super::trim::UNKNOWN_DURATION);
     }
 
     fn subtitle(index: u32, codec: &str) -> SubtitleStream {

@@ -308,7 +308,8 @@ where
         };
         let job_id = job.id.clone();
         let output_path = job.request.output_path.clone();
-        let duration_seconds = job.media.duration_seconds;
+        let duration_seconds =
+            super::trim::output_duration_seconds(job.request.trim, job.media.duration_seconds);
         let history = HistoryDraft::from_job(&job, now_millis());
 
         let prepared = match prepare_partial(state, &job) {

@@ -36,6 +36,7 @@ import {
   startEncodeQueue,
 } from "../services/encoding";
 import { listDestinationFiles, revealOutputFile, takeOpenedFiles } from "../services/files";
+import { assessTrim } from "../lib/trim";
 import type {
   AudioMode,
   EncodingSpeed,
@@ -49,6 +50,7 @@ import type {
   OutputContainer,
   OutputResolution,
   QueuedEncode,
+  SegmentTrim,
   TrackSelection,
   VideoCodec,
 } from "../types/media";
@@ -350,12 +352,16 @@ export function useEncodingQueue({
     setResult(null);
     try {
       const probes = await Promise.allSettled(entries.map((entry) => probeMedia(entry.sourcePath)));
+      const droppedTrims: string[] = [];
       const restoredItems = probes.flatMap((probe, index) => {
         if (probe.status !== "fulfilled") return [];
         const entry = entries[index];
+        const assessment = assessTrim(entry.trim, probe.value.durationSeconds);
+        if (entry.trim && !assessment.ok) droppedTrims.push(entry.sourceName);
         return [{
           ...createQueueItem(probe.value, entry.settings),
           trackSelection: normalizedTrackSelection(probe.value, entry.trackSelection),
+          trim: assessment.ok ? assessment.trim : null,
         }];
       });
       const droppedEntries = entries.filter((_, index) => probes[index].status === "rejected");
@@ -367,7 +373,7 @@ export function useEncodingQueue({
         return [...base, ...restoredItems];
       });
       if (restoredItems.length > 0) setSelectedClientId(restoredItems[0].clientId);
-      setNotice(restoreNotice(restoredItems.length, droppedEntries));
+      setNotice(restoreNotice(restoredItems.length, droppedEntries, droppedTrims));
       clearPendingQueue();
       setRestoreOffer(null);
       return restoredItems.length;
@@ -445,28 +451,40 @@ export function useEncodingQueue({
       }
     }
 
-    const requests = readyItems.map((item, index) => ({
-      inputPath: item.media.path,
-      outputPath: outputPaths[index],
-      quality: item.settings.quality,
-      container: item.settings.container,
-      videoCodec: item.settings.videoCodec,
-      encodingSpeed: item.settings.encodingSpeed,
-      audioMode: item.settings.audioMode,
-      outputResolution: item.settings.outputResolution,
-      outputFrameRate: item.settings.outputFrameRate,
-      qualityTuning: item.settings.qualityTuning,
-      audioBitrate: item.settings.audioBitrate,
-      audioChannels: item.settings.audioChannels,
-      audioTrackMode: item.settings.audioTrackMode,
-      audioStreamIndexes: item.trackSelection.audioStreamIndexes,
-      subtitleStreamIndexes: item.trackSelection.subtitleStreamIndexes,
-      preserveSubtitles: item.settings.preserveSubtitles,
-      preserveMetadata: item.settings.preserveMetadata,
-      preserveChapters: item.settings.preserveChapters,
-      replaceExisting,
-      allowInsufficientDiskSpace: false,
-    }));
+    const segments = readyItems.map((item) => assessTrim(item.trim, item.media.durationSeconds));
+    const invalidSegment = segments.findIndex((assessment) => !assessment.ok);
+    if (invalidSegment >= 0) {
+      const assessment = segments[invalidSegment];
+      const message = assessment.ok ? "" : assessment.message;
+      setError(`${readyItems[invalidSegment].media.name}: ${message}`);
+      return 0;
+    }
+    const requests = readyItems.map((item, index) => {
+      const segment = segments[index];
+      return {
+        inputPath: item.media.path,
+        outputPath: outputPaths[index],
+        quality: item.settings.quality,
+        container: item.settings.container,
+        videoCodec: item.settings.videoCodec,
+        encodingSpeed: item.settings.encodingSpeed,
+        audioMode: item.settings.audioMode,
+        outputResolution: item.settings.outputResolution,
+        outputFrameRate: item.settings.outputFrameRate,
+        qualityTuning: item.settings.qualityTuning,
+        audioBitrate: item.settings.audioBitrate,
+        audioChannels: item.settings.audioChannels,
+        audioTrackMode: item.settings.audioTrackMode,
+        audioStreamIndexes: item.trackSelection.audioStreamIndexes,
+        subtitleStreamIndexes: item.trackSelection.subtitleStreamIndexes,
+        preserveSubtitles: item.settings.preserveSubtitles,
+        preserveMetadata: item.settings.preserveMetadata,
+        preserveChapters: item.settings.preserveChapters,
+        trim: segment.ok ? segment.trim : null,
+        replaceExisting,
+        allowInsufficientDiskSpace: false,
+      };
+    });
 
     let startingJobId: string | null = null;
     try {
@@ -623,6 +641,13 @@ export function useEncodingQueue({
     )));
   }
 
+  function updateItemTrim(item: EncodeQueueItem, trim: SegmentTrim | null) {
+    if (item.status !== "ready") return;
+    setItems((current) => current.map((candidate) => (
+      candidate.clientId === item.clientId ? { ...candidate, trim } : candidate
+    )));
+  }
+
   function updateItemTrackSelection(
     item: EncodeQueueItem,
     patch: Partial<TrackSelection>,
@@ -708,16 +733,23 @@ export function useEncodingQueue({
     moveItem,
     selectItem,
     updateItemSettings,
+    updateItemTrim,
     updateItemTrackSelection,
     reset,
     setError,
   };
 }
 
-function restoreNotice(restoredCount: number, droppedEntries: PendingQueueEntry[]): string {
+function restoreNotice(
+  restoredCount: number,
+  droppedEntries: PendingQueueEntry[],
+  droppedTrims: string[],
+): string {
   const restored = restoredCount === 1 ? "1 video" : `${restoredCount} videos`;
+  const trimNotice = droppedTrimNotice(droppedTrims);
   if (droppedEntries.length === 0) {
-    return `Restored ${restored} with saved settings. Choose where to save ${restoredCount === 1 ? "it" : "them"} when you start encoding.`;
+    const base = `Restored ${restored} with saved settings. Choose where to save ${restoredCount === 1 ? "it" : "them"} when you start encoding.`;
+    return trimNotice ? `${base} ${trimNotice}` : base;
   }
 
   const names = droppedEntries
@@ -726,7 +758,16 @@ function restoreNotice(restoredCount: number, droppedEntries: PendingQueueEntry[
   const unavailable = droppedEntries.length === 1
     ? `Could not restore ${names} because its source file could not be read from the saved location.`
     : `Could not restore ${names} because their source files could not be read from the saved locations.`;
-  return restoredCount > 0
+  const base = restoredCount > 0
     ? `Restored ${restored} with saved settings. ${unavailable}`
     : unavailable;
+  return trimNotice ? `${base} ${trimNotice}` : base;
+}
+
+function droppedTrimNotice(names: string[]): string | null {
+  if (names.length === 0) return null;
+  const listed = names.map((name) => `“${name}”`).join(", ");
+  return names.length === 1
+    ? `${listed} was restored without a segment because the saved times do not fit the video.`
+    : `${listed} were restored without a segment because the saved times do not fit the video.`;
 }

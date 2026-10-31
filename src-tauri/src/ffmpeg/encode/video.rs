@@ -420,6 +420,7 @@ mod tests {
             preserve_chapters: true,
             replace_existing: false,
             allow_insufficient_disk_space: false,
+            trim: None,
         }
     }
 

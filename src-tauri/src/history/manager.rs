@@ -78,6 +78,8 @@ impl HistoryManager {
             settings: draft.settings,
             error: concise_error(error),
             diagnostic,
+            trim_start_seconds: draft.trim_start_seconds,
+            trim_end_seconds: draft.trim_end_seconds,
         };
 
         let mut entries = self.lock()?;

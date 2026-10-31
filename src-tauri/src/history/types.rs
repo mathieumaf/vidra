@@ -65,6 +65,10 @@ pub struct HistoryEntry {
     pub error: Option<String>,
     #[serde(default)]
     pub diagnostic: Option<DiagnosticReport>,
+    #[serde(default)]
+    pub trim_start_seconds: Option<f64>,
+    #[serde(default)]
+    pub trim_end_seconds: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,10 +81,16 @@ pub struct HistoryDraft {
     pub media_duration_seconds: f64,
     pub source_size_bytes: u64,
     pub settings: HistorySettings,
+    pub trim_start_seconds: Option<f64>,
+    pub trim_end_seconds: Option<f64>,
 }
 
 impl HistoryDraft {
     pub fn from_job(job: &PendingJob, started_at_ms: u64) -> Self {
+        let segment =
+            crate::ffmpeg::trim::normalize_trim(job.request.trim, job.media.duration_seconds)
+                .ok()
+                .flatten();
         Self {
             job_id: job.id.clone(),
             source_path: job.request.input_path.clone(),
@@ -105,6 +115,8 @@ impl HistoryDraft {
                 preserve_metadata: job.request.preserve_metadata,
                 preserve_chapters: job.request.preserve_chapters,
             },
+            trim_start_seconds: segment.map(|segment| segment.start_seconds),
+            trim_end_seconds: segment.map(|segment| segment.end_seconds),
         }
     }
 }

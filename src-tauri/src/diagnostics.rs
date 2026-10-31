@@ -263,7 +263,7 @@ fn source_summary(media: &MediaInfo) -> String {
 
 fn settings_summary(job: &PendingJob) -> String {
     let request = &job.request;
-    format!(
+    let settings = format!(
         "Container: {:?}\nVideo codec: {:?}\nEncoding: {:?}\nQuality: {:?} (tuning {})\nResolution: {:?}\nFrame rate: {:?}\nAudio: {:?} · {:?} · {:?}\nSelected tracks: {} audio · {} subtitles\nPreserve: metadata {} · chapters {} · subtitles {}",
         request.container,
         request.video_codec,
@@ -280,7 +280,20 @@ fn settings_summary(job: &PendingJob) -> String {
         request.preserve_metadata,
         request.preserve_chapters,
         request.preserve_subtitles,
-    )
+    );
+    format!("{settings}\n{}", segment_summary(job))
+}
+
+fn segment_summary(job: &PendingJob) -> String {
+    match crate::ffmpeg::trim::normalize_trim(job.request.trim, job.media.duration_seconds) {
+        Ok(Some(segment)) => format!(
+            "Segment: {:.3}–{:.3} seconds ({:.3} seconds)",
+            segment.start_seconds,
+            segment.end_seconds,
+            segment.end_seconds - segment.start_seconds
+        ),
+        _ => "Segment: entire video".to_owned(),
+    }
 }
 
 fn truncate_report(mut report: String) -> String {
@@ -316,7 +329,7 @@ mod tests {
         ffmpeg::{
             AudioBitrate, AudioChannels, AudioMode, AudioTrackMode, EncodeRequest, EncodingSpeed,
             MediaInfo, OutputContainer, OutputFrameRate, OutputResolution, QualityLevel,
-            VideoCodec,
+            SegmentTrim, VideoCodec,
         },
         jobs::PendingJob,
     };
@@ -347,6 +360,7 @@ mod tests {
                 preserve_chapters: true,
                 replace_existing: false,
                 allow_insufficient_disk_space: false,
+                trim: None,
             },
             media: MediaInfo {
                 path: "/Users/private/Videos/source.mov".to_owned(),
@@ -415,6 +429,23 @@ mod tests {
         assert!(diagnostic.report.contains("<source>"));
         assert!(diagnostic.report.contains("<output>"));
         assert!(diagnostic.report.len() <= MAX_REPORT_BYTES);
+        assert!(diagnostic.report.contains("Segment: entire video"));
+    }
+
+    #[test]
+    fn diagnostic_reports_include_a_selected_segment() {
+        let mut job = pending_job();
+        job.media.duration_seconds = 10.0;
+        job.request.trim = Some(SegmentTrim {
+            start_seconds: 1.5,
+            end_seconds: 4.0,
+        });
+
+        let diagnostic = failure_report(&job, BoundedLog::default(), Some(1), None);
+
+        assert!(diagnostic
+            .report
+            .contains("Segment: 1.500–4.000 seconds (2.500 seconds)"));
     }
 
     #[test]

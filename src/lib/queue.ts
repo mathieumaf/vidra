@@ -30,6 +30,7 @@ export function createQueueItem(media: MediaInfo, settings: EncodingSettings): E
     media,
     settings: { ...settings },
     trackSelection: defaultTrackSelection(media, settings),
+    trim: null,
     outputPath: null,
     status: "ready",
     progress: emptyProgress(),

@@ -2,6 +2,12 @@
 
 All notable changes to Vidra are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Choose an optional start and end time before conversion. The output contains that segment, and progress, the estimated time remaining, and history use its length. Re-encoded video starts and ends on the selected frames. Original video is copied unchanged, so the clip can start slightly earlier and still ends at the selected time. The source file is not modified.
+
 ## 0.2.0-beta.1 - 2026-10-25
 
 Prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.1`. Windows, Linux, and Intel Mac builds are not included.
