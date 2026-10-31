@@ -389,6 +389,13 @@ export default function App() {
 
   return (
     <div className={`desktop-shell${queue.isDraggingFiles ? " dragging-files" : ""}`}>
+      <button
+        className="skip-link"
+        type="button"
+        onClick={() => document.getElementById("main-content")?.focus()}
+      >
+        Skip to content
+      </button>
       <Sidebar
         view={view}
         status={status}
@@ -398,7 +405,7 @@ export default function App() {
         onNewConversion={() => void newConversion()}
       />
 
-      <section className="main-panel">
+      <main id="main-content" className="main-panel" tabIndex={-1} aria-labelledby="view-title">
         <DragRegion className="native-titlebar" />
         <Toolbar
           view={view}
@@ -538,7 +545,7 @@ export default function App() {
             )}
           </div>
         </AppErrorBoundary>
-      </section>
+      </main>
 
       {queue.isDraggingFiles && (
         <div className="file-drop-overlay" aria-hidden="true">

@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useId, type CSSProperties } from "react";
 import {
   AUDIO_BITRATE_OPTIONS,
   AUDIO_CHANNEL_OPTIONS,
@@ -37,6 +37,10 @@ export function AdvancedOptions({
   const canReduceToStereo = audio.some((stream) => (stream.channels ?? 2) > 2);
   const canReduceToMono = audio.some((stream) => (stream.channels ?? 2) > 1);
   const tuningIndex = settings.qualityTuning + 2;
+  const frameRateHintId = useId();
+  const tuningScaleId = useId();
+  const bitrateHintId = useId();
+  const channelHintId = useId();
 
   return (
     <section className="advanced-options-card">
@@ -52,6 +56,7 @@ export function AdvancedOptions({
         <label className="advanced-field">
           <span>Frame rate</span>
           <select
+            aria-describedby={frameRateHintId}
             value={settings.outputFrameRate}
             disabled={disabled || !video}
             onChange={(event) => onChange({
@@ -68,7 +73,7 @@ export function AdvancedOptions({
               </option>
             ))}
           </select>
-          <small>Lower frame rates reduce motion data without creating new frames.</small>
+          <small id={frameRateHintId}>Lower frame rates reduce motion data without creating new frames.</small>
         </label>
 
         <div className="advanced-quality-field">
@@ -78,6 +83,8 @@ export function AdvancedOptions({
           </div>
           <input
             aria-label="Quality fine tuning"
+            aria-describedby={tuningScaleId}
+            aria-valuetext={QUALITY_TUNING_LABELS[tuningIndex]}
             type="range"
             min="-2"
             max="2"
@@ -87,12 +94,13 @@ export function AdvancedOptions({
             style={{ "--advanced-progress": `${tuningIndex * 25}%` } as CSSProperties}
             onChange={(event) => onChange({ qualityTuning: Number(event.target.value) })}
           />
-          <div className="advanced-slider-labels"><span>Smaller</span><span>More detail</span></div>
+          <div className="advanced-slider-labels" id={tuningScaleId}><span>Smaller</span><span>More detail</span></div>
         </div>
 
         <label className="advanced-field">
           <span>Audio bitrate</span>
           <select
+            aria-describedby={bitrateHintId}
             value={settings.audioBitrate}
             disabled={disabled || !hasAudio}
             onChange={(event) => onChange({
@@ -103,12 +111,13 @@ export function AdvancedOptions({
               <option key={option.id} value={option.id}>{option.label}</option>
             ))}
           </select>
-          <small>Known source bitrates are never increased.</small>
+          <small id={bitrateHintId}>Known source bitrates are never increased.</small>
         </label>
 
         <label className="advanced-field">
           <span>Audio channels</span>
           <select
+            aria-describedby={channelHintId}
             value={settings.audioChannels}
             disabled={disabled || !hasAudio}
             onChange={(event) => onChange({
@@ -126,7 +135,7 @@ export function AdvancedOptions({
               </option>
             ))}
           </select>
-          <small>Channels are only reduced, never added.</small>
+          <small id={channelHintId}>Channels are only reduced, never added.</small>
         </label>
 
         <div className="preservation-field">

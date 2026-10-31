@@ -24,7 +24,7 @@ export function Sidebar({
   onNewConversion,
 }: SidebarProps) {
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" aria-label="Sidebar">
       <DragRegion className="window-drag-region" />
       <div className="brand">
         <img className="brand-mark" src={vidraMark} alt="" />
@@ -46,11 +46,19 @@ export function Sidebar({
             key={item}
             className={view === item ? "active" : ""}
             type="button"
+            aria-current={view === item ? "page" : undefined}
             onClick={() => onViewChange(item)}
           >
             <Icon name={item} />
             <span>{item[0].toUpperCase() + item.slice(1)}</span>
-            {item === "queue" && queueCount > 0 && <span className="nav-badge">{queueCount}</span>}
+            {item === "queue" && queueCount > 0 && (
+              <span className="nav-badge">
+                <span className="visually-hidden">
+                  {queueCount === 1 ? ", 1 video" : `, ${queueCount} videos`}
+                </span>
+                <span aria-hidden="true">{queueCount}</span>
+              </span>
+            )}
           </button>
         ))}
       </nav>
@@ -63,8 +71,8 @@ export function Sidebar({
           {localFilesPrivacyNote()}
         </span>
       </div>
-      <div className={`engine-status ${isReady ? "ready" : "unavailable"}`}>
-        <span className="status-dot" />
+      <div className={`engine-status ${isReady ? "ready" : "unavailable"}`} role="status">
+        <span className="status-dot" aria-hidden="true" />
         {status === null ? "Checking engine" : isReady ? "FFmpeg ready" : "Engine unavailable"}
       </div>
     </aside>

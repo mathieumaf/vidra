@@ -20,7 +20,7 @@ export function Toolbar({
   return (
     <header className="toolbar">
       <div>
-        <h1>{title}</h1>
+        <h1 id="view-title">{title}</h1>
         <p>{subtitle}</p>
       </div>
       {view === "convert" && hasMedia && !isEncoding && (

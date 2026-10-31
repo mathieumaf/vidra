@@ -48,6 +48,7 @@ Each public release ships the Apple Silicon FFmpeg recipe pinned for that releas
 - Finished, failed, and cancelled jobs stay in a local history.
 - A failed job can show a diagnostic report with source and output paths redacted. The report can be copied or saved.
 - Appearance follows the system, or can be set to light or dark. Settings show the application version and the FFmpeg version bundled with that build, plus source and release links and third-party notices. Vidra 0.1.0 ships FFmpeg 8.1.2. A build from current main reports 8.1.3 when its pinned engine is ready.
+- The conversion workflow can be completed from the keyboard. Control names, focus, and status announcements are described in [Accessibility](docs/ACCESSIBILITY.md).
 
 Fast encoding uses Apple VideoToolbox for H.264 and H.265. Efficient encoding, and every AV1 encode, uses the bundled software encoders. AV1 input is decoded in software with dav1d.
 

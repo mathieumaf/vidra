@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { EncodingProfile } from "../../config/profiles";
 import { localComputerPhrase } from "../../lib/platform";
 
@@ -31,28 +31,48 @@ export function ProfileBar({
 }: ProfileBarProps) {
   const [editor, setEditor] = useState<"create" | "rename" | null>(null);
   const [name, setName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const nameErrorId = useId();
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null;
   const builtInProfiles = profiles.filter((profile) => profile.isBuiltIn);
   const userProfiles = profiles.filter((profile) => !profile.isBuiltIn);
 
   useEffect(() => {
     setEditor(null);
+    setNameError(null);
     setConfirmingDelete(false);
   }, [selectedProfileId]);
 
   function beginEditor(nextEditor: "create" | "rename") {
     setEditor(nextEditor);
     setName(nextEditor === "rename" ? selectedProfile?.name ?? "" : "");
+    setNameError(null);
+    setConfirmingDelete(false);
+  }
+
+  function closeEditor() {
+    setEditor(null);
+    setNameError(null);
     setConfirmingDelete(false);
   }
 
   function submitName(event: FormEvent) {
     event.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setNameError("Enter a profile name.");
+      return;
+    }
     if (editor === "rename") onRename(name);
     else onCreate(name);
     setEditor(null);
+    setNameError(null);
+  }
+
+  function onEditorKeyDown(event: KeyboardEvent) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    closeEditor();
   }
 
   return (
@@ -124,26 +144,36 @@ export function ProfileBar({
       </div>
 
       {editor && (
-        <form className="profile-editor" onSubmit={submitName}>
+        <form className="profile-editor" onSubmit={submitName} onKeyDown={onEditorKeyDown}>
           <label>
             <span>{editor === "rename" ? "Profile name" : "New profile name"}</span>
             <input
               autoFocus
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? nameErrorId : undefined}
+              aria-required="true"
               maxLength={60}
               value={name}
               placeholder="My profile"
-              onChange={(event) => setName(event.target.value)}
+              onBlur={() => {
+                if (!name.trim()) setNameError("Enter a profile name.");
+              }}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (event.target.value.trim()) setNameError(null);
+              }}
             />
+            {nameError && <p className="field-error" id={nameErrorId} role="alert">{nameError}</p>}
           </label>
           <button className="profile-confirm-button" type="submit" disabled={!name.trim()}>
             {editor === "rename" ? "Rename" : "Save profile"}
           </button>
-          <button type="button" onClick={() => setEditor(null)}>Cancel</button>
+          <button type="button" onClick={closeEditor}>Cancel</button>
         </form>
       )}
 
       {confirmingDelete && selectedProfile && (
-        <div className="profile-delete-confirmation" role="alert">
+        <div className="profile-delete-confirmation" role="alert" onKeyDown={onEditorKeyDown}>
           <span>Delete “{selectedProfile.name}”? Conversions and media will not be affected.</span>
           <button
             className="profile-delete-button"

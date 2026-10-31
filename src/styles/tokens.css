@@ -37,7 +37,8 @@
 
   /* Color */
   --ink: #1c231f;
-  --muted: #6c756f;
+  /* Secondary text. 4.5:1 on white and on the light gray control tracks. */
+  --muted: #646d67;
   --line: #e2e6e2;
   --surface: #ffffff;
   --sidebar: #f1f3f0;
@@ -69,6 +70,10 @@
   --panel-shadow: 0 2px 8px rgba(34, 54, 43, 0.025);
   --floating-shadow: 0 12px 35px rgba(33, 73, 51, 0.14);
   --scrim: rgba(238, 241, 237, 0.84);
+  /* Text and icons placed on the accent green. */
+  --on-accent: #ffffff;
+  /* Keyboard focus ring. 3:1 against the light surfaces it sits on. */
+  --focus-ring: #1f714d;
 }
 
 :root[data-theme="dark"] {
@@ -104,4 +109,8 @@
   --panel-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
   --floating-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
   --scrim: rgba(8, 12, 10, 0.82);
+  /* Dark ink on the light accent green keeps button labels readable. */
+  --on-accent: #14241c;
+  /* 3:1 against dark canvas and panel surfaces. */
+  --focus-ring: #9be7c0;
 }

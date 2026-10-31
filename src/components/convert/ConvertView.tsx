@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { outputResolutionLabel } from "../../config/resolution";
 import {
@@ -17,7 +18,10 @@ import type {
   VideoCodec,
   TrackSelection,
 } from "../../types/media";
+import { useRadioGroup } from "../../hooks/useRadioGroup";
 import { Icon } from "../ui/Icon";
+import { LiveRegion } from "../ui/LiveRegion";
+import { ProgressAnnouncer } from "../ui/ProgressAnnouncer";
 import { AudioOptions } from "./AudioOptions";
 import { EncodingOptions } from "./EncodingOptions";
 import { MediaSourceCard } from "./MediaSourceCard";
@@ -129,9 +133,20 @@ export function ConvertView({
   onTogglePause,
   onCancelEncoding,
 }: ConvertViewProps) {
+  const pauseReasonId = useId();
+  const modeOptions = [
+    { id: "simple" as const, disabled: false },
+    { id: "advanced" as const, disabled: false },
+  ];
+  const mode = useRadioGroup(modeOptions, isAdvancedMode ? "advanced" : "simple", (next) => {
+    onAdvancedModeChange(next === "advanced");
+  });
+  const resumeBlocked = isPaused && !canResume;
+
   if (!media) {
     return (
       <div className="convert-view">
+        <LiveRegion message={isProbing ? "Reading videos" : ""} />
         <div className="empty-convert">
           <div className="empty-heading">
             <span>LOCAL VIDEO ENCODING</span>
@@ -160,6 +175,13 @@ export function ConvertView({
 
   return (
     <div className="convert-view">
+      <LiveRegion message={isProbing ? "Reading videos" : ""} />
+      <ProgressAnnouncer
+        active={isActive}
+        paused={isPaused}
+        indeterminate={progress.indeterminate}
+        percent={progress.percent}
+      />
       <div className="conversion-workspace">
         <div className="conversion-content">
           <MediaSourceCard media={media} count={mediaCount} />
@@ -176,19 +198,22 @@ export function ConvertView({
             onDelete={onProfileDelete}
             onApplyToAll={onApplyProfileToAll}
           />
-          <div className="conversion-mode-switch" role="radiogroup" aria-label="Conversion mode">
+          <div
+            className="conversion-mode-switch"
+            role="radiogroup"
+            aria-label="Conversion mode"
+            onKeyDown={mode.onKeyDown}
+          >
             <button
               type="button"
-              role="radio"
-              aria-checked={!isAdvancedMode}
               className={!isAdvancedMode ? "active" : ""}
+              {...mode.optionProps("simple")}
               onClick={() => onAdvancedModeChange(false)}
             >Simple</button>
             <button
               type="button"
-              role="radio"
-              aria-checked={isAdvancedMode}
               className={isAdvancedMode ? "active" : ""}
+              {...mode.optionProps("advanced")}
               onClick={() => onAdvancedModeChange(true)}
             >Advanced</button>
           </div>
@@ -261,7 +286,7 @@ export function ConvertView({
           )}
 
           {!isActive && result?.status === "completed" && (
-            <div className="success-message">
+            <div className="success-message" role="status">
               <span>✓</span>
               <div>
                 <strong>Encoding complete</strong>
@@ -271,7 +296,7 @@ export function ConvertView({
             </div>
           )}
           {!isActive && result?.status === "cancelled" && (
-            <div className="notice-message">Encoding cancelled. The partial output was removed.</div>
+            <div className="notice-message" role="status">Encoding cancelled. The partial output was removed.</div>
           )}
           {error && <div className="error-message" role="alert">{error}</div>}
         </div>
@@ -293,12 +318,20 @@ export function ConvertView({
               <button
                 className="secondary-button"
                 type="button"
-                onClick={onTogglePause}
-                disabled={isPaused && !canResume}
-                title={isPaused && !canResume ? "Pause the current encoding before resuming this video" : undefined}
+                onClick={() => {
+                  if (!resumeBlocked) onTogglePause();
+                }}
+                aria-disabled={resumeBlocked || undefined}
+                aria-describedby={resumeBlocked ? pauseReasonId : undefined}
+                title={resumeBlocked ? "Pause the current encoding before resuming this video" : undefined}
               >
                 {isPaused ? "Resume encoding" : "Pause encoding"}
               </button>
+              {resumeBlocked && (
+                <span id={pauseReasonId} className="visually-hidden">
+                  Pause the current encoding before resuming this video
+                </span>
+              )}
               <button className="secondary-button danger-button" type="button" onClick={onCancelEncoding}>
                 Cancel current
               </button>
@@ -347,7 +380,6 @@ function ColorConversionMessage({
     <div
       className={`color-conversion-message${isBlocking ? " blocking" : ""}`}
       role={isBlocking ? "alert" : "status"}
-      aria-live="polite"
     >
       <Icon name="warning" />
       <div>
@@ -387,8 +419,8 @@ function EncodingProgress({ progress, isPaused }: { progress: EncodeProgress; is
         aria-valuemax={100}
         aria-valuenow={progress.indeterminate ? undefined : Math.round(progress.percent)}
         aria-valuetext={progress.indeterminate
-          ? `${formatDuration(progress.outTimeSeconds)} processed`
-          : undefined}
+          ? `${formatDuration(progress.outTimeSeconds)} processed${isPaused ? ", paused" : ""}`
+          : `${Math.round(progress.percent)} percent${isPaused ? ", paused" : ""}`}
       >
         <div
           className={`progress-value${progress.indeterminate ? " indeterminate" : ""}${isPaused ? " paused" : ""}`}

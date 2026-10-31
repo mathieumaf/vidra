@@ -4,6 +4,7 @@ import {
   outputResolution,
   resolutionReducesVideo,
 } from "../../config/resolution";
+import { useRadioGroup } from "../../hooks/useRadioGroup";
 import type { OutputResolution, VideoCodec, VideoStream } from "../../types/media";
 
 type ResolutionOptionsProps = {
@@ -24,6 +25,18 @@ export function ResolutionOptions({
   const selected = outputResolution(resolution);
   const dimensions = outputDimensions(video, resolution);
   const copiesVideo = videoCodec === "copy";
+  const choices = OUTPUT_RESOLUTIONS.map((option) => {
+    const unavailable = option.id !== "source" && (!video || !resolutionReducesVideo(video, option.id));
+    return {
+      ...option,
+      disabled: disabled || unavailable,
+      unavailable,
+      unavailableReason: !video
+        ? "The selected file has no video stream"
+        : "The source is already within this resolution",
+    };
+  });
+  const radio = useRadioGroup(choices, resolution, onChange);
   const summary = resolution === "source"
     ? dimensions
       ? `${dimensions.width} × ${dimensions.height} · No resizing`
@@ -42,29 +55,29 @@ export function ResolutionOptions({
         </div>
         {copiesVideo && <span className="codec-pill">Original video requires original resolution</span>}
       </div>
-      <div className="resolution-options" role="radiogroup" aria-label="Output resolution">
-        {OUTPUT_RESOLUTIONS.map((option) => {
-          const unavailable = option.id !== "source"
-            && (!video || !resolutionReducesVideo(video, option.id));
-          const unavailableReason = !video
-            ? "The selected file has no video stream"
-            : "The source is already within this resolution";
-          return (
-            <button
-              key={option.id}
-              className={resolution === option.id ? "active" : ""}
-              type="button"
-              role="radio"
-              aria-checked={resolution === option.id}
-              disabled={disabled || unavailable}
-              title={unavailable ? unavailableReason : option.description}
-              onClick={() => onChange(option.id)}
-            >
-              <strong>{option.label}</strong>
-              <span>{option.description}</span>
-            </button>
-          );
-        })}
+      <div
+        className="resolution-options"
+        role="radiogroup"
+        aria-label="Output resolution"
+        onKeyDown={radio.onKeyDown}
+      >
+        {choices.map((option) => (
+          <button
+            key={option.id}
+            className={resolution === option.id ? "active" : ""}
+            type="button"
+            {...radio.optionProps(option.id, option.disabled)}
+            title={option.unavailable ? option.unavailableReason : option.description}
+            onClick={() => {
+              if (option.disabled) return;
+              onChange(option.id);
+            }}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+            {option.unavailable && <span className="visually-hidden">. {option.unavailableReason}</span>}
+          </button>
+        ))}
       </div>
     </section>
   );

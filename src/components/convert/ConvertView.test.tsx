@@ -99,6 +99,9 @@ describe("ConvertView", () => {
 
     expect(markup).toContain("Encoding complete");
     expect(markup).not.toContain("Waiting in the queue");
+    expect(markup).toContain('aria-valuetext="Balanced. Great quality at a practical size"');
+    expect(markup).toContain('role="radiogroup"');
+    expect(markup).toContain('aria-label="Format"');
   });
 
   it("explains when the installed engine is not the pinned release version", () => {

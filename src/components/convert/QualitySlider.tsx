@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useId, type CSSProperties } from "react";
 import { QUALITY_LEVELS } from "../../config/quality";
 import {
   encodingSpeed as getEncodingSpeed,
@@ -25,6 +25,10 @@ export function QualitySlider({
   const codec = getVideoCodec(videoCodec);
   const speed = getEncodingSpeed(encodingSpeed);
   const copiesVideo = videoCodec === "copy";
+  const scaleId = useId();
+  const valueText = copiesVideo
+    ? "Original quality. The video stream will be copied without re-encoding."
+    : `${quality.label}. ${quality.description}`;
 
   return (
     <section className="quality-card">
@@ -41,6 +45,8 @@ export function QualitySlider({
       <div className="quality-slider-wrap">
         <input
           aria-label="Quality and file size"
+          aria-describedby={scaleId}
+          aria-valuetext={valueText}
           type="range"
           min="0"
           max="4"
@@ -50,7 +56,7 @@ export function QualitySlider({
           disabled={disabled || copiesVideo}
           style={{ "--slider-progress": `${qualityIndex * 25}%` } as CSSProperties}
         />
-        <div className="slider-labels">
+        <div className="slider-labels" id={scaleId}>
           <span>{copiesVideo ? "Original stream" : "Smaller file"}</span>
           <span>{copiesVideo ? "No re-encoding" : "Higher quality"}</span>
         </div>
