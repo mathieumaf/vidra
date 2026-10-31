@@ -26,7 +26,7 @@ import { mount } from "../test/dom";
 
 const dialogMocks = vi.hoisted(() => ({
   confirm: vi.fn(async () => false),
-  open: vi.fn(async () => null),
+  open: vi.fn(async () => null as string | null),
   save: vi.fn(async () => null as string | null),
 }));
 const encodingMocks = vi.hoisted(() => ({
@@ -43,6 +43,9 @@ const encodingMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("@tauri-apps/api/path", () => ({
+  join: (...segments: string[]) => Promise.resolve(segments.join("/")),
+}));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: vi.fn(async () => () => {}) }),
 }));
@@ -321,6 +324,88 @@ describe("useEncodingQueue", () => {
     expect(encodingMocks.startEncodeQueue).toHaveBeenCalledOnce();
     expect(tree.text()).toContain("Status: encoding");
     expect(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY)).toBeNull();
+    expect(encodingMocks.enqueueEncodes).toHaveBeenCalledWith([
+      expect.objectContaining({ replaceExisting: false }),
+    ]);
+    tree.unmount();
+  });
+
+  it("confirms replacement only when the chosen name is already in the folder", async () => {
+    rememberQueueItems([queueItemFixture()]);
+    dialogMocks.save.mockResolvedValue("/Users/casey/Movies/output.mp4");
+    filesMocks.listDestinationFiles.mockResolvedValue(["output.mp4", "notes.txt"]);
+    encodingMocks.enqueueEncodes.mockResolvedValue([{
+      jobId: "job-2",
+      inputPath: "/Users/casey/Movies/clip.mov",
+      outputPath: "/Users/casey/Movies/output.mp4",
+    }]);
+    const tree = mount(<QueueProbe />);
+
+    await act(async () => {
+      tree.button("Start encoding").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(filesMocks.listDestinationFiles).toHaveBeenCalledWith("/Users/casey/Movies");
+    expect(encodingMocks.enqueueEncodes).toHaveBeenCalledWith([
+      expect.objectContaining({ replaceExisting: true }),
+    ]);
+    tree.unmount();
+  });
+
+  it("does not queue when the destination folder cannot be listed", async () => {
+    rememberQueueItems([queueItemFixture()]);
+    dialogMocks.save.mockResolvedValue("/Users/casey/Movies/output.mp4");
+    filesMocks.listDestinationFiles.mockRejectedValue(new Error("The destination folder could not be read."));
+    const tree = mount(<QueueProbe />);
+
+    await act(async () => {
+      tree.button("Start encoding").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(encodingMocks.enqueueEncodes).not.toHaveBeenCalled();
+    expect(tree.text()).toContain("could not be read");
+    expect(tree.text()).toContain("ready");
+    tree.unmount();
+  });
+
+  it("keeps videos that have not started when the running one is interrupted", async () => {
+    const first = queueItemFixture({ media: mediaFixture("first.mov") });
+    const second = queueItemFixture({ media: mediaFixture("second.mov") });
+    rememberQueueItems([first, second]);
+    dialogMocks.open.mockResolvedValue("/Users/casey/Movies/encoded");
+    filesMocks.listDestinationFiles.mockResolvedValue([]);
+    encodingMocks.enqueueEncodes.mockResolvedValue([
+      {
+        jobId: "job-1",
+        inputPath: first.media.path,
+        outputPath: "/Users/casey/Movies/encoded/first-vidra.mp4",
+      },
+      {
+        jobId: "job-2",
+        inputPath: second.media.path,
+        outputPath: "/Users/casey/Movies/encoded/second-vidra.mp4",
+      },
+    ]);
+    encodingMocks.startEncodeQueue.mockImplementation(async () => {
+      const saved = parsePendingQueue(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY));
+      expect(saved?.entries.map((entry) => entry.sourceName)).toEqual(["second.mov"]);
+    });
+    const tree = mount(<QueueProbe />);
+
+    await act(async () => {
+      tree.button("Start encoding").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(encodingMocks.startEncodeQueue).toHaveBeenCalledOnce();
+    expect(encodingMocks.enqueueEncodes).toHaveBeenCalledWith([
+      expect.objectContaining({ replaceExisting: false }),
+      expect.objectContaining({ replaceExisting: false }),
+    ]);
+    const saved = parsePendingQueue(localStorage.getItem(PENDING_QUEUE_STORAGE_KEY));
+    expect(saved?.entries.map((entry) => entry.sourceName)).toEqual(["second.mov"]);
     tree.unmount();
   });
 });

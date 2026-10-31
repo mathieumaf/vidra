@@ -5,6 +5,8 @@ import {
   defaultTrackSelection,
   emptyProgress,
   normalizedTrackSelection,
+  outputParentDirectory,
+  replacementWasConfirmed,
 } from "./queue";
 import type { EncodingSettings, MediaInfo } from "../types/media";
 import { DEFAULT_ADVANCED_SETTINGS } from "../config/advanced";
@@ -115,6 +117,21 @@ describe("batch output names", () => {
       paths: ["/videos/source-vidra-2.mkv"],
       renamedCount: 1,
     });
+  });
+
+  it("treats an existing destination name as confirmation and a new name as not", () => {
+    expect(outputParentDirectory("/Users/casey/Movies/holiday-vidra.mp4"))
+      .toBe("/Users/casey/Movies");
+    expect(outputParentDirectory("/holiday-vidra.mp4")).toBe("/");
+    expect(replacementWasConfirmed(
+      ["holiday-vidra.mp4", "notes.txt"],
+      "/Users/casey/Movies/holiday-vidra.mp4",
+    )).toBe(true);
+    expect(replacementWasConfirmed(
+      ["other.mp4"],
+      "/Users/casey/Movies/holiday-vidra.mp4",
+    )).toBe(false);
+    expect(replacementWasConfirmed([], "/Users/casey/Movies/holiday-vidra.mp4")).toBe(false);
   });
 
   it("avoids both existing files and outputs already reserved by the queue", async () => {

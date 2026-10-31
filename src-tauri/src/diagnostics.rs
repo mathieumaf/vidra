@@ -127,10 +127,40 @@ pub fn save_report(path: &str, report: &str) -> ApiResult<()> {
 
 fn classify_failure(log: &str) -> (&'static str, &'static str) {
     let log = log.to_ascii_lowercase();
-    if contains_any(&log, &["no space left on device", "disk full"]) {
+    if contains_any(
+        &log,
+        &[
+            "no space left on device",
+            "disk full",
+            "disk quota exceeded",
+        ],
+    ) {
         return (
             "disk_full",
             "The destination does not have enough free space.",
+        );
+    }
+    // Check volume and missing-file errors before header or decoder phrases.
+    // FFmpeg often reports both when a disk disappears mid-conversion.
+    if contains_any(
+        &log,
+        &[
+            "input/output error",
+            "device not configured",
+            "stale file handle",
+            "no such device",
+            "transport endpoint is not connected",
+        ],
+    ) {
+        return (
+            "destination_unavailable",
+            "The destination volume is unavailable. Reconnect it or choose another folder.",
+        );
+    }
+    if contains_any(&log, &["no such file or directory"]) {
+        return (
+            "media_unavailable",
+            "A source or destination file is no longer available. It may have been moved, deleted, or disconnected.",
         );
     }
     if contains_any(
@@ -372,12 +402,41 @@ mod tests {
             "disk_full"
         );
         assert_eq!(
+            classify_failure("write failed: Disk quota exceeded").0,
+            "disk_full"
+        );
+        let (volume_code, volume_summary) =
+            classify_failure("av_interleaved_write_frame(): Input/output error");
+        assert_eq!(volume_code, "destination_unavailable");
+        assert!(volume_summary.contains("volume is unavailable"));
+        assert_eq!(
+            classify_failure("Could not write header: Device not configured").0,
+            "destination_unavailable"
+        );
+        assert_eq!(
+            classify_failure("Error writing trailer: Stale file handle").0,
+            "destination_unavailable"
+        );
+        let (missing_code, missing_summary) = classify_failure(
+            "/source.mov: No such file or directory\nError while decoding stream #0:0",
+        );
+        assert_eq!(missing_code, "media_unavailable");
+        assert!(missing_summary.contains("no longer available"));
+        assert_eq!(
+            classify_failure("Could not write header: No such file or directory").0,
+            "media_unavailable"
+        );
+        assert_eq!(
             classify_failure("/output.mp4: Permission denied").0,
             "permission_denied"
         );
         assert_eq!(
             classify_failure("Unknown encoder 'missing'").0,
             "encoder_unavailable"
+        );
+        assert_eq!(
+            classify_failure("Invalid data found when processing input").0,
+            "unsupported_media"
         );
         assert_eq!(classify_failure("unexpected failure").0, "ffmpeg_failure");
     }

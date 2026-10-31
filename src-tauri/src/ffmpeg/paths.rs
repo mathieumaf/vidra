@@ -1,7 +1,7 @@
 use super::{EncodeRequest, OutputContainer};
 use crate::error::{ApiError, ApiResult};
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -19,7 +19,32 @@ pub(super) fn validate_input(path: &str) -> ApiResult<PathBuf> {
         return Err(ApiError::invalid_input("The selected input is not a file."));
     }
 
+    // `canonicalize` succeeds for a file the process cannot read. Opening it
+    // here rejects that source before a partial file is created.
+    fs::File::open(&canonical).map_err(|error| unreadable_input(&error))?;
+
     Ok(canonical)
+}
+
+fn unreadable_input(error: &io::Error) -> ApiError {
+    if error.kind() == io::ErrorKind::NotFound {
+        return ApiError::invalid_input("The selected input file is not accessible.");
+    }
+    if error.kind() == io::ErrorKind::PermissionDenied {
+        return ApiError::invalid_input(
+            "The selected input file cannot be read. Check that Vidra has permission to open it.",
+        );
+    }
+    #[cfg(unix)]
+    if matches!(
+        error.raw_os_error(),
+        Some(libc::EIO | libc::ENXIO | libc::ENODEV | libc::ENOTCONN | libc::ESTALE)
+    ) {
+        return ApiError::invalid_input(
+            "The selected input file cannot be read. Its volume may be unavailable.",
+        );
+    }
+    ApiError::invalid_input("The selected input file cannot be read.")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -419,6 +444,49 @@ mod tests {
         assert_eq!(
             resolved,
             input.canonicalize().expect("the input should resolve")
+        );
+        fs::remove_dir_all(directory).expect("the test directory should be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_input_is_rejected_without_being_modified() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = test_directory("unreadable-input");
+        let input = directory.join("clip.mov");
+        fs::write(&input, b"source").expect("the input should be written");
+        let mut permissions = fs::metadata(&input)
+            .expect("the input metadata should be readable")
+            .permissions();
+        permissions.set_mode(0o000);
+        fs::set_permissions(&input, permissions).expect("the input mode should change");
+
+        let opened = fs::File::open(&input);
+        if opened.is_ok() {
+            let mut permissions = fs::metadata(&input).expect("metadata").permissions();
+            permissions.set_mode(0o644);
+            fs::set_permissions(&input, permissions).expect("restore mode");
+            fs::remove_dir_all(directory).expect("the test directory should be removed");
+            return;
+        }
+
+        let error = validate_input(path_text(&input)).expect_err("an unreadable input is rejected");
+        assert_eq!(error.code, "invalid_input");
+        assert!(error.message.contains("cannot be read"));
+        assert!(error.message.contains("permission"));
+        assert_eq!(
+            fs::metadata(&input)
+                .expect("the owner can still stat the source")
+                .len(),
+            b"source".len() as u64
+        );
+        let mut permissions = fs::metadata(&input).expect("metadata").permissions();
+        permissions.set_mode(0o644);
+        fs::set_permissions(&input, permissions).expect("restore mode");
+        assert_eq!(
+            fs::read(&input).expect("the source should still be readable by the test"),
+            b"source"
         );
         fs::remove_dir_all(directory).expect("the test directory should be removed");
     }
