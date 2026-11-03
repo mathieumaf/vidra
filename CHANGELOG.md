@@ -2,11 +2,18 @@
 
 All notable changes to Vidra are documented in this file.
 
-## Unreleased
+## 0.2.0-beta.2 - 2026-11-03
+
+Prerelease **0.2.0-beta.2** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.2`. Windows, Linux, and Intel Mac builds are not included.
 
 ### Added
 
 - Choose an optional start and end time before conversion. The output contains that segment, and progress, the estimated time remaining, and history use the real output length. Re-encoded video starts and ends on the selected frames. Original video is copied unchanged, so it starts on the previous saved picture, which can be several seconds earlier, and still ends at the selected time. The length stays on "Checking…" until that picture is found. If it cannot be found, the card says the conversion was not started and encoding stays off. Chapters and text subtitles are moved onto that timeline and clipped to the file, including text subtitles on an Original video copy. The source file is not modified.
+- Use the whole conversion workflow from the keyboard and with VoiceOver. Dialogs keep focus inside and return it when they close, segmented choices behave as radio groups, and encoding and queue status changes are announced without reading every progress update. Focus rings, secondary text, and accent button labels meet contrast requirements in light and dark appearance. A skip link appears when it has focus, and an empty profile name shows an error. [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) lists what is supported and the manual VoiceOver checklist.
+
+### Changed
+
+- Center the macOS traffic lights so their top and left margins match. The logo and name stay below them.
 
 ### Fixed
 
@@ -14,6 +21,18 @@ All notable changes to Vidra are documented in this file.
 - Reject a source that cannot be read before encoding starts, and leave that file unchanged.
 - Explain when the destination runs out of space, the destination volume is unavailable, or a source or destination file disappears during a conversion.
 - Stop an encoder that could not be tracked, remove its unfinished file, and continue with the next queued video. A cancelled conversion stays cancelled even if the queue lock was interrupted.
+
+### Installation and testing
+
+- From an installed 0.2.0-beta.1 or 0.1.0, choose Beta in Settings and check for updates. Stable does not offer this prerelease. The bundle version shown in Settings is 0.2.0; the release link is `v0.2.0-beta.2`.
+- Please test trimming with a source that has text subtitles and chapters, on both re-encoded and Original video output, and test the app with VoiceOver on a Mac. These cannot be covered by automated checks.
+- Signed-build checks are listed in the [beta validation checklist](docs/RELEASING.md#beta-validation).
+
+### Internal
+
+- Use Node.js 26 LTS and pnpm 12 for repository tooling. The shipped app does not include Node.js.
+- Update locked JavaScript and Rust dependencies.
+- Document why the `glib` advisory RUSTSEC-2024-0429 does not affect the Apple Silicon app. The crate is linked only into the Linux GTK backend, and Vidra does not call the affected iterator.
 
 ## 0.2.0-beta.1 - 2026-10-25
 
