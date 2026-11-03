@@ -1,4 +1,5 @@
 import { ENCODING_SPEEDS, OUTPUT_CONTAINERS, VIDEO_CODECS } from "../../config/encoding";
+import { useRadioGroup } from "../../hooks/useRadioGroup";
 import type { EncodingSpeed, OutputContainer, VideoCodec } from "../../types/media";
 
 type EncodingOptionsProps = {
@@ -82,26 +83,42 @@ export function OptionGroup<T extends string>({
   className,
   onChange,
 }: OptionGroupProps<T>) {
+  const explainDisabled = Boolean(disabled && disabledReason);
+  const radio = useRadioGroup(options, value, onChange, explainDisabled);
   return (
     <div className={`option-group${className ? ` ${className}` : ""}`}>
       <span className="section-label">{label}</span>
-      <div className="segmented-options" role="radiogroup" aria-label={label.toLowerCase()}>
-        {options.map((option) => (
-          <button
-            key={option.id}
-            className={value === option.id ? "active" : ""}
-            type="button"
-            role="radio"
-            aria-checked={value === option.id}
-            disabled={disabled || option.disabled}
-            title={option.disabledReason ?? disabledReason}
-            onClick={() => onChange(option.id)}
-          >
-            <strong>{option.label}</strong>
-            <span>{option.description}</span>
-          </button>
-        ))}
+      <div
+        className="segmented-options"
+        role="radiogroup"
+        aria-label={readableGroupName(label)}
+        onKeyDown={radio.onKeyDown}
+      >
+        {options.map((option) => {
+          const reason = option.disabledReason ?? (disabled ? disabledReason : undefined);
+          return (
+            <button
+              key={option.id}
+              className={value === option.id ? "active" : ""}
+              type="button"
+              {...radio.optionProps(option.id, Boolean(option.disabled) || (disabled && !disabledReason))}
+              title={reason}
+              onClick={() => {
+                if (disabled || option.disabled) return;
+                onChange(option.id);
+              }}
+            >
+              <strong>{option.label}</strong>
+              <span>{option.description}</span>
+              {reason && <span className="visually-hidden">. {reason}</span>}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function readableGroupName(label: string): string {
+  return label.charAt(0) + label.slice(1).toLowerCase();
 }

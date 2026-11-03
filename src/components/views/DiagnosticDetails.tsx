@@ -54,7 +54,7 @@ export function DiagnosticDetails({
           </div>
         </div>
         {actionStatus && <p className="diagnostic-action-status" role="status">{actionStatus}</p>}
-        <pre>{diagnostic.report}</pre>
+        <pre tabIndex={0} aria-label="Diagnostic report">{diagnostic.report}</pre>
       </div>
     </details>
   );

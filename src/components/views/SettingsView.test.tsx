@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { BUILT_IN_PROFILES } from "../../config/profiles";
 import { mount } from "../../test/dom";
 import { SettingsView } from "./SettingsView";
 
@@ -103,7 +104,15 @@ describe("SettingsView application information", () => {
   it("changes the application appearance from its automatic default", () => {
     const { props, tree } = renderSettings();
 
-    expect(tree.button("Auto").getAttribute("aria-pressed")).toBe("true");
+    const auto = tree.button("Auto");
+    expect(auto.getAttribute("aria-checked")).toBe("true");
+    expect(auto.tabIndex).toBe(0);
+    expect(tree.button("Dark").tabIndex).toBe(-1);
+    act(() => {
+      auto.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
+    });
+    expect(props.onThemePreferenceChange).toHaveBeenCalledWith("light");
+    expect(document.activeElement).toBe(tree.button("Light"));
     tree.click("Dark");
 
     expect(props.onThemePreferenceChange).toHaveBeenCalledWith("dark");
@@ -130,20 +139,70 @@ describe("SettingsView application information", () => {
     beta.tree.unmount();
   });
 
-  it("keeps all principal third-party notices inside the application", () => {
+  it("keeps all principal third-party notices inside the settings view", () => {
+    const outside = document.createElement("button");
+    outside.textContent = "Outside the dialog";
+    document.body.append(outside);
     const { tree } = renderSettings();
 
+    // A pointer click does not focus a button in WebKit; closing must still return here.
+    const open = tree.button("View notices");
     tree.click("View notices");
 
-    expect(tree.container.querySelector("[role=dialog]")).not.toBeNull();
+    const dialog = tree.container.querySelector("[role=dialog]");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.getAttribute("aria-modal")).toBe("true");
+    expect(document.activeElement).toBe(tree.button("Close third-party notices"));
+    // The notices cover only the settings view: the sidebar and window drag regions stay usable.
+    expect(tree.container.querySelector(".settings-scroll")?.hasAttribute("inert")).toBe(true);
+    expect(outside.hasAttribute("inert")).toBe(false);
+    expect(tree.container.querySelector(".notices-content")?.getAttribute("tabindex")).toBe("0");
     for (const component of ["FFmpeg and FFprobe", "x264", "x265", "SVT-AV1", "dav1d", "Opus", "zimg"]) {
       expect(tree.text()).toContain(component);
     }
     expect(tree.text()).toContain("GPL-2.0-or-later");
     expect(tree.text()).toContain("BSD-3-Clause");
 
-    tree.click("Close third-party notices");
+    act(() => {
+      tree.button("Close third-party notices").dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        key: "Escape",
+      }));
+    });
     expect(tree.container.querySelector("[role=dialog]")).toBeNull();
+    expect(document.activeElement).toBe(open);
+    expect(tree.container.querySelector(".settings-scroll")?.hasAttribute("inert")).toBe(false);
+    outside.remove();
+    tree.unmount();
+  });
+
+  it("associates an empty profile name with an error", () => {
+    const profile = {
+      ...BUILT_IN_PROFILES[0],
+      id: "personal-holiday",
+      name: "Holiday",
+      description: null,
+      isBuiltIn: false,
+    };
+    const { tree } = renderSettings({ profiles: [profile] });
+
+    tree.click("Rename");
+    const input = tree.container.querySelector<HTMLInputElement>('input[aria-label="Profile name"]');
+    if (!input) throw new Error("Missing profile name field");
+    setNativeValue(input, "");
+    const form = input.closest("form");
+    act(() => form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    const errorId = input.getAttribute("aria-describedby");
+    expect(errorId).toBeTruthy();
+    expect(tree.container.querySelector(`#${CSS.escape(errorId ?? "")}`)?.textContent).toBe("Enter a profile name.");
     tree.unmount();
   });
 });
+
+function setNativeValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  act(() => input.dispatchEvent(new Event("input", { bubbles: true })));
+}
