@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { audioModeLabel, videoCodecLabel } from "../../config/encoding";
 import { THIRD_PARTY_NOTICE_GROUPS } from "../../config/legal";
 import type { EncodingProfile } from "../../config/profiles";
@@ -241,7 +241,16 @@ export function SettingsView({
                 <strong>Third-party notices</strong>
                 <p>Licenses for FFmpeg, codecs, and application libraries bundled with Vidra.</p>
               </div>
-              <button className="settings-notices-button" type="button" onClick={() => setShowNotices(true)}>
+              <button
+                className="settings-notices-button"
+                type="button"
+                onClick={(event) => {
+                  // WebKit does not focus a clicked button. Focus it so closing the
+                  // notices returns focus here for pointer and keyboard users alike.
+                  event.currentTarget.focus();
+                  setShowNotices(true);
+                }}
+              >
                 View notices
               </button>
             </div>
@@ -351,7 +360,8 @@ function AppearanceSwitch({
 }
 
 function ThirdPartyNotices({ onClose }: { onClose: () => void }) {
-  const dialogRef = useModalDialog(onClose);
+  // The notices cover only the settings view. Keep the sidebar and window drag regions usable.
+  const dialogRef = useModalDialog(onClose, { inertWithin: ".settings-view" });
 
   return (
     <div className="notices-overlay">
@@ -416,12 +426,23 @@ function SettingsProfileRow({
   const [name, setName] = useState(profile.name);
   const [nameError, setNameError] = useState<string | null>(null);
   const nameErrorId = useId();
+  const renameButton = useRef<HTMLButtonElement>(null);
+  const deleteButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setEditor(null);
     setName(profile.name);
     setNameError(null);
   }, [profile.id, profile.name]);
+
+  // Closing the editor unmounts the focused control. Return focus to the button that opened it.
+  useEffect(() => {
+    if (editor || !returnFocus.current) return;
+    const target = returnFocus.current;
+    returnFocus.current = null;
+    if (target.isConnected) target.focus();
+  });
 
   function submitRename(event: FormEvent) {
     event.preventDefault();
@@ -430,12 +451,14 @@ function SettingsProfileRow({
       return;
     }
     onRename?.(name);
+    returnFocus.current = renameButton.current;
     setEditor(null);
   }
 
   function closeEditor(event?: KeyboardEvent) {
     if (event && event.key !== "Escape") return;
     event?.preventDefault();
+    returnFocus.current = editor === "delete" ? deleteButton.current : renameButton.current;
     setEditor(null);
     setNameError(null);
   }
@@ -457,12 +480,14 @@ function SettingsProfileRow({
         <button type="button" onClick={onDuplicate}>Duplicate</button>
         {!profile.isBuiltIn && (
           <>
-            <button type="button" onClick={() => {
+            <button ref={renameButton} type="button" onClick={() => {
               setName(profile.name);
               setNameError(null);
               setEditor("rename");
             }}>Rename</button>
-            <button className="danger" type="button" onClick={() => setEditor("delete")}>Delete</button>
+            <button ref={deleteButton} className="danger" type="button" onClick={() => setEditor("delete")}>
+              Delete
+            </button>
           </>
         )}
       </div>
@@ -478,9 +503,6 @@ function SettingsProfileRow({
               aria-required="true"
               maxLength={60}
               value={name}
-              onBlur={() => {
-                if (!name.trim()) setNameError("Enter a profile name.");
-              }}
               onChange={(event) => {
                 setName(event.target.value);
                 if (event.target.value.trim()) setNameError(null);
@@ -488,7 +510,7 @@ function SettingsProfileRow({
             />
             {nameError && <p className="field-error" id={nameErrorId} role="alert">{nameError}</p>}
           </label>
-          <button className="confirm" type="submit" disabled={!name.trim()}>Rename</button>
+          <button className="confirm" type="submit">Rename</button>
           <button type="button" onClick={() => closeEditor()}>Cancel</button>
         </form>
       )}
@@ -497,7 +519,8 @@ function SettingsProfileRow({
         <div className="settings-profile-editor delete" role="alert" onKeyDown={closeEditor}>
           <span>Delete “{profile.name}”? Conversions and media will not be affected.</span>
           <button className="danger" type="button" onClick={() => onDelete?.()}>Delete profile</button>
-          <button type="button" onClick={() => closeEditor()}>Cancel</button>
+          {/* Start on Cancel so Escape works at once and Enter does not delete by accident. */}
+          <button autoFocus type="button" onClick={() => closeEditor()}>Cancel</button>
         </div>
       )}
     </div>

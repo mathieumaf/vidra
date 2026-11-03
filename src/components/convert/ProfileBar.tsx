@@ -1,4 +1,12 @@
-import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import type { EncodingProfile } from "../../config/profiles";
 import { localComputerPhrase } from "../../lib/platform";
 
@@ -34,6 +42,9 @@ export function ProfileBar({
   const [nameError, setNameError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const nameErrorId = useId();
+  const selectRef = useRef<HTMLSelectElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const pendingFocus = useRef<"opener" | "select" | null>(null);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null;
   const builtInProfiles = profiles.filter((profile) => profile.isBuiltIn);
   const userProfiles = profiles.filter((profile) => !profile.isBuiltIn);
@@ -44,7 +55,19 @@ export function ProfileBar({
     setConfirmingDelete(false);
   }, [selectedProfileId]);
 
-  function beginEditor(nextEditor: "create" | "rename") {
+  // Closing the editor or the delete confirmation unmounts the focused control.
+  // Put focus back on the control that opened it, or on the profile menu after a change.
+  useEffect(() => {
+    if (editor || confirmingDelete || !pendingFocus.current) return;
+    const target = pendingFocus.current === "opener" && opener.current?.isConnected
+      ? opener.current
+      : selectRef.current;
+    pendingFocus.current = null;
+    target?.focus();
+  });
+
+  function beginEditor(nextEditor: "create" | "rename", event: MouseEvent<HTMLElement>) {
+    opener.current = event.currentTarget;
     setEditor(nextEditor);
     setName(nextEditor === "rename" ? selectedProfile?.name ?? "" : "");
     setNameError(null);
@@ -52,6 +75,7 @@ export function ProfileBar({
   }
 
   function closeEditor() {
+    pendingFocus.current = "opener";
     setEditor(null);
     setNameError(null);
     setConfirmingDelete(false);
@@ -65,6 +89,7 @@ export function ProfileBar({
     }
     if (editor === "rename") onRename(name);
     else onCreate(name);
+    pendingFocus.current = "select";
     setEditor(null);
     setNameError(null);
   }
@@ -83,6 +108,7 @@ export function ProfileBar({
           <div>
             <select
               aria-label="Encoding profile"
+              ref={selectRef}
               value={selectedProfile?.id ?? "custom"}
               disabled={disabled}
               onChange={(event) => onSelect(event.target.value === "custom" ? null : event.target.value)}
@@ -125,20 +151,21 @@ export function ProfileBar({
           {selectedProfile && !selectedProfile.isBuiltIn ? (
             <>
               <button type="button" disabled={disabled || !isModified} onClick={onUpdate}>Update</button>
-              <button type="button" disabled={disabled} onClick={() => beginEditor("create")}>Save as new</button>
-              <button type="button" disabled={disabled} onClick={() => beginEditor("rename")}>Rename</button>
+              <button type="button" disabled={disabled} onClick={(event) => beginEditor("create", event)}>Save as new</button>
+              <button type="button" disabled={disabled} onClick={(event) => beginEditor("rename", event)}>Rename</button>
               <button
                 className="profile-delete-button"
                 type="button"
                 disabled={disabled}
-                onClick={() => {
+                onClick={(event) => {
+                  opener.current = event.currentTarget;
                   setEditor(null);
                   setConfirmingDelete(true);
                 }}
               >Delete</button>
             </>
           ) : (
-            <button type="button" disabled={disabled} onClick={() => beginEditor("create")}>{selectedProfile?.isBuiltIn ? "Save a copy" : "Save as profile"}</button>
+            <button type="button" disabled={disabled} onClick={(event) => beginEditor("create", event)}>{selectedProfile?.isBuiltIn ? "Save a copy" : "Save as profile"}</button>
           )}
         </div>
       </div>
@@ -155,9 +182,6 @@ export function ProfileBar({
               maxLength={60}
               value={name}
               placeholder="My profile"
-              onBlur={() => {
-                if (!name.trim()) setNameError("Enter a profile name.");
-              }}
               onChange={(event) => {
                 setName(event.target.value);
                 if (event.target.value.trim()) setNameError(null);
@@ -165,7 +189,7 @@ export function ProfileBar({
             />
             {nameError && <p className="field-error" id={nameErrorId} role="alert">{nameError}</p>}
           </label>
-          <button className="profile-confirm-button" type="submit" disabled={!name.trim()}>
+          <button className="profile-confirm-button" type="submit">
             {editor === "rename" ? "Rename" : "Save profile"}
           </button>
           <button type="button" onClick={closeEditor}>Cancel</button>
@@ -180,10 +204,12 @@ export function ProfileBar({
             type="button"
             onClick={() => {
               onDelete();
+              pendingFocus.current = "select";
               setConfirmingDelete(false);
             }}
           >Delete profile</button>
-          <button type="button" onClick={() => setConfirmingDelete(false)}>Cancel</button>
+          {/* Start on Cancel so Escape works at once and Enter does not delete by accident. */}
+          <button autoFocus type="button" onClick={closeEditor}>Cancel</button>
         </div>
       )}
     </section>

@@ -139,21 +139,23 @@ describe("SettingsView application information", () => {
     beta.tree.unmount();
   });
 
-  it("keeps all principal third-party notices inside the application", () => {
+  it("keeps all principal third-party notices inside the settings view", () => {
     const outside = document.createElement("button");
     outside.textContent = "Outside the dialog";
     document.body.append(outside);
     const { tree } = renderSettings();
 
+    // A pointer click does not focus a button in WebKit; closing must still return here.
     const open = tree.button("View notices");
-    act(() => open.focus());
     tree.click("View notices");
 
     const dialog = tree.container.querySelector("[role=dialog]");
     expect(dialog).not.toBeNull();
     expect(dialog?.getAttribute("aria-modal")).toBe("true");
     expect(document.activeElement).toBe(tree.button("Close third-party notices"));
-    expect(outside.hasAttribute("inert")).toBe(true);
+    // The notices cover only the settings view: the sidebar and window drag regions stay usable.
+    expect(tree.container.querySelector(".settings-scroll")?.hasAttribute("inert")).toBe(true);
+    expect(outside.hasAttribute("inert")).toBe(false);
     expect(tree.container.querySelector(".notices-content")?.getAttribute("tabindex")).toBe("0");
     for (const component of ["FFmpeg and FFprobe", "x264", "x265", "SVT-AV1", "dav1d", "Opus", "zimg"]) {
       expect(tree.text()).toContain(component);
@@ -169,7 +171,7 @@ describe("SettingsView application information", () => {
     });
     expect(tree.container.querySelector("[role=dialog]")).toBeNull();
     expect(document.activeElement).toBe(open);
-    expect(outside.hasAttribute("inert")).toBe(false);
+    expect(tree.container.querySelector(".settings-scroll")?.hasAttribute("inert")).toBe(false);
     outside.remove();
     tree.unmount();
   });

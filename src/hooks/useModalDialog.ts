@@ -1,11 +1,20 @@
 import { useEffect, useRef } from "react";
 import { focusableElements } from "../lib/a11y";
 
+type ModalDialogOptions = {
+  /**
+   * Closest ancestor, by selector, that bounds the inert background. Use it for a dialog
+   * that covers only part of the window, so the uncovered sidebar and window drag regions
+   * stay usable. Without it, everything outside the dialog up to the body becomes inert.
+   */
+  inertWithin?: string;
+};
+
 /**
  * Modal dialog behavior: inert background, tab cycle, Escape, and focus restore.
- * Callers unmount the dialog to close it.
+ * Callers unmount the dialog to close it. Without onEscape, Escape does nothing.
  */
-export function useModalDialog(onEscape?: () => void) {
+export function useModalDialog(onEscape?: () => void, options: ModalDialogOptions = {}) {
   const dialogRef = useRef<HTMLElement>(null);
   const onEscapeRef = useRef(onEscape);
   onEscapeRef.current = onEscape;
@@ -20,7 +29,8 @@ export function useModalDialog(onEscape?: () => void) {
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return undefined;
-    const releaseInert = inertOutside(dialog);
+    const boundary = options.inertWithin ? dialog.parentElement?.closest<HTMLElement>(options.inertWithin) : null;
+    const releaseInert = inertOutside(dialog, boundary ?? document.body);
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -69,10 +79,10 @@ function focusInitial(dialog: HTMLElement) {
   focusableElements(dialog)[0]?.focus();
 }
 
-function inertOutside(dialog: HTMLElement): () => void {
+function inertOutside(dialog: HTMLElement, boundary: HTMLElement): () => void {
   const changed: HTMLElement[] = [];
   let current: HTMLElement | null = dialog;
-  while (current && current !== document.body) {
+  while (current && current !== boundary && current !== document.body) {
     const parent: HTMLElement | null = current.parentElement;
     if (!parent) break;
     for (const sibling of parent.children) {

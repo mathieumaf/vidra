@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { PendingQueueSnapshot } from "../../lib/pendingQueue";
 import { useModalDialog } from "../../hooks/useModalDialog";
 import { Icon } from "../ui/Icon";
@@ -18,9 +19,17 @@ export function PendingQueueRestoreOffer({
   onDiscard,
 }: PendingQueueRestoreOfferProps) {
   const count = snapshot.entries.length;
-  const panelRef = useModalDialog(() => {
-    if (!isRestoring) onDiscard();
-  });
+  // Escape is deliberately ignored: the only choices discard or restore the saved queue,
+  // and discarding cannot be undone. The user must pick one with a button.
+  const panelRef = useModalDialog();
+  const startFreshRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    // Initial focus lands on Start fresh while the encoding tools are still being checked.
+    // Move it to Restore queue once that becomes possible, unless the user already moved on.
+    if (canRestore && document.activeElement === startFreshRef.current) restoreRef.current?.focus();
+  }, [canRestore]);
 
   return (
     <div className="pending-queue-restore-overlay">
@@ -71,6 +80,7 @@ export function PendingQueueRestoreOffer({
           <button
             autoFocus={!canRestore}
             className="secondary-button"
+            ref={startFreshRef}
             type="button"
             onClick={onDiscard}
             disabled={isRestoring}
@@ -80,6 +90,7 @@ export function PendingQueueRestoreOffer({
           <button
             autoFocus={canRestore}
             className="primary-button"
+            ref={restoreRef}
             type="button"
             onClick={onRestore}
             disabled={!canRestore || isRestoring}

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQueueAnnouncements } from "../../hooks/useQueueAnnouncements";
 import type { EncodeQueueItem } from "../../types/media";
 import { qualityLevel } from "../../config/quality";
@@ -58,21 +59,25 @@ export function QueueView({
   onEdit,
   onGoToConvert,
 }: QueueViewProps) {
-  const announcement = useQueueAnnouncements(
-    items.map((item) => ({
-      id: item.clientId,
-      name: item.media.name,
-      status: item.status,
-      percent: item.status === "encoding" && !item.progress.indeterminate ? item.progress.percent : null,
-    })),
-    statusLabels,
+  const announcementItems = useMemo(() => items.map((item) => ({
+    id: item.clientId,
+    name: item.media.name,
+    status: item.status,
+    percent: item.status === "encoding" && !item.progress.indeterminate ? item.progress.percent : null,
+  })), [items]);
+  const announcement = useQueueAnnouncements(announcementItems, statusLabels);
+  // Separate regions: probing toggles must not repeat the last queue announcement.
+  const liveRegions = (
+    <>
+      <LiveRegion message={announcement} />
+      <LiveRegion message={isProbing ? "Reading videos" : ""} />
+    </>
   );
-  const activityMessage = [announcement, isProbing ? "Reading videos" : ""].filter(Boolean).join(". ");
 
   if (items.length === 0) {
     return (
       <div className="queue-view">
-        <LiveRegion message={activityMessage} />
+        {liveRegions}
         {notice && <div className="notice-message queue-message" role="status">{notice}</div>}
         {error && <div className="error-message queue-message" role="alert">{error}</div>}
         <div className="utility-view">
@@ -95,7 +100,7 @@ export function QueueView({
 
   return (
     <div className="queue-view">
-      <LiveRegion message={activityMessage} />
+      {liveRegions}
       <section className="queue-summary">
         <div>
           <span className="section-label">BATCH QUEUE</span>

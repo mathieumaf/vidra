@@ -44,6 +44,21 @@ describe("encoding progress announcements", () => {
     expect(progressAnnouncement(encoding, { ...encoding, active: false, percent: 100 })).toBeNull();
   });
 
+  it("announces the next video of a batch when progress starts over", () => {
+    expect(progressAnnouncement(
+      { ...encoding, percent: 99 },
+      { ...encoding, percent: 0 },
+    )).toBe("Encoding started");
+    expect(progressAnnouncement(
+      { ...encoding, percent: 80 },
+      { ...encoding, indeterminate: true, percent: 0 },
+    )).toBe("Encoding started");
+    expect(progressAnnouncement(
+      { ...encoding, indeterminate: true, percent: 0 },
+      { ...encoding, percent: 30 },
+    )).toBe("Encoding 25 percent");
+  });
+
   it("does not announce a percent while progress is indeterminate", () => {
     const indeterminate = { ...encoding, indeterminate: true, percent: 0 };
     expect(progressAnnouncement(null, indeterminate)).toBe("Encoding started");

@@ -48,9 +48,14 @@ export function progressAnnouncement(
   }
   if (next.paused && !previous.paused) return `${label} paused`;
   if (!next.paused && previous.paused) return `${label} resumed`;
-  if (next.paused || next.indeterminate) return null;
+  if (next.paused) return null;
+  // Progress that falls back while still active means the next video of a batch started.
+  if (next.indeterminate) {
+    return !previous.indeterminate && !previous.paused && previous.percent > 0 ? `${label} started` : null;
+  }
   const bucket = progressBucket(next.percent);
   const previousBucket = progressBucket(previous.percent);
+  if (!previous.indeterminate && bucket < previousBucket) return `${label} started`;
   if (bucket !== previousBucket && bucket > 0 && bucket < 100) {
     return `${label} ${bucket} percent`;
   }

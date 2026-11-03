@@ -208,6 +208,9 @@ export function ConvertView({
         paused={isPaused}
         indeterminate={progress.indeterminate}
         percent={progress.percent}
+        outcome={result?.status === "completed"
+          ? "Encoding complete"
+          : result?.status === "cancelled" ? "Encoding cancelled" : null}
       />
       <div className="conversion-workspace">
         <div className="conversion-content">
@@ -325,7 +328,7 @@ export function ConvertView({
           )}
 
           {!isActive && result?.status === "completed" && (
-            <div className="success-message" role="status">
+            <div className="success-message">
               <span>✓</span>
               <div>
                 <strong>Encoding complete</strong>
@@ -335,7 +338,7 @@ export function ConvertView({
             </div>
           )}
           {!isActive && result?.status === "cancelled" && (
-            <div className="notice-message" role="status">Encoding cancelled. The partial output was removed.</div>
+            <div className="notice-message">Encoding cancelled. The partial output was removed.</div>
           )}
           {error && <div className="error-message" role="alert">{error}</div>}
         </div>

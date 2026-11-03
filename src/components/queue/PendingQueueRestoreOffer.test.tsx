@@ -71,7 +71,7 @@ describe("PendingQueueRestoreOffer", () => {
     tree.unmount();
   });
 
-  it("lets the user discard the offer and waits until local tools are ready", () => {
+  it("ignores Escape and moves focus to Restore queue once local tools are ready", () => {
     const onDiscard = vi.fn();
     const tree = mount(
       <PendingQueueRestoreOffer
@@ -92,7 +92,19 @@ describe("PendingQueueRestoreOffer", () => {
         key: "Escape",
       }));
     });
-    expect(onDiscard).toHaveBeenCalledOnce();
+    expect(onDiscard).not.toHaveBeenCalled();
+    expect(tree.container.querySelector("[role=dialog]")).not.toBeNull();
+
+    tree.render(
+      <PendingQueueRestoreOffer
+        snapshot={snapshot}
+        canRestore
+        isRestoring={false}
+        onRestore={vi.fn()}
+        onDiscard={onDiscard}
+      />,
+    );
+    expect(document.activeElement).toBe(tree.button("Restore queue"));
     tree.unmount();
   });
 
