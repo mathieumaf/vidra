@@ -2,7 +2,7 @@
 
 All notable changes to Vidra are documented in this file.
 
-## 0.2.0-rc.1 - Unreleased
+## 0.2.0-rc.1 - 2026-11-05
 
 Release candidate **0.2.0-rc.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-rc.1`. Windows, Linux, and Intel Mac builds are not included.
 
