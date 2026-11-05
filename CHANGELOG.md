@@ -2,6 +2,17 @@
 
 All notable changes to Vidra are documented in this file.
 
+## 0.2.0-rc.1 - Unreleased
+
+Release candidate **0.2.0-rc.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-rc.1`. Windows, Linux, and Intel Mac builds are not included.
+
+This build has the same application code as 0.2.0-beta.2. If it passes validation, 0.2.0 is published from the same code with no behavior change.
+
+### Installation and testing
+
+- From an installed 0.2.0-beta.2, 0.2.0-beta.1, or 0.1.0, choose Beta in Settings and check for updates. Stable does not offer this release candidate. The bundle version shown in Settings is 0.2.0; the release link is `v0.2.0-rc.1`.
+- This release candidate validates the signed app and the FFmpeg 8.1.3 release engine before the official 0.2.0 release. The checks are listed in the [prerelease validation checklist](docs/RELEASING.md#beta-validation), including trimming and VoiceOver.
+
 ## 0.2.0-beta.2 - 2026-11-03
 
 Prerelease **0.2.0-beta.2** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-beta.2`. Windows, Linux, and Intel Mac builds are not included.
