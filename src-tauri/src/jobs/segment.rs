@@ -12,6 +12,10 @@ pub(crate) struct PreparedSegment {
     pub directory: PathBuf,
     pub chapter_file: Option<PathBuf>,
     pub text_subtitle_files: Vec<PathBuf>,
+    /// Source indexes corresponding to the clipped files, in input order.
+    pub text_subtitle_indexes: Vec<u32>,
+    /// Selected source streams, retaining their order and track metadata.
+    pub subtitles: Vec<crate::ffmpeg::SubtitleStream>,
     pub image_subtitle_count: usize,
     /// Stream copy normalizes timestamps while muxing. Text cues are added in
     /// a second copy after that, so their times stay on the output timeline.

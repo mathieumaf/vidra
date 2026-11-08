@@ -52,6 +52,7 @@ fn pending(id: &str) -> PendingJob {
             chapters: Vec::new(),
             has_metadata: false,
         },
+        replace_identity: None,
         ffmpeg_version: Some("ffmpeg test".to_owned()),
         segment: None,
         ffmpeg_command: None,
@@ -92,12 +93,14 @@ fn a_waiting_job_can_move_ahead_of_a_suspended_job() {
         let mut state = manager.state.lock().unwrap();
         state.suspended.push_back(ActiveJob {
             id: "paused".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: "/paused.mp4".to_owned(),
             estimated_output_bytes: 0,
             process: None,
             process_id: None,
             paused: true,
             partial: None,
+            auxiliary_partial: None,
         });
         state.waiting_order.push_front("paused".to_owned());
     }
@@ -186,12 +189,14 @@ fn update_rejects_running_and_paused_conversions() {
         let manager = JobManager::default();
         let job = ActiveJob {
             id: "active".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: "/active.mp4".to_owned(),
             estimated_output_bytes: 0,
             process: None,
             process_id: None,
             paused,
             partial: None,
+            auxiliary_partial: None,
         };
         let mut state = manager.state.lock().unwrap();
         if paused {
@@ -246,12 +251,14 @@ fn pausing_releases_sleep_prevention_and_resuming_restores_it() {
         let mut state = manager.state.lock().unwrap();
         state.active = Some(ActiveJob {
             id: "active".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: "/active.mp4".to_owned(),
             estimated_output_bytes: 0,
             process: None,
             process_id: Some(process_id),
             paused: false,
             partial: None,
+            auxiliary_partial: None,
         });
     }
 
@@ -306,12 +313,14 @@ fn shutdown_removes_partials_and_keeps_existing_destinations() {
         let mut state = manager.state.lock().unwrap();
         state.active = Some(ActiveJob {
             id: "active".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: output.to_string_lossy().into_owned(),
             estimated_output_bytes: 0,
             process: None,
             process_id: None,
             paused: false,
             partial: Some(partial.clone()),
+            auxiliary_partial: None,
         });
     }
     manager.sleep_preventer.activate().unwrap();
@@ -418,12 +427,14 @@ fn active_and_paused_outputs_stay_reserved() {
         let manager = JobManager::default();
         let job = ActiveJob {
             id: "busy".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: "/busy.mp4".to_owned(),
             estimated_output_bytes: 0,
             process: None,
             process_id: None,
             paused,
             partial: None,
+            auxiliary_partial: None,
         };
         {
             let mut state = manager.state.lock().unwrap();
@@ -627,7 +638,7 @@ fn a_poisoned_lock_still_reports_cancellation() {
 }
 
 #[test]
-fn cancelling_before_the_process_exists_leaves_the_job_running() {
+fn cancelling_before_the_process_exists_marks_the_reserved_job_cancelled() {
     let manager = JobManager::default();
     manager.append(vec![pending("starting")]).unwrap();
     assert_eq!(
@@ -635,14 +646,12 @@ fn cancelling_before_the_process_exists_leaves_the_job_running() {
         "starting"
     );
 
-    let error = match manager.cancel("starting") {
-        Ok(_) => panic!("a job that is still starting cannot be cancelled yet"),
-        Err(error) => error,
-    };
-    assert_eq!(error.code, "job_state_error");
-    assert!(error.message.contains("still starting"));
+    assert!(matches!(
+        manager.cancel("starting").unwrap(),
+        crate::jobs::CancelledJob::Preparing
+    ));
     assert!(manager.reserve_next().unwrap().is_none());
-    assert!(!manager.take_cancelled("starting"));
+    assert!(manager.take_cancelled("starting"));
 }
 
 #[cfg(unix)]
@@ -796,12 +805,14 @@ fn finishing_a_paused_job_removes_it_from_the_waiting_order() {
         let mut state = manager.state.lock().unwrap();
         state.suspended.push_back(ActiveJob {
             id: "paused".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: "/paused.mp4".to_owned(),
             estimated_output_bytes: 0,
             process: None,
             process_id: None,
             paused: true,
             partial: None,
+            auxiliary_partial: None,
         });
         state.waiting_order.push_front("paused".to_owned());
     }
@@ -849,6 +860,7 @@ fn shutdown_stops_running_and_paused_encoders_and_clears_the_queue() {
         let mut state = manager.state.lock().unwrap();
         state.active = Some(ActiveJob {
             id: "active".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: active_output.to_string_lossy().into_owned(),
             estimated_output_bytes: 0,
             process: Some(RunningProcess::from_stop(11, move || {
@@ -858,9 +870,11 @@ fn shutdown_stops_running_and_paused_encoders_and_clears_the_queue() {
             process_id: Some(11),
             paused: false,
             partial: Some(active_partial.clone()),
+            auxiliary_partial: None,
         });
         state.suspended.push_back(ActiveJob {
             id: "paused".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: paused_output.to_string_lossy().into_owned(),
             estimated_output_bytes: 0,
             process: Some(RunningProcess::from_stop(12, move || {
@@ -870,6 +884,7 @@ fn shutdown_stops_running_and_paused_encoders_and_clears_the_queue() {
             process_id: Some(12),
             paused: true,
             partial: Some(paused_partial.clone()),
+            auxiliary_partial: None,
         });
         state.waiting_order.push_front("paused".to_owned());
         state.cancelled.insert("old".to_owned());
@@ -930,6 +945,7 @@ fn shutdown_recovers_a_poisoned_lock_and_still_stops_the_encoder() {
         let mut state = manager.state.lock().unwrap();
         state.active = Some(ActiveJob {
             id: "active".to_owned(),
+            input_path: "/synthetic-input.mov".to_owned(),
             output_path: output.to_string_lossy().into_owned(),
             estimated_output_bytes: 0,
             process: Some(RunningProcess::from_stop(7, move || {
@@ -939,6 +955,7 @@ fn shutdown_recovers_a_poisoned_lock_and_still_stops_the_encoder() {
             process_id: Some(7),
             paused: false,
             partial: Some(partial.clone()),
+            auxiliary_partial: None,
         });
         state.cancelled.insert("old".to_owned());
         state.update_in_progress = true;
@@ -1015,4 +1032,184 @@ fn a_step_after_the_encoder_can_attach_a_process_and_be_cancelled() {
     manager.end_preparation("running");
     assert!(manager.take_cancelled("running"));
     manager.finish_active("running").unwrap();
+}
+
+#[test]
+fn queued_sources_and_outputs_are_protected_in_both_directions() {
+    for phase in ["pending", "active", "suspended"] {
+        let manager = JobManager::default();
+        manager.append(vec![pending("first")]).unwrap();
+        if phase != "pending" {
+            manager.reserve_next().unwrap().unwrap();
+            if phase == "suspended" {
+                let mut state = manager.state.lock().unwrap();
+                let active = state.active.take().unwrap();
+                state.suspended.push_back(active);
+            }
+        }
+        let mut overwrite = pending("second");
+        overwrite.request.output_path = "/first.mov".into();
+        overwrite.request.replace_existing = true;
+        assert!(manager
+            .append(vec![overwrite])
+            .unwrap_err()
+            .message
+            .contains("input file"));
+        let mut read_future_output = pending("third");
+        read_future_output.request.input_path = "/first.mp4".into();
+        assert!(manager
+            .append(vec![read_future_output])
+            .unwrap_err()
+            .message
+            .contains("input file"));
+    }
+}
+
+#[test]
+fn queued_source_hardlinks_cannot_be_replacement_outputs() {
+    let directory = std::env::temp_dir().join(format!("vidra-queue-alias-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("source.mov");
+    let alias = directory.join("alias.mp4");
+    fs::write(&source, b"source").unwrap();
+    fs::hard_link(&source, &alias).unwrap();
+    let manager = JobManager::default();
+    let mut first = pending("first");
+    first.request.input_path = source.to_string_lossy().into_owned();
+    manager.append(vec![first]).unwrap();
+    let mut second = pending("second");
+    second.request.output_path = alias.to_string_lossy().into_owned();
+    second.request.replace_existing = true;
+    assert!(manager.append(vec![second]).is_err());
+    assert_eq!(fs::read(&source).unwrap(), b"source");
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cancellation_before_attach_stops_the_new_encoder_and_keeps_the_slot() {
+    use crate::jobs::{process::RunningProcess, CancelledJob};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    let manager = JobManager::default();
+    manager
+        .append(vec![pending("first"), pending("second")])
+        .unwrap();
+    manager.reserve_next().unwrap().unwrap();
+    manager.begin_preparation("first").unwrap();
+    assert!(matches!(
+        manager.cancel("first").unwrap(),
+        CancelledJob::Preparing
+    ));
+    manager.end_preparation("first");
+    let stopped = Arc::new(AtomicBool::new(false));
+    let flag = stopped.clone();
+    let error = manager
+        .attach_running(
+            "first",
+            RunningProcess::from_stop(999_999, move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            }),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "cancelled");
+    assert!(stopped.load(Ordering::Relaxed));
+    assert!(manager.reserve_next().unwrap().is_none());
+}
+
+#[test]
+fn a_reaped_encoder_is_never_signalled_during_finishing() {
+    use crate::jobs::{process::RunningProcess, CancelledJob};
+    let manager = JobManager::default();
+    manager.append(vec![pending("first")]).unwrap();
+    manager.reserve_next().unwrap().unwrap();
+    manager
+        .attach_running(
+            "first",
+            RunningProcess::from_stop(999_999, || panic!("reaped process must not be signalled")),
+        )
+        .unwrap();
+    manager.encoder_terminated("first");
+    assert_eq!(
+        manager.set_paused("first", true).unwrap_err().code,
+        "job_state_error"
+    );
+    assert!(matches!(
+        manager.cancel("first").unwrap(),
+        CancelledJob::Preparing
+    ));
+    manager.shutdown();
+}
+
+#[test]
+fn shutdown_removes_owned_remux_and_recovery_keeps_unrelated_files() {
+    use crate::output::partial::{create_partial, PartialLedger};
+    let directory =
+        std::env::temp_dir().join(format!("vidra-remux-shutdown-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let output = directory.join("output.mp4");
+    fs::write(&output, b"existing destination").unwrap();
+    let aux = create_partial(&output, "first-remux", "mp4", &[], &[]).unwrap();
+    fs::write(&aux.path, b"unfinished remux").unwrap();
+    let ledger = PartialLedger::open(directory.join("ledger.json"));
+    ledger.record(&aux).unwrap();
+    let manager = JobManager::default();
+    manager.append(vec![pending("first")]).unwrap();
+    manager.reserve_next().unwrap().unwrap();
+    manager.set_auxiliary_partial("first", aux.clone()).unwrap();
+    assert!(manager.reserved_output_paths().unwrap().contains(&aux.path));
+    manager.shutdown();
+    assert!(!aux.path.exists());
+    assert_eq!(fs::read(&output).unwrap(), b"existing destination");
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cancellation_before_preparation_stops_the_probe_as_cancelled() {
+    use crate::jobs::{process::RunningProcess, CancelledJob};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    let manager = JobManager::default();
+    manager.append(vec![pending("first")]).unwrap();
+    manager.reserve_next().unwrap().unwrap();
+    assert!(matches!(
+        manager.cancel("first").unwrap(),
+        CancelledJob::Preparing
+    ));
+    manager.begin_preparation("first").unwrap();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let flag = stopped.clone();
+    let error = manager
+        .attach_preparing(
+            "first",
+            RunningProcess::from_stop(999_999, move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            }),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "cancelled");
+    assert!(stopped.load(Ordering::Relaxed));
+    manager.end_preparation("first");
+    assert!(manager.take_cancelled("first"));
+    manager.finish_active("first").unwrap();
+    assert!(!manager.take_cancelled("first"));
+}
+
+#[test]
+fn finishing_a_job_clears_a_late_cancellation() {
+    use crate::jobs::CancelledJob;
+    let manager = JobManager::default();
+    manager.append(vec![pending("first")]).unwrap();
+    manager.reserve_next().unwrap().unwrap();
+    assert!(matches!(
+        manager.cancel("first").unwrap(),
+        CancelledJob::Preparing
+    ));
+    manager.finish_active("first").unwrap();
+    assert!(!manager.take_cancelled("first"));
 }

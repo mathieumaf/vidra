@@ -119,9 +119,8 @@ export function compatibleProfileSettings(
     next.outputResolution = "source";
     next.outputFrameRate = "source";
     next.qualityTuning = 0;
-    if (next.container === "mp4" && !canCopyVideoToMp4(media?.video ?? null)) {
-      next.videoCodec = "h264";
-      next.encodingSpeed = "efficient";
+    if (media && next.container === "mp4" && !canCopyVideoToMp4(media.video)) {
+      next.container = "mkv";
     }
   }
   if (next.audioMode === "auto" || next.audioMode === "copy") {
@@ -130,10 +129,11 @@ export function compatibleProfileSettings(
   }
   if (
     next.audioMode === "copy"
+    && media
     && next.container === "mp4"
-    && !canCopyAudioToMp4(media?.audio ?? [])
+    && !canCopyAudioToMp4(media.audio)
   ) {
-    next.audioMode = "auto";
+    next.container = "mkv";
   }
   return next;
 }

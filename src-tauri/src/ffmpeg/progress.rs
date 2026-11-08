@@ -7,6 +7,8 @@ pub struct ProgressParser {
     out_time_seconds: f64,
     speed: Option<String>,
     frame: Option<u64>,
+    last_sample: Option<(Instant, f64)>,
+    recent_speed: Option<f64>,
 }
 
 impl Default for ProgressParser {
@@ -16,6 +18,8 @@ impl Default for ProgressParser {
             out_time_seconds: 0.0,
             speed: None,
             frame: None,
+            last_sample: None,
+            recent_speed: None,
         }
     }
 }
@@ -36,6 +40,17 @@ impl ProgressParser {
             "speed" => self.speed = Some(value.to_owned()),
             "frame" => self.frame = value.parse().ok(),
             "progress" => {
+                // FFmpeg averages speed over wall time, including SIGSTOP pauses.
+                // Use the most recent progress interval so a pause does not distort
+                // the estimate for the rest of the conversion.
+                let now = Instant::now();
+                if let Some((previous_time, previous_output)) = self.last_sample {
+                    let elapsed = now.duration_since(previous_time).as_secs_f64();
+                    let advanced = self.out_time_seconds - previous_output;
+                    self.recent_speed =
+                        (elapsed > 0.0 && advanced > 0.0).then_some(advanced / elapsed);
+                }
+                self.last_sample = Some((now, self.out_time_seconds));
                 let duration_known = duration_seconds.is_finite() && duration_seconds > 0.0;
                 let percent = if value == "end" {
                     100.0
@@ -59,7 +74,10 @@ impl ProgressParser {
                     indeterminate,
                     elapsed_seconds: self.started_at.elapsed().as_secs_f64(),
                     out_time_seconds: self.out_time_seconds,
-                    speed: self.speed.clone(),
+                    speed: self
+                        .recent_speed
+                        .map(|speed| format!("{speed:.2}x"))
+                        .or_else(|| self.speed.clone()),
                     eta_seconds,
                     frame: self.frame,
                 });
@@ -75,12 +93,13 @@ impl ProgressParser {
             return None;
         }
 
-        let speed = self
-            .speed
-            .as_deref()?
-            .trim_end_matches('x')
-            .parse::<f64>()
-            .ok()?;
+        let speed = self.recent_speed.or_else(|| {
+            self.speed
+                .as_deref()?
+                .trim_end_matches('x')
+                .parse::<f64>()
+                .ok()
+        })?;
         if !speed.is_finite() || speed <= 0.0 {
             return None;
         }
@@ -109,6 +128,21 @@ mod tests {
         assert!(!progress.indeterminate);
         assert_eq!(progress.speed.as_deref(), Some("2.0x"));
         assert_eq!(progress.eta_seconds, Some(7.5));
+    }
+
+    #[test]
+    fn eta_recovers_from_a_pause_instead_of_using_lifetime_speed() {
+        let mut parser = ProgressParser::default();
+        parser.update("job-1", 60.0, "out_time_us=10000000");
+        parser.update("job-1", 60.0, "speed=0.05x");
+        parser.last_sample = Some((Instant::now() - Duration::from_secs(2), 6.0));
+
+        let progress = parser.update("job-1", 60.0, "progress=continue").unwrap();
+        let eta = progress.eta_seconds.unwrap();
+        assert!(
+            (25.0..26.0).contains(&eta),
+            "recent speed should give about 25s, got {eta}"
+        );
     }
 
     #[test]

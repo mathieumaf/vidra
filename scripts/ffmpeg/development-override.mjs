@@ -14,6 +14,9 @@ export function developmentOverrideMarker(binaryDirectory, target) {
 export async function installDevelopmentSidecars({ sourceDirectory, target, binaryDirectory }) {
   await mkdir(binaryDirectory, { recursive: true });
 
+  // Invalidate archive provenance before either sidecar can be replaced.
+  await rm(join(binaryDirectory, `.ffmpeg-dev-archive-${target}.sha256`), { force: true });
+
   for (const name of SIDECAR_NAMES) {
     const source = join(sourceDirectory, name);
     let sourceStat;

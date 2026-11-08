@@ -896,6 +896,7 @@ fn request_for(media: &MediaInfo, case: Case, destination: &str) -> EncodeReques
 
 fn pending_job(id: &str, request: EncodeRequest, media: MediaInfo) -> PendingJob {
     PendingJob {
+        replace_identity: None,
         id: id.to_owned(),
         estimated_output_bytes: 0,
         request,

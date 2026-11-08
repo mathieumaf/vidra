@@ -73,7 +73,7 @@ where
         .collect::<ApiResult<Vec<_>>>()?;
 
     let mut outputs = HashSet::new();
-    let mut prepared = Vec::with_capacity(requests.len());
+    let mut validated = Vec::with_capacity(requests.len());
 
     for (mut request, input) in requests.into_iter().zip(inputs.iter()) {
         let output = validate_output(
@@ -88,11 +88,30 @@ where
             ));
         }
 
-        let media = probe_media(request.input_path.clone()).await?;
-        encode::validate_settings(&request, &media)?;
+        let replace_identity = if partial::publish_mode(request.replace_existing, &output)
+            == ExistingOutput::Replace
+        {
+            Some(partial::destination_identity(&output).ok_or_else(|| {
+                ApiError::new(
+                    "output_unavailable",
+                    "The existing file could not be checked, so it was left unchanged.",
+                )
+            })?)
+        } else {
+            None
+        };
+        let probe_path = request.input_path.clone();
         request.input_path = input.to_string_lossy().into_owned();
         request.output_path = output.to_string_lossy().into_owned();
+        validated.push((request, replace_identity, probe_path));
+    }
+    let mut prepared = Vec::with_capacity(validated.len());
+    let mut replacement_identities = Vec::with_capacity(validated.len());
+    for (request, replace_identity, probe_path) in validated {
+        let media = probe_media(probe_path).await?;
+        encode::validate_settings(&request, &media)?;
         prepared.push((request, media));
+        replacement_identities.push(replace_identity);
     }
 
     let reservations = jobs.disk_space_reservations()?;
@@ -100,7 +119,8 @@ where
 
     let queued = prepared
         .into_iter()
-        .map(|(request, media)| {
+        .zip(replacement_identities)
+        .map(|((request, media), replace_identity)| {
             let id = jobs.next_id();
             let snapshot = QueuedEncode {
                 job_id: id.clone(),
@@ -111,6 +131,7 @@ where
                 PendingJob {
                     id,
                     estimated_output_bytes: disk_space::estimated_output_bytes(&request, &media),
+                    replace_identity,
                     request,
                     media,
                     ffmpeg_version: ffmpeg_version.clone(),
@@ -230,7 +251,10 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
                 CommandEvent::Error(error) => {
                     log.push(&error);
                 }
-                CommandEvent::Terminated(payload) => exit_code = payload.code,
+                CommandEvent::Terminated(payload) => {
+                    exit_code = payload.code;
+                    task_app.state::<JobManager>().encoder_terminated(&job_id);
+                }
                 _ => {}
             }
         }
@@ -240,11 +264,7 @@ fn watch_ffmpeg(app: &AppHandle, spawned: SpawnedEncode, watched: WatchJob) -> A
             if let Some(segment) = job.segment.clone() {
                 if segment.remux_text_subtitles && !segment.text_subtitle_files.is_empty() {
                     match segment::remux_text_subtitles(
-                        &task_app,
-                        &job_id,
-                        &partial.path,
-                        &segment,
-                        mov_text,
+                        &task_app, &job_id, &partial, &segment, mov_text,
                     )
                     .await
                     {
@@ -445,7 +465,12 @@ fn apply_launch<T>(
                 Ok(()) => Ok(true),
                 Err(error) => {
                     rollback_unlaunched_partial(state, &job_id, &partial);
-                    report_blocked_start(state, emits, job_id, output_path, history, error);
+                    if error.code == "cancelled" {
+                        let _ = state.jobs.take_cancelled(&job_id);
+                        report_cancelled_start(state, emits, job_id, output_path, history);
+                    } else {
+                        report_blocked_start(state, emits, job_id, output_path, history, error);
+                    }
                     Ok(false)
                 }
             }
@@ -520,31 +545,21 @@ where
 
 fn prepare_partial(state: &QueueState<'_>, job: &PendingJob) -> ApiResult<PreparedPartial> {
     let input = validate_input(&job.request.input_path)?;
+    let mut inputs = state.jobs.input_paths()?;
+    inputs.push(input);
     let destination = validate_output(
         &job.request.output_path,
-        std::slice::from_ref(&input),
+        &inputs,
         job.request.container,
         ExistingOutput::for_request(&job.request),
     )?;
-    // Snapshot replacement before encoding. A destination that was absent is
-    // never overwritten, even if a file appears while FFmpeg is running.
-    let publish_mode = partial::publish_mode(job.request.replace_existing, &destination);
-    let replace_identity = if publish_mode == ExistingOutput::Replace {
-        Some(partial::destination_identity(&destination).ok_or_else(|| {
-            ApiError::new(
-                "output_unavailable",
-                "The existing file could not be checked, so it was left unchanged.",
-            )
-        })?)
-    } else {
-        None
-    };
+    let replace_identity = job.replace_identity;
     let partial = partial::create_partial(
         &destination,
         &job.id,
         job.request.container.extension(),
         &state.jobs.reserved_output_paths()?,
-        std::slice::from_ref(&input),
+        &inputs,
     )?;
     let Some(ledger) = state.ledger else {
         partial::discard_partial(&partial);
@@ -647,7 +662,6 @@ fn finish_with(state: &QueueState<'_>, emits: &mut Emits<'_>, finished: Finished
         log,
         exit_code,
     } = finished;
-    let _ = state.jobs.finish_active(&job_id);
     let cancelled = state.jobs.take_cancelled(&job_id);
     let outcome = output_outcome(cancelled, exit_code);
     // An empty reservation list would let a numbered fallback take another
@@ -662,15 +676,21 @@ fn finish_with(state: &QueueState<'_>, emits: &mut Emits<'_>, finished: Finished
             (Vec::new(), false)
         }
     };
+    let mut inputs = state.jobs.input_paths().unwrap_or_else(|error| {
+        eprintln!("Unable to read queued source paths: {error}");
+        Vec::new()
+    });
+    inputs.push(PathBuf::from(&job.request.input_path));
     let mut finalized = partial::finalize_output(FinalizeRequest {
         partial: &partial_output,
         destination: Path::new(&output_path),
         replace_identity,
         outcome,
-        inputs: std::slice::from_ref(&PathBuf::from(&job.request.input_path)),
+        inputs: &inputs,
         reserved: &reserved,
         reserved_known,
     });
+    let _ = state.jobs.finish_active(&job_id);
     let kept_in_place = finalized.outcome == partial::OutputOutcome::Completed
         && finalized
             .saved_path

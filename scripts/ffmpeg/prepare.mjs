@@ -93,7 +93,8 @@ const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", target);
 const archivePath = join(cacheDirectory, pin.archiveName);
 const markerPath = join(binaryDirectory, `.ffmpeg-dev-archive-${target}.sha256`);
 const marker = await readOptional(markerPath);
-const ready = marker === pin.sha256 && ["ffmpeg", "ffprobe"].every((name) => {
+const overrideMarker = await readOptional(developmentOverrideMarker(binaryDirectory, target));
+const ready = !overrideMarker && marker === pin.sha256 && ["ffmpeg", "ffprobe"].every((name) => {
   const binary = join(binaryDirectory, `${name}-${target}`);
   return ffmpegVersionMatches(versionOutput(binary), expectedVersion);
 });
