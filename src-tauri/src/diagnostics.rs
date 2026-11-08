@@ -4,7 +4,7 @@ use crate::{
     jobs::PendingJob,
 };
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{fs, io::Write, path::Path};
 
 const MAX_LOG_BYTES: usize = 32 * 1024;
 const MAX_REPORT_BYTES: usize = 48 * 1024;
@@ -119,12 +119,42 @@ pub fn save_report(path: &str, report: &str) -> ApiResult<()> {
             "The diagnostic report folder does not exist.",
         ));
     }
-    fs::write(path, report).map_err(|error| {
-        ApiError::new(
-            "diagnostic_write_error",
-            format!("Unable to save the diagnostic report: {error}"),
-        )
-    })
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+    {
+        return Err(ApiError::invalid_input(
+            "Save the diagnostic report as a .txt file.",
+        ));
+    }
+    // create_new is atomic and refuses existing regular files, hard links and
+    // symlinks. A dialog filter is not a filesystem safety boundary.
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                ApiError::new(
+                    "diagnostic_exists",
+                    "A file already uses this name. Choose a new name for the diagnostic report.",
+                )
+            } else {
+                ApiError::new(
+                    "diagnostic_write_error",
+                    "Unable to create the diagnostic report in this folder.",
+                )
+            }
+        })?;
+    file.write_all(report.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|error| {
+            eprintln!("Unable to save the diagnostic report: {error}");
+            ApiError::new(
+                "diagnostic_write_error",
+                "Unable to save the diagnostic report.",
+            )
+        })
 }
 
 fn classify_failure(log: &str) -> (&'static str, &'static str) {
@@ -408,6 +438,7 @@ mod tests {
                 chapters: Vec::new(),
                 has_metadata: false,
             },
+            replace_identity: None,
             ffmpeg_version: Some("ffmpeg test".to_owned()),
             segment: None,
             ffmpeg_command: None,
@@ -551,6 +582,35 @@ mod tests {
         save_report(path.to_str().unwrap(), "diagnostic").unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "diagnostic");
+        fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn reports_never_truncate_existing_media_or_link_targets() {
+        let directory =
+            std::env::temp_dir().join(format!("vidra-diagnostic-safe-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("source.mp4");
+        fs::write(&source, b"source media").unwrap();
+        assert!(save_report(source.to_str().unwrap(), "diagnostic").is_err());
+        let report = directory.join("existing.txt");
+        fs::write(&report, b"existing report").unwrap();
+        assert_eq!(
+            save_report(report.to_str().unwrap(), "new report")
+                .unwrap_err()
+                .code,
+            "diagnostic_exists"
+        );
+        assert_eq!(fs::read(&report).unwrap(), b"existing report");
+        #[cfg(unix)]
+        {
+            let symbolic = directory.join("symbolic.txt");
+            std::os::unix::fs::symlink(&source, &symbolic).unwrap();
+            assert!(save_report(symbolic.to_str().unwrap(), "diagnostic").is_err());
+            let hard = directory.join("hard.txt");
+            fs::hard_link(&source, &hard).unwrap();
+            assert!(save_report(hard.to_str().unwrap(), "diagnostic").is_err());
+        }
+        assert_eq!(fs::read(&source).unwrap(), b"source media");
         fs::remove_dir_all(directory).unwrap();
     }
 }

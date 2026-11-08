@@ -2,6 +2,32 @@
 
 All notable changes to Vidra are documented in this file.
 
+## 0.2.0-rc.2 - 2026-11-08
+
+Release candidate **0.2.0-rc.2** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-rc.2`. Windows, Linux, and Intel Mac builds are not included.
+
+This candidate includes the conversion safety and lifecycle fixes from [#116](https://github.com/mathieumaf/vidra/pull/116). It needs a fresh validation pass before the official 0.2.0 release.
+
+### Fixed
+
+- Protect source files belonging to other waiting, running, or paused conversions from being overwritten by an output. A confirmed replacement applies only to the original destination file; if that file changes while the job waits, save under a free numbered name instead.
+- Save diagnostic reports only to new `.txt` files, so exporting a report cannot overwrite existing files or their link targets.
+- Preserve subtitle order, language, titles, and default/forced flags when trimming. Keep clipped-out text cues out of the result and retain fast playback startup in trimmed MP4 files.
+- Keep Original video and Original audio choices when importing mixed formats, selecting MKV for sources that MP4 cannot hold.
+- Finish the start-time check for trimmed Original video when another item is edited or removed, instead of leaving it stuck on "Checking…".
+- Report cancellation during conversion preparation as Cancelled, prevent cancelled jobs from starting an encoder, and clean up temporary outputs when quitting Vidra on macOS, including while a conversion is paused.
+- Calculate the time remaining from recent progress so it recovers after a long pause.
+- Explain missing HDR brightness information before choosing an output for an unsafe H.264 conversion, and correct the color-depth description.
+
+### Changed
+
+- Update frontend dependencies and ensure a development FFmpeg override cannot be mistaken for the verified bundled engine.
+
+### Installation and testing
+
+- Once published, choose Beta in Settings to update from 0.2.0-rc.1, 0.2.0-beta.2, 0.2.0-beta.1, or 0.1.0. Stable does not offer this release candidate. The bundle version shown in Settings remains 0.2.0; the release link is `v0.2.0-rc.2`.
+- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist](docs/RELEASING.md#beta-validation), including replacement safety, trimming, cancellation, native Quit, and the update from rc.1. The [application audit](docs/AUDIT-2026-11-08.md) records development-build evidence and its limits; it does not replace signed-release validation.
+
 ## 0.2.0-rc.1 - 2026-11-05
 
 Release candidate **0.2.0-rc.1** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-rc.1`. Windows, Linux, and Intel Mac builds are not included.

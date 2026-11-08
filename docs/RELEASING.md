@@ -60,6 +60,8 @@ The archive is produced by the manual **FFmpeg development archive** workflow (`
 
 The development version must match the release FFmpeg version. `scripts/ffmpeg/dev-archive.json` records the recipe fingerprint. The test fails when that fingerprint no longer matches the current recipe, so a recipe change needs a new archive and a new checksum. Update the fingerprint assertion in `scripts/ffmpeg/target.node-test.mjs` only when the recipe change is intentional. After an intentional FFmpeg recipe change, publish a new beta or release candidate and re-validate the engine before an official application release. Publishing the development archive does not publish Vidra.
 
+Release source downloads retry transport errors, including TLS handshake failures, up to three times after the first attempt. Each attempt has a 15-second connection timeout and a 120-second transfer timeout; the retry window is 300 seconds, with an overall 425-second process limit per location. If the primary Opus download fails, `scripts/ffmpeg/source-download.mjs` tries the OSU Open Source Lab Xiph mirror. Every location must match the same SHA-256 pinned in `scripts/ffmpeg/sources.json`. Downloads enter the cache only after verification, and incomplete files are removed. This transport fallback does not change source versions, checksums, compiler options, or the release recipe fingerprint.
+
 ## Build and publish
 
 Once the release is authorized and preparation is merged, create and push a signed tag from the reviewed `main` commit. For the first official release:
@@ -87,11 +89,11 @@ Download the draft artifacts and test them on a second Apple Silicon Mac before 
 
 ## Beta validation
 
-Use this checklist for a beta or release candidate. The current prerelease is `v0.2.0-rc.1`. The bundle version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` stays `0.2.0`. The updater version is `0.2.0-rc.1`. This release candidate is macOS on Apple Silicon only.
+Use this checklist for a beta or release candidate. The release candidate being prepared is `v0.2.0-rc.2`. The bundle version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` stays `0.2.0`. The updater version is `0.2.0-rc.2`. This release candidate is macOS on Apple Silicon only.
 
 Do not publish the draft until the manual checks below have been recorded. CI does not install the signed application, play media, or exercise the updater.
 
-A release candidate has the application code intended for the official release. When every manual check passes on rc.1, publish 0.2.0 from the same application code. Only the changelog date and README may change. Any code fix requires a new release candidate.
+A release candidate has the application code intended for the official release. When every manual check passes on rc.2, publish 0.2.0 from the same application code. Only the changelog date and README may change. Any code fix requires a new release candidate.
 
 ### Automated in CI
 
@@ -106,22 +108,24 @@ These checks run on pull requests. They do not replace the manual checks on a si
 
 ### Manual on an Apple Silicon Mac
 
-Complete these steps on the draft produced by the signed `v0.2.0-rc.1` tag. Prefer a second Mac, without Homebrew or a development FFmpeg. Record the commit or tag, the macOS version, and the result of each item. Leave an item unchecked until there is evidence for it.
+Complete these steps on the draft produced by the signed `v0.2.0-rc.2` tag. Prefer a second Mac, without Homebrew or a development FFmpeg. Record the commit or tag, the macOS version, and the result of each item. Leave an item unchecked until there is evidence for it.
 
 - [ ] Install the signed and notarized DMG and launch Vidra. Confirm the app is not the development build.
 - [ ] Inspect a representative file and confirm duration, resolution, audio, subtitles, and HDR labeling.
 - [ ] Encode H.264, H.265, and AV1, and play each output in a normal player. The source file must be unchanged.
 - [ ] Tone-map an HDR10 source and an HLG source with H.264. The outputs must play as SDR and must not still be reported as HDR. Encode the same sources with H.265 and AV1 and confirm HDR is preserved, then play those outputs.
 - [ ] Cancel a conversion while it is encoding. The source and any existing destination file must remain. Relaunch Vidra and confirm the unfinished partial is gone.
+- [ ] Pause a conversion and quit with the native macOS Quit command. Confirm the encoder stops, unfinished outputs are removed, and the source and any existing destination remain unchanged. Also cancel during trim preparation and confirm the job ends as Cancelled.
+- [ ] Queue multiple sources and confirm an output cannot overwrite another waiting, running, or paused source. For a confirmed replacement, change the destination file while the job waits; the changed file must remain and the completed output must use a free numbered name. Use synthetic media and temporary folders.
 - [ ] Start a conversion, stop Vidra with `kill -9`, and open it again. The unfinished partial must be removed. A video that had already finished must still be present, including one that had to stay under its partial or numbered name. The source must be unchanged.
 - [ ] Encode to exFAT, FAT, and SMB destinations, including a folder that already contains the requested filename when replacement was confirmed. Confirm the finished file is the new video, the previous file was not removed early, and each output plays. The exclusive-rename fallback checks the name and then renames; that check has a very small race.
 - [ ] Disconnect an external destination volume during a conversion. Vidra must say the volume is unavailable, continue with the next queued video, and leave the source unchanged.
-- [ ] Trim a source that has text subtitles and chapters, once with a re-encoded video and once with Original video. Play both outputs and confirm their length, subtitles, and chapters match [TRIM.md](TRIM.md). The source must be unchanged.
+- [ ] Trim a source that has text subtitles and chapters, once with a re-encoded video and once with Original video. Play both outputs and confirm their length, subtitles, and chapters match [TRIM.md](TRIM.md). Confirm subtitle order, language, titles, and default/forced flags are retained. The source must be unchanged.
 - [ ] Complete the [manual VoiceOver checklist](ACCESSIBILITY.md#manual-voiceover-checklist) in the signed app.
-- [ ] From signed Vidra 0.1.0, leave Stable selected and confirm it does not offer 0.2.0-rc.1. Choose Beta, check for updates, and confirm installation stays unavailable while a conversion is queued or running. After the queue is idle, install the update and confirm Vidra restarts. Repeat the Beta update from 0.2.0-beta.2.
-- [ ] In the updated app, confirm Settings shows bundle version `0.2.0`, the release link is `v0.2.0-rc.1`, and the FFmpeg row includes `8.1.3`. Run a short conversion. Settings, profiles, history, and the update-channel choice must still be there.
-- [ ] Confirm the draft `latest.json` version is `0.2.0-rc.1` and that its `darwin-aarch64` URL and signature match the attached updater archive. The draft must be marked as a prerelease.
-- [ ] Publish the draft as a prerelease and do not mark it as the latest GitHub release. Confirm `publish-updater.yml` advances Beta `beta.json` to `0.2.0-rc.1` and leaves Stable `latest.json` on `0.1.0`.
+- [ ] From signed Vidra 0.1.0, leave Stable selected and confirm it does not offer 0.2.0-rc.2. Choose Beta, check for updates, and confirm installation stays unavailable while a conversion is queued or running. After the queue is idle, install the update and confirm Vidra restarts. Repeat the Beta update from 0.2.0-beta.2 and 0.2.0-rc.1; the rc.1 update must be offered even though both bundles display 0.2.0.
+- [ ] In the updated app, confirm Settings shows bundle version `0.2.0`, the release link is `v0.2.0-rc.2`, and the FFmpeg row includes `8.1.3`. Run a short conversion. Settings, profiles, history, and the update-channel choice must still be there.
+- [ ] Confirm the draft `latest.json` version is `0.2.0-rc.2` and that its `darwin-aarch64` URL and signature match the attached updater archive. The draft must be marked as a prerelease.
+- [ ] Publish the draft as a prerelease and do not mark it as the latest GitHub release. Confirm `publish-updater.yml` advances Beta `beta.json` to `0.2.0-rc.2` and leaves Stable `latest.json` on `0.1.0`.
 
 ## Update channels
 

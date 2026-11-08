@@ -46,7 +46,9 @@ export function useKeyframeLookup(
         item.status !== "ready"
         || item.settings.videoCodec !== "copy"
         || item.trim === null
-        || item.copyStartStatus !== "unknown"
+        // A change to another target cancels this effect's whole batch. Restart
+        // its unfinished lookups too, including ones already marked checking.
+        || (item.copyStartStatus !== "unknown" && item.copyStartStatus !== "checking")
       ) {
         return [];
       }

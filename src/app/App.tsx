@@ -447,6 +447,7 @@ export default function App() {
           <div className="content-area">
             {view === "convert" && (
               <ConvertView
+                key={primaryItem?.clientId}
                 media={primaryItem?.media ?? null}
                 mediaCount={canEditPrimary ? queue.readyItems.length : 1}
                 status={status}

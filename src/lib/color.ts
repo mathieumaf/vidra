@@ -103,6 +103,15 @@ export function colorConversionNotice(
       };
     }
     if (codec === "h264") {
+      if (video.hdrFormat === "hdr"
+        && video.colorTransfer !== "smpte2084"
+        && video.colorTransfer !== "arib-std-b67") {
+        return {
+          title: "This HDR source requires Original video",
+          message: "The HDR brightness information is unavailable. Choose Original video to preserve this source without incorrect brightness or color.",
+          blocking: true,
+        };
+      }
       return {
         title: `${label} will be converted to SDR`,
         message: "Vidra will tone map the HDR image to standard BT.709 color for reliable playback on SDR displays.",
@@ -133,9 +142,12 @@ export function colorConversionNotice(
   if (codec === "copy") return null;
 
   if (video.bitDepth !== null && video.bitDepth > 8) {
+    const outputDepth = codec === "h264" ? 8 : 10;
     return {
       title: `${bitDepthLabel(video.bitDepth)} source will be re-encoded`,
-      message: "The selected encoder may reduce the source color depth and introduce banding. Choose Original video to preserve the video stream.",
+      message: video.bitDepth > outputDepth
+        ? `Color depth will be reduced to ${outputDepth}-bit, which can introduce banding. Choose Original video to preserve the video stream.`
+        : `The video will be encoded as ${outputDepth}-bit. Choose Original video to preserve the encoded video stream unchanged.`,
       blocking: false,
     };
   }

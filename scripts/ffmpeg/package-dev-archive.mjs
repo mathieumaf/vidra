@@ -102,6 +102,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     noticesPath: join(rootDirectory, "THIRD_PARTY_NOTICES.md"),
     recipeFiles: {
       "build-release.mjs": join(scriptDirectory, "build-release.mjs"),
+      "source-download.mjs": join(scriptDirectory, "source-download.mjs"),
       "sources.json": join(scriptDirectory, "sources.json"),
       "recipe.mjs": join(scriptDirectory, "recipe.mjs"),
     },

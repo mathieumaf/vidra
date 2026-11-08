@@ -83,6 +83,7 @@ test("installs a checksummed archive only when both tools report the pinned vers
     await writeFile(join(sourceDirectory, "BUILD_CONFIGURATION.txt"), "recipe\n");
     await writeFile(join(sourceDirectory, "ffmpeg-8.1.3.tar.xz"), "source\n");
     await writeFile(join(directory, "build-release.mjs"), "build\n");
+    await writeFile(join(directory, "source-download.mjs"), "download helper\n");
     await writeFile(join(directory, "sources.json"), "{}\n");
     await writeFile(join(directory, "recipe.mjs"), "recipe\n");
 
@@ -93,6 +94,7 @@ test("installs a checksummed archive only when both tools report the pinned vers
       noticesPath: join(directory, "NOTICE.md"),
       recipeFiles: {
         "build-release.mjs": join(directory, "build-release.mjs"),
+        "source-download.mjs": join(directory, "source-download.mjs"),
         "sources.json": join(directory, "sources.json"),
         "recipe.mjs": join(directory, "recipe.mjs"),
       },
@@ -101,6 +103,7 @@ test("installs a checksummed archive only when both tools report the pinned vers
     });
     const entries = listArchive(packaged.archivePath);
     assertArchiveHasCorrespondingSources(entries);
+    assert.ok(entries.includes("vidra-ffmpeg-dev/build-recipe/source-download.mjs"));
     for (const member of requiredDevArchiveMembers()) {
       assert.equal(entries.includes(member), true, member);
     }
@@ -123,6 +126,7 @@ test("installs a checksummed archive only when both tools report the pinned vers
       noticesPath: join(directory, "NOTICE.md"),
       recipeFiles: {
         "build-release.mjs": join(directory, "build-release.mjs"),
+        "source-download.mjs": join(directory, "source-download.mjs"),
         "sources.json": join(directory, "sources.json"),
         "recipe.mjs": join(directory, "recipe.mjs"),
       },

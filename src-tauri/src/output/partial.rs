@@ -75,7 +75,7 @@ pub(crate) struct FinalizeRequest<'a> {
     pub partial: &'a PartialOutput,
     pub destination: &'a Path,
     /// Present only when replacement was confirmed and this exact file existed
-    /// when encoding started.
+    /// when replacement was authorized.
     pub replace_identity: Option<DestinationIdentity>,
     pub outcome: OutputOutcome,
     pub inputs: &'a [PathBuf],
@@ -105,7 +105,7 @@ fn unsupported_platform() -> ApiError {
 }
 
 /// Replace an existing destination only when the user confirmed replacement
-/// and that file was already present when encoding started.
+/// and that file was already present when replacement was authorized.
 pub(crate) fn publish_mode(replace_existing: bool, destination: &Path) -> ExistingOutput {
     if replace_existing && existing_regular_file(destination) {
         ExistingOutput::Replace
@@ -201,6 +201,45 @@ pub(crate) fn finalize_output(request: FinalizeRequest<'_>) -> FinalizedOutput {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     place_completed(request)
+}
+
+/// Copy a completed remux into the original owned inode. Opening with nofollow
+/// and checking the opened files prevents a replaced path from being truncated.
+pub(crate) fn replace_contents(target: &PartialOutput, source: &PartialOutput) -> ApiResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let copy = || -> io::Result<()> {
+            let mut input = OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&source.path)?;
+            let mut output = OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&target.path)?;
+            if file_identity(&input.metadata()?) != Some(source.identity())
+                || file_identity(&output.metadata()?) != Some(target.identity())
+            {
+                return Err(io::Error::other("the temporary video changed"));
+            }
+            output.set_len(0)?;
+            io::copy(&mut input, &mut output)?;
+            output.sync_all()
+        };
+        copy().map_err(|error| {
+            eprintln!("Unable to finish the temporary video: {error}");
+            ApiError::new(
+                "output_unavailable",
+                "The conversion could not be finished safely.",
+            )
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (target, source);
+        Err(unsupported_platform())
+    }
 }
 
 pub(crate) fn discard_partial(partial: &PartialOutput) -> PartialCleanup {
@@ -1992,5 +2031,21 @@ mod tests {
         assert_eq!(finalized.outcome, OutputOutcome::Completed);
         assert_eq!(fs::read(&canonical).unwrap(), b"encoded-bytes");
         assert!(!partial.path.exists());
+    }
+    #[test]
+    fn remux_copyback_preserves_owned_inode_and_refuses_replaced_paths() {
+        let sample = sample("copyback", None);
+        let remux = create_partial(&sample.destination, "remux", "mp4", &[], &[]).unwrap();
+        fs::write(&remux.path, b"remuxed bytes").unwrap();
+        super::replace_contents(&sample.partial, &remux).unwrap();
+        assert_eq!(
+            destination_identity(&sample.partial.path),
+            Some(sample.partial.identity())
+        );
+        assert_eq!(fs::read(&sample.partial.path).unwrap(), b"remuxed bytes");
+        fs::remove_file(&sample.partial.path).unwrap();
+        std::os::unix::fs::symlink(&sample.source, &sample.partial.path).unwrap();
+        assert!(super::replace_contents(&sample.partial, &remux).is_err());
+        assert_eq!(fs::read(&sample.source).unwrap(), b"source-bytes");
     }
 }

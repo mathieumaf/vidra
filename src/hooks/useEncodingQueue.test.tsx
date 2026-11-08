@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEncodingQueue } from "./useEncodingQueue";
 import { DEFAULT_ADVANCED_SETTINGS } from "../config/advanced";
 import { QUALITY_LEVELS } from "../config/quality";
-import type { OpenFilesEvent } from "../types/media";
+import type { EncodingSettings, OpenFilesEvent } from "../types/media";
 import {
   PENDING_QUEUE_STORAGE_KEY,
   parsePendingQueue,
@@ -26,7 +26,7 @@ import { mount } from "../test/dom";
 
 const dialogMocks = vi.hoisted(() => ({
   confirm: vi.fn(async () => false),
-  open: vi.fn(async () => null as string | null),
+  open: vi.fn(async () => null as string | string[] | null),
   save: vi.fn(async () => null as string | null),
 }));
 const encodingMocks = vi.hoisted(() => ({
@@ -70,15 +70,18 @@ function mediaFromPath(path: string) {
   return mediaFixture(path.split("/").pop() ?? "clip.mov");
 }
 
-function QueueProbe() {
+function QueueProbe({
+  settings = queueItemFixture().settings,
+  importSettings,
+}: { settings?: EncodingSettings; importSettings?: EncodingSettings } = {}) {
   const queue = useEncodingQueue({
     isReady: true,
     quality: QUALITY_LEVELS[2],
-    outputContainer: "mp4",
-    videoCodec: "h264",
-    encodingSpeed: "efficient",
-    audioMode: "auto",
-    outputResolution: "source",
+    outputContainer: settings.container,
+    videoCodec: settings.videoCodec,
+    encodingSpeed: settings.encodingSpeed,
+    audioMode: settings.audioMode,
+    outputResolution: settings.outputResolution,
     advancedSettings: DEFAULT_ADVANCED_SETTINGS,
   });
 
@@ -93,6 +96,7 @@ function QueueProbe() {
       <p>Quality: {queue.items[0]?.settings.quality ?? "none"}</p>
       <p>Status: {queue.items[0]?.status ?? "none"}</p>
       <p>{queue.notice}</p>
+      <button type="button" onClick={() => void queue.selectVideos(importSettings)}>Choose videos</button>
       <button type="button" onClick={() => void queue.restorePendingQueue()}>
         Restore saved queue
       </button>
@@ -115,6 +119,63 @@ afterEach(() => {
 });
 
 describe("useEncodingQueue", () => {
+  it.each([
+    { origin: "current", mode: "video" },
+    { origin: "profile", mode: "video" },
+    { origin: "current", mode: "audio" },
+    { origin: "profile", mode: "audio" },
+  ])("keeps Original $mode when mixed imports use $origin settings", async ({ origin, mode }) => {
+    filesMocks.takeOpenedFiles.mockResolvedValue([]);
+    dialogMocks.open.mockResolvedValue(["/tmp/compatible.mp4", "/tmp/incompatible.webm"]);
+    encodingMocks.probeMedia.mockImplementation(async (path: string) => ({
+      ...mediaFromPath(path),
+      path,
+      video: {
+        codec: path.endsWith(".webm") ? "vp9" : "h264",
+        width: 640, height: 360, frameRate: 30, pixelFormat: "yuv420p", bitDepth: 8,
+        colorRange: "tv", colorSpace: "bt709", colorTransfer: "bt709",
+        colorPrimaries: "bt709", hdrFormat: null, dolbyVision: null,
+      },
+      audio: [{
+        index: 1, codec: path.endsWith(".webm") ? "opus" : "aac", channels: 2,
+        sampleRate: 48000, bitRate: 96000, language: "eng", title: null,
+        isDefault: true,
+      }],
+    }));
+    const settings: EncodingSettings = {
+      ...queueItemFixture().settings,
+      videoCodec: mode === "video" ? "copy" : "h264",
+      audioMode: mode === "audio" ? "copy" : "auto",
+    };
+    const tree = mount(<QueueProbe
+      settings={origin === "current" ? settings : undefined}
+      importSettings={origin === "profile" ? settings : undefined}
+    />);
+    await act(async () => { tree.button("Choose videos").click(); });
+    const items = rememberedQueueItems();
+    expect(items).toHaveLength(2);
+    expect(items[0].settings).toMatchObject({ container: "mp4", videoCodec: settings.videoCodec, audioMode: settings.audioMode });
+    expect(items[1].settings).toMatchObject({ container: "mkv", videoCodec: settings.videoCodec, audioMode: settings.audioMode });
+    tree.unmount();
+  });
+
+  it("blocks HDR with unknown transfer before asking for an output file", async () => {
+    const media = mediaFixture();
+    media.video = {
+      codec: "hevc", width: 640, height: 360, frameRate: 30, pixelFormat: "yuv420p10le", bitDepth: 10,
+      colorRange: "tv", colorSpace: "bt2020nc", colorTransfer: null,
+      colorPrimaries: "bt2020", hdrFormat: "hdr", dolbyVision: null,
+    };
+    rememberQueueItems([queueItemFixture({ media })]);
+    const tree = mount(<QueueProbe />);
+    await act(async () => { tree.button("Start encoding").click(); });
+    expect(dialogMocks.save).not.toHaveBeenCalled();
+    expect(encodingMocks.enqueueEncodes).not.toHaveBeenCalled();
+    expect(tree.text()).toContain("HDR brightness information is unavailable");
+    expect(tree.text()).not.toContain("Dolby Vision");
+    tree.unmount();
+  });
+
   it("restores the queue when the interface remounts after a failure", () => {
     rememberQueueItems([encodingItemFixture("holiday.mov")]);
 

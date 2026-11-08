@@ -1,13 +1,15 @@
 use super::process::RunningProcess;
 use super::PreparedSegment;
 use crate::ffmpeg::{EncodeRequest, MediaInfo};
-use crate::output::partial::PartialOutput;
+use crate::output::partial::{DestinationIdentity, PartialOutput};
 
 pub struct PendingJob {
     pub id: String,
     pub request: EncodeRequest,
     pub media: MediaInfo,
     pub estimated_output_bytes: u64,
+    /// Identity authorized at enqueue time, never rebound when a waiting job starts.
+    pub replace_identity: Option<DestinationIdentity>,
     pub ffmpeg_version: Option<String>,
     /// Chapters and clipped subtitles for a trimmed conversion.
     pub segment: Option<PreparedSegment>,
@@ -26,12 +28,14 @@ impl PendingJob {
 
 pub struct ActiveJob {
     pub id: String,
+    pub input_path: String,
     pub output_path: String,
     pub estimated_output_bytes: u64,
     pub process: Option<RunningProcess>,
     pub process_id: Option<u32>,
     pub paused: bool,
     pub partial: Option<PartialOutput>,
+    pub auxiliary_partial: Option<PartialOutput>,
 }
 
 #[derive(Debug, Clone)]

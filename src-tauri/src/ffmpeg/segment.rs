@@ -11,6 +11,7 @@ use super::{
 use crate::{
     error::{ApiError, ApiResult},
     jobs::{process::RunningProcess, JobManager, PendingJob, PreparedSegment},
+    output::partial::{self, PartialCleanup, PartialLedger, PartialOutput},
 };
 use std::{
     fs, io,
@@ -32,7 +33,7 @@ pub(crate) const COPY_START_UNAVAILABLE: &str = "Vidra could not find where Orig
 pub(crate) struct SegmentInputs {
     pub extra: Vec<PathBuf>,
     pub chapter_index: Option<usize>,
-    pub text_indexes: Vec<usize>,
+    pub text_indexes: Vec<(u32, usize)>,
     pub replace_text: bool,
     pub copy_source_subtitles: bool,
 }
@@ -272,12 +273,7 @@ async fn prepare_segment(
     )
     .unwrap_or(segment.start_seconds);
     let output_end = segment.end_seconds;
-    let directory = std::env::temp_dir().join(format!("vidra-segment-{}", sanitize(&job.id)));
-    if let Err(error) = fs::create_dir_all(&directory) {
-        return Err(ApiError::ffmpeg(format!(
-            "Could not prepare the segment files: {error}"
-        )));
-    }
+    let directory = create_segment_directory(&job.id)?;
     let prepared = prepare_files(app, job, &directory, output_start, output_end, copy_video).await;
     if prepared.is_err() {
         let _ = fs::remove_dir_all(&directory);
@@ -303,6 +299,7 @@ async fn prepare_files(
 
     let image_subtitle_count = selected_image_subtitles(job).len();
     let mut text_subtitle_files = Vec::new();
+    let mut text_subtitle_indexes = Vec::new();
     for subtitle in selected_text_subtitles(job) {
         if app.state::<JobManager>().is_cancelled(&job.id) {
             return Err(cancelled());
@@ -332,6 +329,7 @@ async fn prepare_files(
         let clipped = directory.join(format!("clipped-{}.srt", subtitle.index));
         write_file(&clipped, &write_srt(&cues))?;
         text_subtitle_files.push(clipped);
+        text_subtitle_indexes.push(subtitle.index);
     }
 
     Ok(Some(PreparedSegment {
@@ -340,6 +338,24 @@ async fn prepare_files(
         directory: directory.to_path_buf(),
         chapter_file,
         text_subtitle_files,
+        text_subtitle_indexes,
+        subtitles: job
+            .request
+            .subtitle_stream_indexes
+            .iter()
+            .filter_map(|index| {
+                job.media
+                    .subtitles
+                    .iter()
+                    .find(|stream| stream.index == *index)
+            })
+            .filter(|stream| {
+                job.request.preserve_subtitles
+                    && (job.request.container == super::OutputContainer::Mkv
+                        || is_text_subtitle(&stream.codec))
+            })
+            .cloned()
+            .collect(),
         image_subtitle_count,
         remux_text_subtitles: copy_video,
     }))
@@ -350,7 +366,7 @@ pub(crate) fn segment_inputs(segment: &PreparedSegment) -> SegmentInputs {
     let text_indexes = text_input_indexes(segment);
     let chapter_index = chapter_input_index(segment);
     SegmentInputs {
-        replace_text: segment.remux_text_subtitles || !segment.text_subtitle_files.is_empty(),
+        replace_text: true,
         copy_source_subtitles: segment.image_subtitle_count > 0,
         extra,
         chapter_index,
@@ -376,11 +392,16 @@ pub(crate) fn chapter_input_index(segment: &PreparedSegment) -> Option<usize> {
         .map(|_| extra_inputs(segment).len())
 }
 
-pub(crate) fn text_input_indexes(segment: &PreparedSegment) -> Vec<usize> {
+pub(crate) fn text_input_indexes(segment: &PreparedSegment) -> Vec<(u32, usize)> {
     if segment.remux_text_subtitles {
         Vec::new()
     } else {
-        (1..=segment.text_subtitle_files.len()).collect()
+        segment
+            .text_subtitle_indexes
+            .iter()
+            .copied()
+            .zip(1..)
+            .collect()
     }
 }
 
@@ -532,25 +553,49 @@ pub(crate) struct SubtitleRemux {
 pub(crate) async fn remux_text_subtitles(
     app: &AppHandle,
     job_id: &str,
-    partial: &Path,
+    partial: &PartialOutput,
     segment: &PreparedSegment,
     mov_text: bool,
 ) -> ApiResult<Option<SubtitleRemux>> {
-    let Some(plan) = remux_plan(partial, segment, mov_text) else {
+    if segment.text_subtitle_files.is_empty() {
         return Ok(None);
-    };
+    }
     // The encoder has exited, so the remux runs as a preparation step. This
     // lets the job accept its process and lets Cancel stop it.
     let jobs = app.state::<JobManager>();
     jobs.begin_preparation(job_id)?;
     let _guard = PreparationGuard {
-        jobs,
+        jobs: app.state::<JobManager>(),
         job_id: job_id.to_owned(),
     };
+    let auxiliary = partial::create_partial(
+        &partial.path,
+        &format!("{job_id}-remux"),
+        if mov_text { "mp4" } else { "mkv" },
+        &jobs.reserved_output_paths()?,
+        &jobs.input_paths()?,
+    )?;
+    let ledger = app.state::<PartialLedger>();
+    let auxiliary_guard = AuxiliaryPartialGuard {
+        jobs,
+        ledger,
+        partial: auxiliary,
+        job_id: job_id.to_owned(),
+    };
+    auxiliary_guard.ledger.record(&auxiliary_guard.partial)?;
+    auxiliary_guard
+        .jobs
+        .set_auxiliary_partial(job_id, auxiliary_guard.partial.clone())?;
+    let plan = remux_plan(
+        &partial.path,
+        segment,
+        mov_text,
+        &auxiliary_guard.partial.path,
+    )
+    .expect("a clipped subtitle has a remux plan");
     let output = match run_sidecar(app, Some(job_id), "ffmpeg", plan.arguments).await {
         Ok(output) => output,
         Err(error) => {
-            let _ = fs::remove_file(&plan.output);
             return Ok(Some(SubtitleRemux {
                 command: plan.command,
                 error: Some(error),
@@ -558,7 +603,6 @@ pub(crate) async fn remux_text_subtitles(
         }
     };
     if !output.success {
-        let _ = fs::remove_file(&plan.output);
         return Ok(Some(SubtitleRemux {
             command: plan.command,
             error: Some(ApiError::ffmpeg(
@@ -566,8 +610,7 @@ pub(crate) async fn remux_text_subtitles(
             )),
         }));
     }
-    if let Err(error) = publish_remux(partial, &plan.output) {
-        let _ = fs::remove_file(&plan.output);
+    if let Err(error) = partial::replace_contents(partial, &auxiliary_guard.partial) {
         return Ok(Some(SubtitleRemux {
             command: plan.command,
             error: Some(ApiError::ffmpeg(format!(
@@ -583,16 +626,20 @@ pub(crate) async fn remux_text_subtitles(
 
 struct RemuxPlan {
     arguments: Vec<std::ffi::OsString>,
-    output: PathBuf,
     command: String,
 }
 
-fn remux_plan(partial: &Path, segment: &PreparedSegment, mov_text: bool) -> Option<RemuxPlan> {
+fn remux_plan(
+    partial: &Path,
+    segment: &PreparedSegment,
+    mov_text: bool,
+    output: &Path,
+) -> Option<RemuxPlan> {
     let text_subtitles = &segment.text_subtitle_files;
     if text_subtitles.is_empty() {
         return None;
     }
-    let output = remux_destination(partial);
+    let output = output.to_path_buf();
     let format = if mov_text { "mp4" } else { "matroska" };
     let mut arguments = Vec::new();
     arguments.extend(["-hide_banner", "-nostdin", "-y", "-i"].map(os));
@@ -605,10 +652,39 @@ fn remux_plan(partial: &Path, segment: &PreparedSegment, mov_text: bool) -> Opti
         arguments.push(os("-i"));
         arguments.push(chapters.as_os_str().to_os_string());
     }
-    arguments.extend(["-map", "0:v?", "-map", "0:a?", "-map", "0:s?"].map(os));
-    for index in 1..=text_subtitles.len() {
-        arguments.push(os("-map"));
-        arguments.push(os(&format!("{index}:0")));
+    arguments.extend(["-map", "0:v?", "-map", "0:a?", "-c", "copy"].map(os));
+    let mut image_index = 0;
+    let mut output_index = 0;
+    for stream in &segment.subtitles {
+        let input = if is_text_subtitle(&stream.codec) {
+            let Some(index) = segment
+                .text_subtitle_indexes
+                .iter()
+                .position(|index| *index == stream.index)
+            else {
+                continue;
+            };
+            format!("{}:0", index + 1)
+        } else {
+            let input = format!("0:s:{image_index}");
+            image_index += 1;
+            input
+        };
+        arguments.extend([os("-map"), os(&input)]);
+        let codec = if !is_text_subtitle(&stream.codec) {
+            "copy"
+        } else if mov_text {
+            "mov_text"
+        } else {
+            "srt"
+        };
+        arguments.extend([os(&format!("-c:s:{output_index}")), os(codec)]);
+        arguments.extend(
+            subtitle_metadata_arguments(stream, output_index, mov_text)
+                .iter()
+                .map(|arg| os(arg)),
+        );
+        output_index += 1;
     }
     if segment.chapter_file.is_some() {
         let chapter_index = 1 + text_subtitles.len();
@@ -617,46 +693,60 @@ fn remux_plan(partial: &Path, segment: &PreparedSegment, mov_text: bool) -> Opti
     } else {
         arguments.extend(["-map_chapters", "0"].map(os));
     }
-    arguments.extend(["-c", "copy"].map(os));
-    let text_codec = if mov_text { "mov_text" } else { "srt" };
-    if segment.image_subtitle_count == 0 {
-        arguments.push(os("-c:s"));
-        arguments.push(os(text_codec));
-    } else {
-        for index in 0..segment.image_subtitle_count {
-            arguments.push(os(&format!("-c:s:{index}")));
-            arguments.push(os("copy"));
-        }
-        for offset in 0..text_subtitles.len() {
-            arguments.push(os(&format!(
-                "-c:s:{}",
-                segment.image_subtitle_count + offset
-            )));
-            arguments.push(os(text_codec));
-        }
+    if mov_text {
+        arguments.extend(["-movflags", "+faststart"].map(os));
     }
     arguments.push(os("-f"));
     arguments.push(os(format));
     arguments.push(output.as_os_str().to_os_string());
     let command = redacted_remux_command(&arguments, partial, &output);
-    Some(RemuxPlan {
-        arguments,
-        output,
-        command,
-    })
+    Some(RemuxPlan { arguments, command })
 }
 
-pub(crate) fn remux_destination(partial: &Path) -> PathBuf {
-    let extension = partial
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .filter(|extension| !extension.is_empty())
-        .unwrap_or("mkv");
-    let stem = partial
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("output");
-    partial.with_file_name(format!("{stem}.remux.{extension}"))
+pub(crate) fn subtitle_metadata_arguments(
+    stream: &super::SubtitleStream,
+    output: usize,
+    mov_text: bool,
+) -> Vec<String> {
+    let mut arguments = Vec::new();
+    for (key, value) in [("language", &stream.language), ("title", &stream.title)] {
+        if let Some(value) = value {
+            arguments.extend([format!("-metadata:s:s:{output}"), format!("{key}={value}")]);
+        }
+    }
+    // MP4 exposes the track name as handler_name rather than Matroska's title.
+    if mov_text {
+        if let Some(title) = &stream.title {
+            arguments.extend([
+                format!("-metadata:s:s:{output}"),
+                format!("handler_name={title}"),
+            ]);
+        }
+    }
+    let disposition = match (stream.is_default, stream.is_forced) {
+        (true, true) => "default+forced",
+        (true, false) => "default",
+        (false, true) => "forced",
+        (false, false) => "0",
+    };
+    arguments.extend([format!("-disposition:s:{output}"), disposition.to_owned()]);
+    arguments
+}
+
+struct AuxiliaryPartialGuard<'a> {
+    jobs: tauri::State<'a, JobManager>,
+    ledger: tauri::State<'a, PartialLedger>,
+    partial: PartialOutput,
+    job_id: String,
+}
+
+impl Drop for AuxiliaryPartialGuard<'_> {
+    fn drop(&mut self) {
+        if partial::discard_partial(&self.partial) == PartialCleanup::Resolved {
+            let _ = self.ledger.forget(&self.partial);
+        }
+        let _ = self.jobs.clear_auxiliary_partial(&self.job_id);
+    }
 }
 
 fn redacted_remux_command(
@@ -674,23 +764,6 @@ fn redacted_remux_command(
         }
     }
     parts.join(" ")
-}
-
-fn publish_remux(partial: &Path, remuxed: &Path) -> io::Result<()> {
-    replace_file_keep_inode(partial, remuxed)?;
-    let _ = fs::remove_file(remuxed);
-    Ok(())
-}
-
-fn replace_file_keep_inode(target: &Path, source: &Path) -> io::Result<()> {
-    let mut input = fs::File::open(source)?;
-    let mut output = fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(target)?;
-    io::copy(&mut input, &mut output)?;
-    output.sync_all()?;
-    Ok(())
 }
 
 struct ToolOutput {
@@ -825,8 +898,10 @@ fn write_file(path: &Path, contents: &str) -> ApiResult<PathBuf> {
     Ok(path.to_path_buf())
 }
 
-fn sanitize(value: &str) -> String {
-    value
+fn create_segment_directory(job_id: &str) -> ApiResult<PathBuf> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+    let job_id: String = job_id
         .chars()
         .map(|character| {
             if character.is_ascii_alphanumeric() || character == '-' {
@@ -835,7 +910,28 @@ fn sanitize(value: &str) -> String {
                 '-'
             }
         })
-        .collect()
+        .collect();
+    // create_dir is exclusive: even a stale directory from a reused PID is
+    // never adopted or removed by a different conversion.
+    for _ in 0..32 {
+        let nonce = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "vidra-segment-{}-{job_id}-{nonce}",
+            std::process::id()
+        ));
+        match fs::create_dir(&directory) {
+            Ok(()) => return Ok(directory),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(ApiError::ffmpeg(format!(
+                    "Could not prepare the segment files: {error}"
+                )))
+            }
+        }
+    }
+    Err(ApiError::ffmpeg(
+        "Could not create a separate folder for the segment files.",
+    ))
 }
 
 fn escape_metadata(value: &str) -> String {
@@ -891,7 +987,7 @@ mod tests {
         parse_keyframe_times, parse_srt, watched_duration, write_srt, Cue,
     };
     use crate::ffmpeg::{ChapterMark, SegmentTrim};
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
 
     fn trim(start: f64, end: f64) -> Option<SegmentTrim> {
         Some(SegmentTrim {
@@ -989,52 +1085,69 @@ mod tests {
     }
 
     #[test]
-    fn remux_keeps_the_container_extension_and_names_the_muxer() {
+    fn segment_directories_are_exclusive_even_for_the_same_job() {
+        let first = super::create_segment_directory("job-1").unwrap();
+        fs::write(first.join("keep"), "first job").unwrap();
+        let second = super::create_segment_directory("job-1").unwrap();
+        assert_ne!(first, second);
+        fs::remove_dir_all(second).unwrap();
+        assert_eq!(fs::read_to_string(first.join("keep")).unwrap(), "first job");
+        fs::remove_dir_all(first).unwrap();
+    }
+
+    #[test]
+    fn remux_preserves_subtitle_order_and_mp4_fast_start() {
         use std::path::Path;
-
         let partial = Path::new("/tmp/.vidra-partial-t.mkv");
-        let destination = super::remux_destination(partial);
-        assert_eq!(
-            destination
-                .extension()
-                .and_then(|extension| extension.to_str()),
-            Some("mkv")
-        );
-        assert!(destination.ends_with(".vidra-partial-t.remux.mkv"));
-        assert_eq!(
-            super::remux_destination(Path::new("/tmp/.vidra-partial-t.mp4"))
-                .extension()
-                .and_then(|extension| extension.to_str()),
-            Some("mp4")
-        );
-
-        let segment = subtitle_segment(Path::new("/tmp/vidra-segment/clipped.srt"));
-        let plan = super::remux_plan(partial, &segment, false).expect("remux plan");
+        let output = Path::new("/tmp/.vidra-partial-remux-abc123.mkv");
+        let mut segment = subtitle_segment(Path::new("/tmp/vidra-segment/clipped.srt"));
+        let mut image = segment.subtitles[0].clone();
+        image.index = 4;
+        image.codec = "hdmv_pgs_subtitle".to_owned();
+        image.is_forced = false;
+        segment.subtitles.push(image);
+        segment.image_subtitle_count = 1;
+        let plan = super::remux_plan(partial, &segment, false, output).unwrap();
         let arguments = plan
             .arguments
             .iter()
-            .map(|argument| argument.to_string_lossy().into_owned())
+            .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        assert!(arguments.windows(2).any(|pair| pair == ["-f", "matroska"]));
+        let maps = arguments
+            .windows(2)
+            .filter(|pair| pair[0] == "-map")
+            .map(|pair| pair[1].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(maps, ["0:v?", "0:a?", "1:0", "0:s:0"]);
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:s:0", "srt"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:s:1", "copy"]));
         assert!(arguments
-            .last()
-            .is_some_and(|argument| argument.ends_with(".remux.mkv")));
-        assert!(!arguments
-            .iter()
-            .any(|argument| argument.ends_with(".remux") && !argument.ends_with(".mkv")));
-        assert!(plan.command.contains("-f matroska"));
+            .windows(2)
+            .any(|pair| pair == ["-disposition:s:0", "forced"]));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-disposition:s:1", "0"]));
         assert!(plan.command.contains("<output>"));
-        assert!(plan.command.contains("clipped.srt"));
-        assert!(!plan.command.contains(".vidra-partial-t.mkv"));
-
-        let mp4 = super::remux_plan(Path::new("/tmp/.vidra-partial-t.mp4"), &segment, true)
-            .expect("mp4 plan");
+        assert!(!plan.command.contains(partial.to_str().unwrap()));
+        assert!(!plan.command.contains(output.to_str().unwrap()));
+        segment.subtitles.pop();
+        segment.image_subtitle_count = 0;
+        let mp4 = super::remux_plan(
+            partial,
+            &segment,
+            true,
+            Path::new("/tmp/.vidra-partial-remux-abc123.mp4"),
+        )
+        .unwrap();
         let mp4_arguments = mp4
             .arguments
             .iter()
-            .map(|argument| argument.to_string_lossy().into_owned())
+            .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
         assert!(mp4_arguments.windows(2).any(|pair| pair == ["-f", "mp4"]));
+        assert!(mp4_arguments
+            .windows(2)
+            .any(|pair| pair == ["-movflags", "+faststart"]));
     }
 
     #[test]
@@ -1097,54 +1210,74 @@ mod tests {
             String::from_utf8_lossy(&generated.stderr)
         );
 
-        let partial = directory.join(".vidra-partial-t.mkv");
-        fs::copy(&source, &partial).expect("partial copy");
         let subtitle = directory.join("clipped.srt");
         fs::write(&subtitle, "1\n00:00:00,000 --> 00:00:00,400\nhello\n").expect("subtitle");
-        let segment = subtitle_segment(&subtitle);
-        let plan = super::remux_plan(&partial, &segment, false).expect("remux plan");
-        assert!(
-            plan.output
-                .extension()
-                .is_some_and(|extension| extension == "mkv"),
-            "FFmpeg was asked to mux {}",
-            plan.output.display()
-        );
-        let remuxed = Command::new(&ffmpeg)
-            .args(&plan.arguments)
-            .output()
-            .expect("ffmpeg remux");
-        assert!(
-            remuxed.status.success(),
-            "FFmpeg could not mux trimmed subtitles into {}\n{}",
-            plan.output.display(),
-            String::from_utf8_lossy(&remuxed.stderr)
-        );
-        super::publish_remux(&partial, &plan.output).expect("publish remux");
-        assert!(
-            !plan.output.exists(),
-            "the temporary remux file should be removed"
-        );
-
-        let probed = Command::new(&ffprobe)
-            .args([
-                "-v",
-                "error",
-                "-select_streams",
-                "s:0",
-                "-show_entries",
-                "stream=codec_name",
-                "-of",
-                "csv=p=0",
-            ])
-            .arg(&partial)
-            .output()
-            .expect("ffprobe");
-        let codec = String::from_utf8_lossy(&probed.stdout);
-        assert!(
-            probed.status.success() && (codec.contains("subrip") || codec.contains("srt")),
-            "remuxed file has no text subtitle ({codec})"
-        );
+        let mut segment = subtitle_segment(&subtitle);
+        let mut french = segment.subtitles[0].clone();
+        french.index = 4;
+        french.language = Some("fra".to_owned());
+        french.title = Some("French".to_owned());
+        french.is_default = true;
+        french.is_forced = false;
+        segment.subtitles.push(french);
+        segment.text_subtitle_indexes.push(4);
+        segment.text_subtitle_files.push(subtitle);
+        for (extension, mov_text) in [("mkv", false), ("mp4", true)] {
+            let partial =
+                super::partial::create_partial(&source, "video", extension, &[], &[]).unwrap();
+            fs::copy(&source, &partial.path).expect("partial copy");
+            let auxiliary =
+                super::partial::create_partial(&source, "remux", extension, &[], &[]).unwrap();
+            let plan =
+                super::remux_plan(&partial.path, &segment, mov_text, &auxiliary.path).unwrap();
+            let remuxed = Command::new(&ffmpeg)
+                .args(&plan.arguments)
+                .output()
+                .expect("ffmpeg remux");
+            assert!(
+                remuxed.status.success(),
+                "FFmpeg remux failed: {}",
+                String::from_utf8_lossy(&remuxed.stderr)
+            );
+            super::partial::replace_contents(&partial, &auxiliary).unwrap();
+            super::partial::discard_partial(&auxiliary);
+            assert!(!auxiliary.path.exists());
+            let probed = Command::new(&ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "s",
+                    "-show_streams",
+                    "-of",
+                    "json",
+                ])
+                .arg(&partial.path)
+                .output()
+                .expect("ffprobe");
+            assert!(probed.status.success());
+            let json: serde_json::Value = serde_json::from_slice(&probed.stdout).unwrap();
+            let streams = json["streams"].as_array().unwrap();
+            assert_eq!(streams.len(), 2);
+            assert_eq!(streams[0]["tags"]["language"], "eng");
+            assert_eq!(streams[1]["tags"]["language"], "fra");
+            assert_eq!(streams[0]["disposition"]["forced"], 1);
+            assert_eq!(streams[0]["disposition"]["default"], 0);
+            assert_eq!(streams[1]["disposition"]["default"], 1);
+            assert_eq!(streams[1]["disposition"]["forced"], 0);
+            if !mov_text {
+                assert_eq!(streams[0]["tags"]["title"], "English forced");
+                assert_eq!(streams[1]["tags"]["title"], "French");
+            } else {
+                assert_eq!(streams[0]["tags"]["handler_name"], "English forced");
+                assert_eq!(streams[1]["tags"]["handler_name"], "French");
+                let bytes = fs::read(&partial.path).unwrap();
+                let moov = bytes.windows(4).position(|word| word == b"moov").unwrap();
+                let mdat = bytes.windows(4).position(|word| word == b"mdat").unwrap();
+                assert!(moov < mdat, "MP4 must retain fast start after remux");
+            }
+            super::partial::discard_partial(&partial);
+        }
         let _ = fs::remove_dir_all(directory);
     }
 
@@ -1243,6 +1376,15 @@ mod tests {
                 .to_path_buf(),
             chapter_file: None,
             text_subtitle_files: vec![subtitle.to_path_buf()],
+            text_subtitle_indexes: vec![3],
+            subtitles: vec![crate::ffmpeg::SubtitleStream {
+                index: 3,
+                codec: "subrip".to_owned(),
+                language: Some("eng".to_owned()),
+                title: Some("English forced".to_owned()),
+                is_default: false,
+                is_forced: true,
+            }],
             image_subtitle_count: 0,
             remux_text_subtitles: true,
         }
