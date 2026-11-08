@@ -60,6 +60,8 @@ The archive is produced by the manual **FFmpeg development archive** workflow (`
 
 The development version must match the release FFmpeg version. `scripts/ffmpeg/dev-archive.json` records the recipe fingerprint. The test fails when that fingerprint no longer matches the current recipe, so a recipe change needs a new archive and a new checksum. Update the fingerprint assertion in `scripts/ffmpeg/target.node-test.mjs` only when the recipe change is intentional. After an intentional FFmpeg recipe change, publish a new beta or release candidate and re-validate the engine before an official application release. Publishing the development archive does not publish Vidra.
 
+Release source downloads retry transport errors, including TLS handshake failures, up to three times after the first attempt. Each attempt has a 15-second connection timeout and a 120-second transfer timeout; the retry window is 300 seconds, with an overall 425-second process limit per location. If the primary Opus download fails, `scripts/ffmpeg/source-download.mjs` tries the OSU Open Source Lab Xiph mirror. Every location must match the same SHA-256 pinned in `scripts/ffmpeg/sources.json`. Downloads enter the cache only after verification, and incomplete files are removed. This transport fallback does not change source versions, checksums, compiler options, or the release recipe fingerprint.
+
 ## Build and publish
 
 Once the release is authorized and preparation is merged, create and push a signed tag from the reviewed `main` commit. For the first official release:

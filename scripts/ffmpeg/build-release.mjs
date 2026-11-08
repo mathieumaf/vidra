@@ -1,7 +1,5 @@
 import { availableParallelism } from "node:os";
-import { createHash } from "node:crypto";
 import { BUILD_RECIPE_VERSION, releaseRecipeFingerprint } from "./recipe.mjs";
-import { createReadStream } from "node:fs";
 import {
   access,
   chmod,
@@ -20,6 +18,7 @@ import { developmentOverrideMarker } from "./development-override.mjs";
 import { hostTargetTriple, releaseEntry } from "./target.mjs";
 import { verifyAv1Decoding } from "./verify-av1.mjs";
 import { ffmpegVersionMatches, ffmpegVersionToken } from "./version.mjs";
+import { ensureDownloaded as downloadSource } from "./source-download.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
@@ -294,17 +293,7 @@ function ffmpegConfiguration() {
 }
 
 async function ensureDownloaded(artifact) {
-  const archive = join(downloadDirectory, artifact.archiveName);
-  if (!(await exists(archive))) {
-    console.log(`Downloading ${artifact.archiveName}...`);
-    run("curl", ["-fL", "--retry", "3", artifact.url, "-o", archive]);
-  }
-  const digest = await sha256(archive);
-  if (digest !== artifact.sha256) {
-    await rm(archive, { force: true });
-    throw new Error(`Checksum mismatch for ${artifact.archiveName}: expected ${artifact.sha256}, received ${digest}.`);
-  }
-  return archive;
+  return downloadSource(artifact, downloadDirectory);
 }
 
 function requirePinnedReleaseVersion(name, binary) {
@@ -453,12 +442,6 @@ async function exists(path) {
   } catch {
     return false;
   }
-}
-
-async function sha256(path) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return hash.digest("hex");
 }
 
 async function readJson(path) {
