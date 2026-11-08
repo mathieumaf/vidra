@@ -107,8 +107,8 @@ git diff --check
   pnpm tauri dev --config '{"identifier":"io.github.mathieumaf.vidra.proof"}'
   ```
 
-  The dev binary keeps its WebKit storage in `~/Library/WebKit/vidra`, apart from the installed app. Convert only synthetic clips (`node scripts/corpus/generate.mjs --output "$(mktemp -d)/corpus"`) into a temporary destination folder. Never open the user's own media or write into their folders.
-- Off limits: pushing a `v*` tag, running or dispatching `release.yml`, `publish-updater.yml`, or `ffmpeg-dev-archive.yml`, `gh release` writes, `pnpm ffmpeg:release`, signing or notarizing, and installing an update into `/Applications/Vidra.app`. Prove release and updater changes with `pnpm test` (the `scripts/release` node tests) instead.
+  The dev binary keeps its WebKit storage in `~/Library/WebKit/vidra`, apart from the installed app, but every dev run shares it. Decline any pending-queue restore offer. Convert only synthetic clips (`node scripts/corpus/generate.mjs --output "$(mktemp -d)/corpus"`) into a temporary destination folder. Never open the user's own media or write into their folders.
+- Off limits: pushing a `v*` tag, running or dispatching `release.yml`, `publish-updater.yml`, or `ffmpeg-dev-archive.yml`, `gh release` writes, `pnpm ffmpeg:release`, release signing or notarization, and installing an update into `/Applications/Vidra.app`. Prove release and updater changes with `pnpm test` (the `scripts/release` node tests) instead.
 
 ## Review guidelines
 
@@ -118,12 +118,12 @@ git diff --check
 - **It stalls or races the queue.** A mutex held across an `.await` or a process wait in `jobs/` or `queue.rs`, a second concurrent FFmpeg process, or job state left behind after cancel, failure, or shutdown.
 - **It weakens the supply or update chain.** An unpinned or unverified sidecar in `scripts/ffmpeg/`, a changed updater endpoint or `pubkey` in `tauri.conf.json`, a release script that can publish to the wrong channel, or any new network call, telemetry, or upload.
 
-Skip `src-tauri/generated/` and `src-tauri/icons/` (generated icon assets). Keep `pnpm-lock.yaml` and `src-tauri/Cargo.lock` in review.
+Skip `src-tauri/generated/` (generated icon assets). Keep `pnpm-lock.yaml` and `src-tauri/Cargo.lock` in review.
 
 Cite file:line for every finding, and post at most 3 nits.
 
 ## Risk
 
-- **High:** `src-tauri/src/output/**`, `src-tauri/src/ffmpeg/paths.rs`, `src-tauri/src/ffmpeg/segment.rs`, `src-tauri/src/ffmpeg/queue.rs`, `src-tauri/src/history/**`, `src-tauri/src/commands/**`, `src-tauri/src/application_update.rs`, `src-tauri/src/lib.rs`, `src/types/media.ts`, `src/services/**`, `src-tauri/tauri*.conf.json`, `src-tauri/capabilities/**`, `src-tauri/build.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/deny.toml`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `scripts/ffmpeg/**`, `scripts/release/**`, `.github/**`, `AGENTS.md`, `CLAUDE.md`, `LICENSE`, `COPYRIGHT`, `THIRD_PARTY_NOTICES.md`.
+- **High:** `src-tauri/src/output/**`, `src-tauri/src/ffmpeg/paths.rs`, `src-tauri/src/ffmpeg/segment.rs`, `src-tauri/src/ffmpeg/queue.rs`, `src-tauri/src/ffmpeg/encode.rs`, `src-tauri/src/ffmpeg/encode/**`, `src-tauri/src/ffmpeg/binary.rs`, `src-tauri/src/jobs/**`, `src-tauri/src/history/**`, `src-tauri/src/commands/**`, `src-tauri/src/application_update.rs`, `src-tauri/src/lib.rs`, `src/types/media.ts`, `src/services/**`, `src-tauri/tauri*.conf.json`, `src-tauri/capabilities/**`, `src-tauri/build.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/deny.toml`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `scripts/ffmpeg/**`, `scripts/release/**`, `.github/**`, `AGENTS.md`, `CLAUDE.md`, `LICENSE`, `COPYRIGHT`, `THIRD_PARTY_NOTICES.md`.
 - **Low:** `docs/**`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `design/**`, and tests: `*.test.ts`, `*.test.tsx`, `*.test.mjs`, `*.node-test.mjs`, `src/test/**`, `src-tauri/src/**/tests.rs`, `src-tauri/src/ffmpeg/queue_tests.rs`, `src-tauri/src/ffmpeg/corpus.rs`, and `#[cfg(test)]` modules.
 - **Medium:** everything else. When paths overlap, the higher tier wins.
