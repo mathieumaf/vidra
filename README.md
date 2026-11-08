@@ -4,7 +4,7 @@ Vidra is an open-source desktop app that converts and encodes video on your comp
 
 **Vidra 0.1.0** is the first official release for **macOS on Apple Silicon** (macOS 12 or later). The signed and notarized installer is on the [0.1.0 release](https://github.com/mathieumaf/vidra/releases/tag/v0.1.0). There is no account. Media is not uploaded.
 
-**0.2.0-rc.2** is being prepared with fixes for source-file protection, trimming, and conversion cancellation. Once published, it will be available through the **Beta** update channel for testing. See the [changelog](CHANGELOG.md) and [prerelease validation checklist](docs/RELEASING.md#beta-validation).
+**0.2.0-rc.2** is a release candidate with fixes for source-file protection, trimming, and conversion cancellation. Once published, it will be available through the **Beta** update channel for testing. See the [changelog](CHANGELOG.md) and [prerelease validation checklist](docs/RELEASING.md#beta-validation).
 
 ![The conversion screen for a 1920×1080 H.264 video, using the Balanced profile.](docs/screenshots/convert.png)
 
