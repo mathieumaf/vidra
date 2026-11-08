@@ -108,41 +108,45 @@ fn mapping_arguments(
             .filter(|stream| {
                 request.container == OutputContainer::Mkv || is_mp4_text_subtitle(&stream.codec)
             })
-            .filter(|stream| !replace_text || !segment::is_text_subtitle(&stream.codec))
+            .filter_map(|stream| {
+                if replace_text && segment::is_text_subtitle(&stream.codec) {
+                    let (_, input) = segment?
+                        .text_indexes
+                        .iter()
+                        .find(|(source, _)| *source == stream.index)?;
+                    Some((stream, format!("{input}:0"), true))
+                } else {
+                    Some((stream, format!("0:{}", stream.index), false))
+                }
+            })
             .collect::<Vec<_>>();
-        for stream in &mapped_subtitles {
-            arguments.extend(["-map".to_owned(), format!("0:{}", stream.index)]);
+        for (_, input, _) in &mapped_subtitles {
+            arguments.extend(["-map".to_owned(), input.clone()]);
         }
-        let text_count = segment
-            .map(|segment| segment.text_indexes.len())
-            .unwrap_or(0);
-        if let Some(segment) = segment {
-            for index in &segment.text_indexes {
-                arguments.extend(["-map".to_owned(), format!("{index}:0")]);
+        if replace_text {
+            for (output, (stream, _, clipped)) in mapped_subtitles.iter().enumerate() {
+                let codec = if request.container == OutputContainer::Mp4 {
+                    "mov_text"
+                } else if *clipped || stream.codec.eq_ignore_ascii_case("mov_text") {
+                    "subrip"
+                } else {
+                    "copy"
+                };
+                arguments.extend([format!("-c:s:{output}"), codec.to_owned()]);
+                arguments.extend(segment::subtitle_metadata_arguments(
+                    stream,
+                    output,
+                    request.container == OutputContainer::Mp4,
+                ));
             }
-        }
-        if !mapped_subtitles.is_empty() {
+        } else if !mapped_subtitles.is_empty() {
             arguments.extend(subtitle_codec_arguments(
                 request.container,
-                &mapped_subtitles,
+                &mapped_subtitles
+                    .iter()
+                    .map(|(stream, _, _)| *stream)
+                    .collect::<Vec<_>>(),
             ));
-        }
-        if text_count > 0 {
-            let codec = if request.container == OutputContainer::Mp4 {
-                "mov_text"
-            } else {
-                "srt"
-            };
-            if mapped_subtitles.is_empty() {
-                arguments.extend(["-c:s".to_owned(), codec.to_owned()]);
-            } else {
-                for offset in 0..text_count {
-                    arguments.extend([
-                        format!("-c:s:{}", mapped_subtitles.len() + offset),
-                        codec.to_owned(),
-                    ]);
-                }
-            }
         }
     }
     arguments
@@ -407,6 +411,7 @@ mod tests {
 
     fn job(request: EncodeRequest, audio: Vec<AudioStream>) -> PendingJob {
         PendingJob {
+            replace_identity: None,
             id: "job-1".to_owned(),
             estimated_output_bytes: 0,
             media: MediaInfo {
@@ -862,7 +867,7 @@ mod tests {
             end_seconds: 12.8,
         });
         request.audio_stream_indexes = vec![1];
-        request.subtitle_stream_indexes = vec![3];
+        request.subtitle_stream_indexes = vec![3, 4, 5];
         let mut pending = job(
             request,
             vec![AudioStream {
@@ -877,14 +882,28 @@ mod tests {
         );
         pending.id = "segment-map".to_owned();
         pending.media.duration_seconds = 20.0;
-        pending.media.subtitles = vec![subtitle(3, "subrip")];
+        pending.media.subtitles = vec![
+            subtitle(3, "subrip"),
+            subtitle(4, "hdmv_pgs_subtitle"),
+            subtitle(5, "subrip"),
+        ];
+        pending.media.subtitles[0].language = Some("eng".to_owned());
+        pending.media.subtitles[0].title = Some("English forced".to_owned());
+        pending.media.subtitles[0].is_forced = true;
+        pending.media.subtitles[2].language = Some("fra".to_owned());
+        pending.media.subtitles[2].is_default = true;
         pending.segment = Some(crate::jobs::PreparedSegment {
             output_start: 7.3,
             output_end: 12.8,
             directory: PathBuf::from("/tmp/vidra-segment-test"),
             chapter_file: Some(PathBuf::from("/tmp/vidra-segment-test/chapters.txt")),
-            text_subtitle_files: vec![PathBuf::from("/tmp/vidra-segment-test/clipped-3.srt")],
-            image_subtitle_count: 0,
+            text_subtitle_files: vec![
+                PathBuf::from("/tmp/vidra-segment-test/clipped-3.srt"),
+                PathBuf::from("/tmp/vidra-segment-test/clipped-5.srt"),
+            ],
+            text_subtitle_indexes: vec![3, 5],
+            subtitles: pending.media.subtitles.clone(),
+            image_subtitle_count: 1,
             remux_text_subtitles: false,
         });
         let preview = super::command_preview(
@@ -903,13 +922,48 @@ mod tests {
         assert!(arguments.windows(2).any(|pair| pair == ["-map", "1:0"]));
         assert!(arguments
             .windows(2)
-            .any(|pair| pair == ["-map_chapters", "2"]));
-        assert!(arguments.windows(2).any(|pair| pair == ["-c:s", "srt"]));
+            .any(|pair| pair == ["-map_chapters", "3"]));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c:s:0", "subrip"]));
         assert!(arguments.windows(2).any(|pair| pair == ["-c:a", "copy"]));
-        assert!(!arguments
-            .iter()
-            .any(|argument| argument == "-copypriorss:s"));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-copypriorss:s", "0"]));
         assert!(!arguments.iter().any(|argument| argument == "0:3"));
+        let maps = arguments
+            .windows(2)
+            .filter(|pair| pair[0] == "-map")
+            .map(|pair| pair[1].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(maps, ["0:v:0?", "0:1", "1:0", "0:4", "2:0"]);
+        for (flag, value) in [
+            ("-metadata:s:s:0", "language=eng"),
+            ("-metadata:s:s:0", "title=English forced"),
+            ("-metadata:s:s:2", "language=fra"),
+            ("-disposition:s:0", "forced"),
+            ("-disposition:s:1", "0"),
+            ("-disposition:s:2", "default"),
+        ] {
+            assert!(arguments.windows(2).any(|pair| pair == [flag, value]));
+        }
+        // A text track with no cues in the clip must not fall back to the
+        // untrimmed source track when all clipped files are empty.
+        let segment = pending.segment.as_mut().unwrap();
+        segment.text_subtitle_files.clear();
+        segment.text_subtitle_indexes.clear();
+        let empty = super::command_preview(
+            &pending,
+            Path::new("/videos/holiday.mov"),
+            Path::new("/videos/.vidra-partial-job-1-abc123.mkv"),
+        )
+        .unwrap();
+        let maps = empty
+            .windows(2)
+            .filter(|pair| pair[0] == "-map")
+            .map(|pair| pair[1].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(maps, ["0:v:0?", "0:1", "0:4"]);
     }
 
     fn subtitle(index: u32, codec: &str) -> SubtitleStream {

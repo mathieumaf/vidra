@@ -3,12 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import type { QualityLevel } from "../config/quality";
+import { compatibleProfileSettings } from "../config/profiles";
 import { outputContainer as getOutputContainer } from "../config/encoding";
-import { resolutionReducesVideo } from "../config/resolution";
-import {
-  frameRateReducesVideo,
-  type AdvancedEncodingSettings,
-} from "../config/advanced";
+import type { AdvancedEncodingSettings } from "../config/advanced";
 import { defaultOutputPath, errorMessage } from "../lib/format";
 import { colorConversionNotice } from "../lib/color";
 import {
@@ -304,16 +301,7 @@ export function useEncodingQueue({
       const failures = probes.length - media.length;
       const newItems = media.map((item) => {
         const defaults = settingsOverride ?? defaultSettingsRef.current;
-        let settings = defaults.outputResolution !== "source"
-          && !resolutionReducesVideo(item.video, defaults.outputResolution)
-          ? { ...defaults, outputResolution: "source" as const }
-          : defaults;
-        if (
-          settings.outputFrameRate !== "source"
-          && !frameRateReducesVideo(item.video, settings.outputFrameRate)
-        ) {
-          settings = { ...settings, outputFrameRate: "source" };
-        }
+        const settings = compatibleProfileSettings(defaults, item);
         return createQueueItem(item, settings);
       });
       setItems((currentItems) => {
@@ -398,7 +386,8 @@ export function useEncodingQueue({
       colorConversionNotice(item.media.video, item.settings.videoCodec)?.blocking
     ));
     if (blocked) {
-      setError(`${blocked.media.name} requires Original video because its Dolby Vision structure cannot be safely re-encoded.`);
+      const notice = colorConversionNotice(blocked.media.video, blocked.settings.videoCodec);
+      setError(`${blocked.media.name}: ${notice?.message}`);
       return 0;
     }
     const unresolvedCopy = readyItems.find((item) => (

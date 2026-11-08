@@ -21,6 +21,27 @@ function video(overrides: Partial<VideoStream> = {}): VideoStream {
 }
 
 describe("color conversion notices", () => {
+  it("blocks H.264 when an HDR transfer cannot be established", () => {
+    const unknown = video({ hdrFormat: "hdr", colorTransfer: null });
+    expect(colorConversionNotice(unknown, "h264")).toMatchObject({ blocking: true });
+    expect(colorConversionNotice(unknown, "copy")).toMatchObject({ blocking: false });
+    for (const colorTransfer of ["smpte2084", "arib-std-b67"]) {
+      expect(colorConversionNotice({ ...unknown, colorTransfer }, "h264")?.blocking).toBe(false);
+    }
+    for (const hdrFormat of ["hdr10", "hdr10-plus", "pq", "hlg"] as const) {
+      expect(colorConversionNotice({ ...unknown, hdrFormat }, "h264")?.blocking).toBe(false);
+    }
+  });
+
+  it("describes the actual SDR output depth of each encoder", () => {
+    const source = video({ hdrFormat: null, colorPrimaries: "bt709", colorTransfer: "bt709" });
+    expect(colorConversionNotice(source, "h264")?.message).toContain("reduced to 8-bit");
+    for (const codec of ["h265", "av1"] as const) {
+      expect(colorConversionNotice(source, codec)?.message).toContain("encoded as 10-bit");
+      expect(colorConversionNotice({ ...source, bitDepth: 12 }, codec)?.message).toContain("reduced to 10-bit");
+    }
+  });
+
   it("explains automatic HDR handling for every codec path", () => {
     expect(colorConversionNotice(video(), "h264")).toMatchObject({
       title: "HLG will be converted to SDR",

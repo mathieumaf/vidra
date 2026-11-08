@@ -1,6 +1,7 @@
 use super::{process, ActiveJob, CancelledJob, DiskSpaceReservation, PendingJob, ReservedJob};
 use crate::{
     error::{ApiError, ApiResult},
+    ffmpeg::paths::same_existing_file,
     output::partial::{discard_partial, PartialOutput},
     power::SleepPreventer,
 };
@@ -68,24 +69,53 @@ impl JobManager {
                 "Wait for the application update to finish before adding conversions.",
             ));
         }
+        let mut inputs = state
+            .pending
+            .iter()
+            .map(|job| job.request.input_path.as_str())
+            .chain(
+                state
+                    .active
+                    .iter()
+                    .chain(state.suspended.iter())
+                    .map(|job| job.input_path.as_str()),
+            )
+            .collect::<Vec<_>>();
+        inputs.extend(jobs.iter().map(|job| job.request.input_path.as_str()));
         let mut outputs = state
             .pending
             .iter()
             .map(|job| job.request.output_path.as_str())
-            .collect::<HashSet<_>>();
-        if let Some(active) = &state.active {
-            outputs.insert(active.output_path.as_str());
+            .chain(
+                state
+                    .active
+                    .iter()
+                    .chain(state.suspended.iter())
+                    .map(|job| job.output_path.as_str()),
+            )
+            .collect::<Vec<_>>();
+        for job in &jobs {
+            for output in &outputs {
+                if paths_overlap(&job.request.output_path, output)? {
+                    return Err(ApiError::invalid_input(
+                        "A queued video already uses one of the selected output paths.",
+                    ));
+                }
+            }
+            outputs.push(&job.request.output_path);
         }
-        outputs.extend(state.suspended.iter().map(|job| job.output_path.as_str()));
-        if jobs
-            .iter()
-            .any(|job| !outputs.insert(job.request.output_path.as_str()))
-        {
-            return Err(ApiError::invalid_input(
-                "A queued video already uses one of the selected output paths.",
-            ));
+        // Validate both directions atomically: a new output cannot replace a
+        // queued source, and a new source cannot be a pending replacement target.
+        for output in &outputs {
+            for input in &inputs {
+                if paths_overlap(output, input)? {
+                    return Err(ApiError::invalid_input(
+                        "The output file must be different from every queued input file.",
+                    ));
+                }
+            }
         }
-
+        drop(inputs);
         drop(outputs);
         state
             .waiting_order
@@ -151,11 +181,64 @@ impl JobManager {
             .collect::<Vec<_>>();
         for job in state.active.iter().chain(state.suspended.iter()) {
             paths.push(PathBuf::from(&job.output_path));
-            if let Some(partial) = &job.partial {
+            for partial in job.partial.iter().chain(job.auxiliary_partial.iter()) {
                 paths.push(partial.path.clone());
             }
         }
         Ok(paths)
+    }
+
+    pub(crate) fn input_paths(&self) -> ApiResult<Vec<PathBuf>> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Ok(state
+            .pending
+            .iter()
+            .map(|job| PathBuf::from(&job.request.input_path))
+            .chain(
+                state
+                    .active
+                    .iter()
+                    .chain(state.suspended.iter())
+                    .map(|job| PathBuf::from(&job.input_path)),
+            )
+            .collect())
+    }
+
+    pub(crate) fn set_auxiliary_partial(
+        &self,
+        job_id: &str,
+        partial: PartialOutput,
+    ) -> ApiResult<()> {
+        let mut state = self.lock()?;
+        let active = state
+            .active
+            .as_mut()
+            .filter(|job| job.id == job_id)
+            .ok_or_else(|| {
+                ApiError::new(
+                    "job_state_error",
+                    "The reserved encoding job is unavailable.",
+                )
+            })?;
+        if active.auxiliary_partial.is_some() {
+            return Err(ApiError::new(
+                "job_state_error",
+                "The conversion is already being finished.",
+            ));
+        }
+        active.auxiliary_partial = Some(partial);
+        Ok(())
+    }
+
+    pub(crate) fn clear_auxiliary_partial(&self, job_id: &str) -> ApiResult<()> {
+        let mut state = self.lock()?;
+        if let Some(active) = state.active.as_mut().filter(|job| job.id == job_id) {
+            active.auxiliary_partial = None;
+        }
+        Ok(())
     }
 
     pub fn set_partial(&self, job_id: &str, partial: PartialOutput) -> ApiResult<()> {
@@ -209,12 +292,14 @@ impl JobManager {
             state.waiting_order.pop_front();
             state.active = Some(ActiveJob {
                 id: job.id.clone(),
+                input_path: job.request.input_path.clone(),
                 output_path: job.request.output_path.clone(),
                 estimated_output_bytes: job.estimated_output_bytes,
                 process: None,
                 process_id: None,
                 paused: false,
                 partial: None,
+                auxiliary_partial: None,
             });
             return Ok(Some(ReservedJob::Pending(Box::new(job))));
         }
@@ -263,6 +348,11 @@ impl JobManager {
                 return Err(error);
             }
         };
+        if state.cancelled.contains(job_id) {
+            drop(state);
+            stop_untracked(process);
+            return Err(ApiError::new("cancelled", "The conversion was cancelled."));
+        }
         let failure = if state.active.is_none() {
             Some("The reserved encoding job is unavailable.")
         } else if state.active.as_ref().map(|job| job.id.as_str()) != Some(job_id) {
@@ -282,6 +372,23 @@ impl JobManager {
         Ok(())
     }
 
+    /// The shell has reaped the encoder. Never signal its reusable PID again.
+    pub(crate) fn encoder_terminated(&self, job_id: &str) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let active = if state.active.as_ref().is_some_and(|job| job.id == job_id) {
+            state.active.as_mut()
+        } else {
+            state.suspended.iter_mut().find(|job| job.id == job_id)
+        };
+        if let Some(job) = active {
+            job.process = None;
+            job.process_id = None;
+        }
+    }
+
     pub fn finish_active(&self, job_id: &str) -> ApiResult<()> {
         let mut state = self.lock()?;
         if state.active.as_ref().map(|job| job.id.as_str()) == Some(job_id) {
@@ -291,6 +398,9 @@ impl JobManager {
             state.suspended.remove(index);
             state.waiting_order.retain(|id| id != job_id);
         }
+        // Publication may already have crossed its cancellation boundary.
+        // Do not retain a late cancellation after the job has become terminal.
+        state.cancelled.remove(job_id);
         Ok(())
     }
 
@@ -305,7 +415,10 @@ impl JobManager {
                     ApiError::invalid_input("The requested encoding job is not running.")
                 })?;
             let process_id = active.process_id.ok_or_else(|| {
-                ApiError::new("job_state_error", "The encoding process is still starting.")
+                ApiError::new(
+                    "job_state_error",
+                    "This conversion is starting or finishing and cannot be paused yet.",
+                )
             })?;
             process::set_paused(process_id, true)?;
 
@@ -397,6 +510,11 @@ impl JobManager {
         process: process::RunningProcess,
     ) -> ApiResult<()> {
         let mut state = self.lock()?;
+        if state.cancelled.contains(job_id) {
+            drop(state);
+            let _ = process.stop();
+            return Err(ApiError::new("cancelled", "The conversion was cancelled."));
+        }
         if state.preparing_job.as_deref() != Some(job_id) {
             drop(state);
             let _ = process.stop();
@@ -444,10 +562,8 @@ impl JobManager {
             }
             let active = state.active.as_mut().expect("the active job was checked");
             if active.process_id.is_none() {
-                return Err(ApiError::new(
-                    "job_state_error",
-                    "The encoding process is still starting.",
-                ));
+                state.cancelled.insert(job_id.to_owned());
+                return Ok(CancelledJob::Preparing);
             }
             let process = active.process.take().ok_or_else(|| {
                 ApiError::new("job_state_error", "The encoding process is still starting.")
@@ -573,7 +689,12 @@ impl JobManager {
             }
             // The destination is published only after success. Shutdown may
             // remove the partial file and must leave that destination alone.
-            if let Some(partial) = job.partial.take() {
+            for partial in job
+                .partial
+                .take()
+                .into_iter()
+                .chain(job.auxiliary_partial.take())
+            {
                 discard_partial(&partial);
             }
         }
@@ -585,6 +706,10 @@ impl JobManager {
             .lock()
             .map_err(|_| ApiError::new("job_state_error", "Unable to access the job queue."))
     }
+}
+
+fn paths_overlap(left: &str, right: &str) -> ApiResult<bool> {
+    Ok(left == right || same_existing_file(Path::new(left), Path::new(right))?)
 }
 
 fn stop_untracked(process: process::RunningProcess) {

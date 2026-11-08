@@ -76,7 +76,9 @@ pub fn run() {
             tauri::RunEvent::Opened { urls } => {
                 open_files::store_and_emit(app_handle, open_files::paths_from_urls(&urls));
             }
-            tauri::RunEvent::ExitRequested { .. } => {
+            // macOS's native Quit menu can deliver Exit without ExitRequested.
+            // Both cleanup operations are idempotent when both events arrive.
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                 app_handle.state::<JobManager>().shutdown();
                 app_handle.state::<PartialLedger>().recover_stale();
             }

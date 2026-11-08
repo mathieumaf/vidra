@@ -113,6 +113,7 @@ fn pending_job(id: &str, input: &Path, output: &Path) -> crate::jobs::PendingJob
         estimated_output_bytes: 1_024,
         request: request(input, output),
         media: media_info(input),
+        replace_identity: None,
         ffmpeg_version: Some("ffmpeg test".to_owned()),
         segment: None,
         ffmpeg_command: None,
@@ -284,9 +285,7 @@ fn enqueue_probes_only_after_output_validation_and_checks_disk_space_last() {
         .result
         .expect_err("the wrong extension should be rejected");
     assert!(error.message.contains(".mp4"));
-    assert_eq!(trace.steps.len(), 1);
-    assert!(trace.steps[0].contains("first.mov"));
-    assert!(!trace.steps[0].contains("second.mov"));
+    assert!(trace.steps.is_empty());
     assert!(jobs.reserve_next().unwrap().is_none());
 }
 
@@ -315,8 +314,7 @@ fn enqueue_rejects_duplicate_outputs_before_probing_the_duplicate() {
         .expect_err("one output path should be rejected");
     assert_eq!(error.code, "invalid_input");
     assert!(error.message.contains("same output path"));
-    assert_eq!(trace.steps.len(), 1);
-    assert!(trace.steps[0].contains("first.mov"));
+    assert!(trace.steps.is_empty());
     assert!(jobs.reserve_next().unwrap().is_none());
 }
 
@@ -1072,6 +1070,7 @@ fn a_confirmed_replacement_is_published_only_after_success() {
     fs::write(&output, b"original destination").unwrap();
     let mut job = pending_job("job", &input, &output);
     job.request.replace_existing = true;
+    job.replace_identity = partial::destination_identity(&output);
     session.jobs.append(vec![job]).unwrap();
     let captured = RefCell::new(None);
 
@@ -1136,6 +1135,7 @@ fn a_failed_or_cancelled_encode_does_not_replace_a_confirmed_destination() {
         fs::write(&output, b"original destination").unwrap();
         let mut job = pending_job("job", &input, &output);
         job.request.replace_existing = true;
+        job.replace_identity = partial::destination_identity(&output);
         session.jobs.append(vec![job]).unwrap();
         let captured = RefCell::new(None);
         run_drive(
@@ -1511,4 +1511,58 @@ fn finish_logged(
             exit_code,
         },
     );
+}
+
+#[test]
+fn replacement_identity_is_not_rebound_while_probing_or_waiting() {
+    let directory = TempDir::new("replace-waiting");
+    let mut session = effects(directory.path());
+    let input = write_source(directory.path(), "clip.mov");
+    let output = directory.path().join("clip-vidra.mp4");
+    fs::write(&output, b"authorized destination").unwrap();
+    let original_identity = partial::destination_identity(&output).unwrap();
+    let mut encode_request = request(&input, &output);
+    encode_request.replace_existing = true;
+    let trace = trace_enqueue(
+        &session.jobs,
+        vec![encode_request],
+        |_| {
+            // A different inode arrives after authorization but before enqueue finishes.
+            fs::rename(&output, directory.path().join("original.mp4")).unwrap();
+            fs::write(&output, b"unrelated new file").unwrap();
+            Ok(media_info(&input))
+        },
+        |_, _| Ok(()),
+    );
+    trace.result.unwrap();
+    let captured = RefCell::new(None);
+    run_drive(
+        &mut session,
+        |_, partial| {
+            fs::write(&partial.path, b"converted video").unwrap();
+            Ok(())
+        },
+        |_, watched| {
+            assert_eq!(watched.replace_identity, Some(original_identity));
+            *captured.borrow_mut() = Some(watched);
+            Ok(())
+        },
+    )
+    .unwrap();
+    let watched = captured.into_inner().unwrap();
+    finish_logged(
+        &mut session,
+        *watched.job,
+        watched.partial,
+        Some(0),
+        watched.replace_identity,
+        "",
+    );
+    assert_eq!(session.finished[0].status, "completed");
+    assert_eq!(fs::read(&output).unwrap(), b"unrelated new file");
+    assert_eq!(
+        fs::read(directory.path().join("clip-vidra-2.mp4")).unwrap(),
+        b"converted video"
+    );
+    assert_eq!(fs::read(&input).unwrap(), b"source-media");
 }

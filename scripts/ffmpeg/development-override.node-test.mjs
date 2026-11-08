@@ -16,6 +16,8 @@ test("copies local ffmpeg and ffprobe into sidecar names and drops stale checksu
   await writeFile(join(sourceDirectory, "ffprobe"), "ffprobe-bytes");
   await writeFile(join(binaryDirectory, `.ffmpeg-${target}.sha256`), "stale\n");
 
+  await writeFile(join(binaryDirectory, `.ffmpeg-dev-archive-${target}.sha256`), "archive-checksum\n");
+
   try {
     await installDevelopmentSidecars({ sourceDirectory, target, binaryDirectory });
 
@@ -24,6 +26,7 @@ test("copies local ffmpeg and ffprobe into sidecar names and drops stale checksu
     const mode = (await stat(join(binaryDirectory, `ffmpeg-${target}`))).mode & 0o777;
     assert.equal(mode, 0o755);
     await assert.rejects(stat(join(binaryDirectory, `.ffmpeg-${target}.sha256`)));
+    await assert.rejects(stat(join(binaryDirectory, `.ffmpeg-dev-archive-${target}.sha256`)));
     assert.equal(await readFile(developmentOverrideMarker(binaryDirectory, target), "utf8"), "development-override\n");
     assert.equal(
       developmentOverrideMarker(binaryDirectory, target),
