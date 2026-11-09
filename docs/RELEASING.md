@@ -81,7 +81,7 @@ The release workflow then:
 - rejects FFmpeg sidecars that depend on libraries outside the macOS system paths;
 - builds, signs, and notarizes the Apple Silicon application and DMG;
 - creates a signed `.app.tar.gz` updater bundle and its `.sig` signature;
-- signs the attached updater bundle again for the exact release tag version, because the build signs it for the bundle version without the prerelease suffix and the updater rejects an update whose signed and announced versions differ;
+- checks that the attached updater bundle is identical to the one built on the runner, then signs the runner-built bundle again for the exact release tag version, because the build signs it for the bundle version without the prerelease suffix and the updater rejects an update whose signed and announced versions differ;
 - verifies that signature against the committed updater public key, records the exact release tag as the `latest.json` version, and fails before publication if any platform signature is bound to another version;
 - verifies the final application with `codesign` and Gatekeeper;
 - creates a draft containing the DMG, updater artifacts and manifest, its checksum, FFmpeg corresponding sources, and build configuration. Tags with a prerelease suffix produce a prerelease draft; tags without one produce an official release draft.
