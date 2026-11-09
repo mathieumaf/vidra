@@ -125,7 +125,7 @@ Complete these steps on the draft produced by the signed `v0.2.0-rc.2` tag. Pref
 - [ ] Complete the [manual VoiceOver checklist](ACCESSIBILITY.md#manual-voiceover-checklist) in the signed app.
 - [ ] From signed Vidra 0.1.0, leave Stable selected and confirm it does not offer 0.2.0-rc.2. Choose Beta, check for updates, and confirm installation stays unavailable while a conversion is queued or running. After the queue is idle, install the update and confirm Vidra restarts. Repeat the Beta update from 0.2.0-beta.2 and 0.2.0-rc.1; the rc.1 update must be offered even though both bundles display 0.2.0.
 - [ ] In the updated app, confirm Settings shows bundle version `0.2.0`, the release link is `v0.2.0-rc.2`, and the FFmpeg row includes `8.1.3`. Run a short conversion. Settings, profiles, history, and the update-channel choice must still be there.
-- [ ] Confirm the draft `latest.json` version is `0.2.0-rc.2` and that its `darwin-aarch64` URL and signature match the attached updater archive. The signature's trusted comment must record `version:0.2.0-rc.2`. The draft must be marked as a prerelease.
+- [ ] Confirm the draft `latest.json` version is `0.2.0-rc.2` and that its `darwin-aarch64` URL and signature match the attached updater archive. The signature's trusted comment must record `version:` followed by that same full version. The draft must be marked as a prerelease.
 - [ ] Publish the draft as a prerelease and do not mark it as the latest GitHub release. Confirm `publish-updater.yml` advances Beta `beta.json` to `0.2.0-rc.2` and leaves Stable `latest.json` on `0.1.0`.
 
 ## Update channels
