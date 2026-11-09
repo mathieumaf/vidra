@@ -4,9 +4,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
+import { fixtureSignature } from "./updater-signature-fixtures.mjs";
 
 const publisher = resolve(import.meta.dirname, "publish-updater-manifests.mjs");
-const manifest = (version) => ({ version, platforms: { "darwin-aarch64": { url: "https://example.com/Vidra.app.tar.gz", signature: "signed" } } });
+const manifest = (version, signedVersion = version) => ({ version, platforms: { "darwin-aarch64": { url: "https://example.com/Vidra.app.tar.gz", signature: fixtureSignature(signedVersion) } } });
 
 // Exercise the real CLI entry point without contacting or changing GitHub.
 const fakeGh = `#!/usr/bin/env node
@@ -86,4 +87,11 @@ test("drafts and GitHub authorization failures never cause channel writes", () =
     assert.ok(result.error);
     assert.equal(result.writes, null);
   }
+});
+
+test("the publication CLI performs no writes for a signature bound to another version", () => {
+  const result = runPublisher({ prerelease: true, incoming: manifest("0.2.0-rc.2", "0.2.0"), assets: { "latest.json": manifest("0.1.0") } });
+  assert.ok(result.error);
+  assert.match(result.error.stderr, /bound to version 0\.2\.0/);
+  assert.equal(result.writes, null);
 });

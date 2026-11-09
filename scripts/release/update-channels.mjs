@@ -1,4 +1,5 @@
-import { prepareUpdaterManifest, versionFromReleaseTag } from "./prepare-updater-manifest.mjs";
+import { validateUpdaterManifest, versionFromReleaseTag } from "./prepare-updater-manifest.mjs";
+import { assertSignedVersionsMatch } from "./updater-signature.mjs";
 
 function versionParts(value) {
   const version = versionFromReleaseTag(value).split("+")[0];
@@ -33,7 +34,8 @@ function validateManifest(manifest) {
   if (!manifest || typeof manifest.version !== "string") {
     throw new Error("An updater manifest must contain a version.");
   }
-  prepareUpdaterManifest(manifest, manifest.version);
+  validateUpdaterManifest(manifest);
+  versionFromReleaseTag(manifest.version);
   return manifest;
 }
 
@@ -45,6 +47,9 @@ function newest(...manifests) {
 
 export function channelPromotions({ incoming, tag, prerelease, stable = null, beta = null }) {
   validateManifest(incoming);
+  // Existing channel manifests may predate signed versions. Only the release
+  // being promoted must carry a signature bound to the version it announces.
+  assertSignedVersionsMatch(incoming);
   if (stable) validateManifest(stable);
   if (beta) validateManifest(beta);
   const version = versionFromReleaseTag(tag);
