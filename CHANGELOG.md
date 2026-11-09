@@ -2,6 +2,12 @@
 
 All notable changes to Vidra are documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Allow prerelease updates to install. The release workflow now signs the updater archive for the full release version, including its prerelease suffix, and refuses to publish a manifest whose announced version differs from the signed one. The 0.2.0-rc.2 update could not be installed because its signature was bound to 0.2.0 ([#121](https://github.com/mathieumaf/vidra/issues/121)).
+
 ## 0.2.0-rc.2 - 2026-11-08
 
 Release candidate **0.2.0-rc.2** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-rc.2`. Windows, Linux, and Intel Mac builds are not included.

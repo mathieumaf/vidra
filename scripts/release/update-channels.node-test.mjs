@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { channelPromotions, compareVersions } from "./update-channels.mjs";
+import { fixtureSignature } from "./updater-signature-fixtures.mjs";
 
-function manifest(version) {
-  return { version, platforms: { "darwin-aarch64": { url: `https://example.com/v${version}/Vidra.app.tar.gz`, signature: "signed" } } };
+function manifest(version, signedVersion = version) {
+  return { version, platforms: { "darwin-aarch64": { url: `https://example.com/v${version}/Vidra.app.tar.gz`, signature: fixtureSignature(signedVersion) } } };
 }
 function promote(version, stable = null, beta = null) {
   return channelPromotions({ incoming: manifest(version), tag: `v${version}`, prerelease: version.split("+")[0].includes("-"), stable, beta });
@@ -67,4 +68,18 @@ test("rejects inconsistent release metadata and malformed existing manifests", (
   assert.throws(() => channelPromotions({ incoming: manifest("0.1.0"), tag: "v0.1.0", prerelease: true }), /flag/);
   assert.throws(() => promote("0.1.0", { version: "0.0.9", platforms: {} }), /platform/);
   assert.throws(() => promote("0.1.0", manifest("not-a-version")), /semantic version/);
+});
+
+test("refuses to promote a release whose signature is bound to another version", () => {
+  for (const signedVersion of ["0.2.0", null]) {
+    assert.throws(() => channelPromotions({
+      incoming: manifest("0.2.0-rc.2", signedVersion), tag: "v0.2.0-rc.2", prerelease: true, stable: manifest("0.1.0"),
+    }), /signature/);
+  }
+});
+
+test("replaces a Beta manifest whose signature does not match its version", () => {
+  const result = promote("0.2.0-rc.3", manifest("0.1.0", null), manifest("0.2.0-rc.2", "0.2.0"));
+  assert.equal(result.stable, null);
+  assert.equal(result.beta.version, "0.2.0-rc.3");
 });

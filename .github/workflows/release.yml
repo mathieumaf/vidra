@@ -92,15 +92,25 @@ jobs:
           uploadUpdaterSignatures: true
           args: --bundles app,dmg --target aarch64-apple-darwin
 
-      - name: Use the exact release tag in the updater manifest
+      # The build signs the updater archive for the bundle version, which has no
+      # prerelease suffix. The updater requires the signed version to equal the
+      # announced one, so sign the attached archive again for the exact tag
+      # version and publish that signature with the manifest.
+      - name: Bind the updater signature and manifest to the exact release tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          MANIFEST_DIRECTORY="$RUNNER_TEMP/updater-manifest"
-          mkdir -p "$MANIFEST_DIRECTORY"
-          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir "$MANIFEST_DIRECTORY"
-          pnpm release:prepare-updater-manifest -- "$MANIFEST_DIRECTORY/latest.json" "$GITHUB_REF_NAME"
-          gh release upload "$GITHUB_REF_NAME" "$MANIFEST_DIRECTORY/latest.json" --clobber
+          UPDATER_DIRECTORY="$RUNNER_TEMP/updater"
+          mkdir -p "$UPDATER_DIRECTORY"
+          gh release download "$GITHUB_REF_NAME" --pattern latest.json --pattern '*.app.tar.gz' --dir "$UPDATER_DIRECTORY"
+          ARCHIVE_COUNT="$(find "$UPDATER_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' | wc -l | tr -d ' ')"
+          test "$ARCHIVE_COUNT" = "1"
+          ARCHIVE_PATH="$(find "$UPDATER_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
+          pnpm tauri signer sign --app-version "${GITHUB_REF_NAME#v}" "$ARCHIVE_PATH"
+          pnpm release:prepare-updater-manifest -- "$UPDATER_DIRECTORY/latest.json" "$GITHUB_REF_NAME" "$ARCHIVE_PATH"
+          gh release upload "$GITHUB_REF_NAME" "$ARCHIVE_PATH.sig" "$UPDATER_DIRECTORY/latest.json" --clobber
 
       - name: Verify signature and notarization
         run: |

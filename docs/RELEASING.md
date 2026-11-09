@@ -81,11 +81,12 @@ The release workflow then:
 - rejects FFmpeg sidecars that depend on libraries outside the macOS system paths;
 - builds, signs, and notarizes the Apple Silicon application and DMG;
 - creates a signed `.app.tar.gz` updater bundle and its `.sig` signature;
-- creates `latest.json`, validates its platform URLs and signatures, and records the exact release tag as its version;
+- signs the attached updater bundle again for the exact release tag version, because the build signs it for the bundle version without the prerelease suffix and the updater rejects an update whose signed and announced versions differ;
+- verifies that signature against the committed updater public key, records the exact release tag as the `latest.json` version, and fails before publication if any platform signature is bound to another version;
 - verifies the final application with `codesign` and Gatekeeper;
 - creates a draft containing the DMG, updater artifacts and manifest, its checksum, FFmpeg corresponding sources, and build configuration. Tags with a prerelease suffix produce a prerelease draft; tags without one produce an official release draft.
 
-Download the draft artifacts and test them on a second Apple Silicon Mac before publication. A prerelease follows the [beta validation checklist](#beta-validation). An official release still needs installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback. Confirm that `latest.json` names the release tag and that its `darwin-aarch64` URL and signature match the attached updater bundle. Replace the default draft description with the release's changelog notes, supported platforms, and known limitations. Publish the draft only after those checks pass. Mark a new official release as latest on GitHub. Leave a prerelease unmarked as latest.
+Download the draft artifacts and test them on a second Apple Silicon Mac before publication. A prerelease follows the [beta validation checklist](#beta-validation). An official release still needs installation, launch, media inspection, H.264/H.265/AV1 encoding, HDR-to-SDR conversion, HDR preservation, cancellation, and output playback. Confirm that `latest.json` names the release tag and that its `darwin-aarch64` URL and signature match the attached updater bundle. Decode the signature and confirm its trusted comment records `version:` followed by the same full version, including any prerelease suffix. Replace the default draft description with the release's changelog notes, supported platforms, and known limitations. Publish the draft only after those checks pass. Mark a new official release as latest on GitHub. Leave a prerelease unmarked as latest.
 
 ## Beta validation
 
@@ -124,7 +125,7 @@ Complete these steps on the draft produced by the signed `v0.2.0-rc.2` tag. Pref
 - [ ] Complete the [manual VoiceOver checklist](ACCESSIBILITY.md#manual-voiceover-checklist) in the signed app.
 - [ ] From signed Vidra 0.1.0, leave Stable selected and confirm it does not offer 0.2.0-rc.2. Choose Beta, check for updates, and confirm installation stays unavailable while a conversion is queued or running. After the queue is idle, install the update and confirm Vidra restarts. Repeat the Beta update from 0.2.0-beta.2 and 0.2.0-rc.1; the rc.1 update must be offered even though both bundles display 0.2.0.
 - [ ] In the updated app, confirm Settings shows bundle version `0.2.0`, the release link is `v0.2.0-rc.2`, and the FFmpeg row includes `8.1.3`. Run a short conversion. Settings, profiles, history, and the update-channel choice must still be there.
-- [ ] Confirm the draft `latest.json` version is `0.2.0-rc.2` and that its `darwin-aarch64` URL and signature match the attached updater archive. The draft must be marked as a prerelease.
+- [ ] Confirm the draft `latest.json` version is `0.2.0-rc.2` and that its `darwin-aarch64` URL and signature match the attached updater archive. The signature's trusted comment must record `version:0.2.0-rc.2`. The draft must be marked as a prerelease.
 - [ ] Publish the draft as a prerelease and do not mark it as the latest GitHub release. Confirm `publish-updater.yml` advances Beta `beta.json` to `0.2.0-rc.2` and leaves Stable `latest.json` on `0.1.0`.
 
 ## Update channels
@@ -138,7 +139,7 @@ Publishing a versioned release triggers `publish-updater.yml`. The job runs the 
 
 The rolling release is only a manifest container; its GitHub prerelease label does not describe the versions in those files. An official release advances both channels when it is newer than their current versions. A prerelease advances only Beta. For example, publishing `0.1.1` updates Stable without replacing Beta's `0.2.0-beta.1`; publishing `0.2.0` subsequently updates both. Equal or older versions never replace an existing channel manifest, and build metadata does not affect version precedence.
 
-Each versioned release still carries its own immutable `latest.json`, updater archive, and signature. Channel publication copies the selected manifest without changing its download URLs or signatures. The workflow must never publish a draft as an update. Malformed manifests or inconsistent release flags fail publication instead of silently changing a channel.
+Each versioned release still carries its own immutable `latest.json`, updater archive, and signature. Channel publication copies the selected manifest without changing its download URLs or signatures. The workflow must never publish a draft as an update. Malformed manifests, inconsistent release flags, or an incoming signature bound to a version other than the announced one fail publication instead of silently changing a channel. Existing channel manifests are not held to that signed-version check, so a defective earlier manifest can still be replaced by a corrected release.
 
 In the app, Stable is the default even for a manually installed test build. The channel preference is stored locally and used for startup checks, manual checks, and installation rechecks. Users opt into Beta in Settings. Switching back to Stable does not reinstall an older version; it waits for a newer official release. The Rust boundary rejects prereleases on Stable independently of the feed contents, and both channels require a newer semantic version and a valid update signature.
 
