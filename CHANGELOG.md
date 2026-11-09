@@ -2,11 +2,20 @@
 
 All notable changes to Vidra are documented in this file.
 
-## Unreleased
+## 0.2.0-rc.3 - 2026-11-09
+
+Release candidate **0.2.0-rc.3** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-rc.3`. Windows, Linux, and Intel Mac builds are not included.
+
+This candidate has the same application code as 0.2.0-rc.2. It replaces rc.2, whose in-app update could not be installed. Its validation covers the full prerelease checklist, including the update from 0.2.0-beta.1.
 
 ### Fixed
 
 - Allow prerelease updates to install. The release workflow now signs the updater archive for the full release version, including its prerelease suffix, and refuses to publish a manifest whose announced version differs from the signed one. The 0.2.0-rc.2 update could not be installed because its signature was bound to 0.2.0 ([#121](https://github.com/mathieumaf/vidra/issues/121)).
+
+### Installation and testing
+
+- Once published, choose Beta in Settings to update from 0.2.0-rc.2, 0.2.0-rc.1, 0.2.0-beta.2, 0.2.0-beta.1, or 0.1.0. Stable does not offer this release candidate. The bundle version shown in Settings remains 0.2.0; the release link is `v0.2.0-rc.3`.
+- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist](docs/RELEASING.md#beta-validation).
 
 ## 0.2.0-rc.2 - 2026-11-08
 
