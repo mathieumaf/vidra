@@ -1,0 +1,60 @@
+name: Set up the Vidra build
+description: >-
+  Installs the pinned Node.js, pnpm, and Rust versions, the locked JavaScript
+  dependencies, and the pinned FFmpeg engine. Run it after checkout on an
+  Apple Silicon macOS runner.
+
+inputs:
+  cache:
+    description: >-
+      Reuse the Rust build and the downloaded engine from earlier runs. The
+      release workflow turns this off so a release never depends on a cache.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Require Apple Silicon runner
+      shell: bash
+      run: test "$(uname -m)" = "arm64"
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      with:
+        run_install: false
+
+    - name: Install Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+        cache: pnpm
+
+    # rust-toolchain.toml names the version, the components, and the target.
+    - name: Install the pinned Rust toolchain
+      shell: bash
+      run: |
+        rustup toolchain install
+        rustc --version
+
+    - name: Cache Rust build
+      if: inputs.cache == 'true'
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        workspaces: src-tauri
+
+    - name: Install JavaScript dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    # The archive is re-hashed against scripts/ffmpeg/engine.json every time
+    # it is used, cached or not.
+    - name: Cache the FFmpeg engine archive
+      if: inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .cache/ffmpeg/aarch64-apple-darwin
+        key: ffmpeg-engine-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ffmpeg/engine.json') }}
+
+    - name: Install the pinned FFmpeg engine
+      shell: bash
+      run: pnpm ffmpeg:prepare

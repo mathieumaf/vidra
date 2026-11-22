@@ -1,0 +1,44 @@
+name: Publish the update feed
+
+# Runs when a release is published by hand. It copies that release's manifest
+# into the update feed, which is what makes installed copies offer the update.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-feed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Offer the release as an update
+    # The FFmpeg engine and the feed itself are also GitHub releases. Only an
+    # application release, tagged vX.Y.Z, reaches the feed. The script checks
+    # the tag again.
+    if: startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The scripts come from the default branch, not from the release's tag.
+      - name: Check out the publication scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Test the publication rules
+        run: node --test scripts/release/update-feed.node-test.mjs scripts/release/updater-signature.node-test.mjs scripts/release/version.node-test.mjs
+
+      - name: Move the update feed to this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/release/publish-update-feed.mjs
