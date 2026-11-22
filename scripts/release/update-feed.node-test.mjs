@@ -117,6 +117,15 @@ test("never fills a missing feed asset with a release older than what the feed a
   );
 });
 
+test("a prerelease left in the legacy beta asset never holds back an official release", () => {
+  // The live feed today: 0.1.0 for every install, 0.2.0-rc.3 for those of a 0.2.0 prerelease.
+  const legacy = { "latest.json": manifest("0.1.0"), "beta.json": manifest("0.2.0-rc.3") };
+  assert.deepEqual(feedUpdate(manifest("0.1.1"), legacy), ["latest.json"]);
+  assert.deepEqual(feedUpdate(manifest("0.2.0"), legacy), ["latest.json", "beta.json"]);
+  // A missing stable asset is filled even though the prerelease is newer. The prerelease stays where it is.
+  assert.deepEqual(feedUpdate(manifest("0.1.1"), { "latest.json": null, "beta.json": manifest("0.2.0-rc.3") }), ["latest.json"]);
+});
+
 test("stops on a published feed asset that is not a manifest", () => {
   const incoming = manifest("0.2.0");
   assert.throws(() => feedUpdate(incoming, { "latest.json": {}, "beta.json": null }), /published latest\.json is not a manifest.*Repair/);

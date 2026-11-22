@@ -95,7 +95,7 @@ Copies that already installed the bad release stay on it until the fixed version
 
 ## The update feed
 
-Installed copies read one file: the `latest.json` asset of the rolling `updater-manifest` release. It is not an application release. Copies installed from a 0.2.0 beta or release candidate read `beta.json` there first, so both assets receive every official release. A missing asset is filled by the next release that is published. The publication stops instead when the other asset already offers something newer, so a gap is never filled with an older release.
+Installed copies read one file: the `latest.json` asset of the rolling `updater-manifest` release. It is not an application release. Copies installed from a 0.2.0 beta or release candidate read `beta.json` there first, so both assets receive every official release. A missing asset is filled by the next release that is published. The publication stops instead when the other asset already offers a newer official release, so a gap is never filled with an older one.
 
 The app offers an update only for a newer official version. It installs it only when the archive's signature verifies with the public key in `src-tauri/tauri.conf.json` and was made for the announced version (`requireSignedVersion`), and only while no conversion is queued, running, or paused.
 

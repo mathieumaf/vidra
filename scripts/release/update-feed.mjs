@@ -1,5 +1,5 @@
 import { assertSignedVersionsMatch } from "./updater-signature.mjs";
-import { compareVersions, versionFromReleaseTag } from "./version.mjs";
+import { compareVersions, isOfficialVersion, versionFromReleaseTag } from "./version.mjs";
 
 // Installed copies of Vidra read one update feed: the `latest.json` asset of
 // the rolling `updater-manifest` release. Copies installed from a 0.2.0 beta
@@ -76,9 +76,11 @@ export function validateReleaseManifest({ manifest, tag, assets }) {
  *
  * `current` maps each feed asset name to its manifest, or to null when the
  * asset is missing. A missing asset is filled with the incoming manifest,
- * unless another feed asset already offers something newer: filling the gap
- * would then move those installed copies backward, and the surviving manifest
- * was not verified by this run, so the publication stops instead.
+ * unless another feed asset already offers a newer official release: the gap
+ * would then be filled with an older release than the feed offers, and the
+ * surviving manifest was not verified by this run, so the publication stops
+ * instead. A prerelease left in the legacy beta asset does not count: no
+ * installed copy that reads the missing asset is offered a prerelease.
  */
 export function feedUpdate(incoming, current) {
   let newest = null;
@@ -87,6 +89,7 @@ export function feedUpdate(incoming, current) {
     if (!manifest || typeof manifest.version !== "string") {
       throw new Error(`The published ${asset} is not a manifest with a version. Repair the update feed by hand before publishing.`);
     }
+    if (!isOfficialVersion(manifest.version)) continue;
     if (newest === null || compareVersions(manifest.version, newest.version) > 0) {
       newest = { asset, version: manifest.version };
     }
