@@ -11,12 +11,13 @@ Vidra is an open-source, local-first desktop video converter built with Tauri, R
 - Vidra is licensed under GPL-3.0-or-later. Preserve `LICENSE`, `COPYRIGHT`, and `THIRD_PARTY_NOTICES.md`, and review the license and bundled-binary implications of every new dependency or codec.
 - Never commit credentials, signing keys, notarization secrets, updater private keys, or FFmpeg binaries.
 - Commit or push only when the user asks for it, and stage only the files of the change.
+- Keep new abstractions portable, so Windows, Linux, and other architectures can be added later.
 
 ## Tooling
 
 - pnpm is the only JavaScript package manager. Its version is pinned in `package.json`.
 - `pnpm ffmpeg:prepare` installs the FFmpeg and FFprobe sidecars into `src-tauri/binaries/` from the checksum-pinned archive in `scripts/ffmpeg/dev-archive.json`. A system FFmpeg is never used. The app treats the sidecars as ready only when both report the version pinned in `scripts/ffmpeg/sources.json`.
-- `scripts/ffmpeg/sources.json` pins the sources and checksums of the release recipe. The archive's FFmpeg version and recipe fingerprint must match that recipe. `pnpm ffmpeg:prepare -- --build` compiles the recipe locally.
+- Keep the release recipe's sources and checksums pinned in `scripts/ffmpeg/sources.json`, and the archive pinned in `scripts/ffmpeg/dev-archive.json`. The archive's FFmpeg version and recipe fingerprint must match that recipe. `pnpm ffmpeg:prepare -- --build` compiles the recipe locally.
 - `pnpm icon:prepare` regenerates the macOS Icon Composer assets with Xcode 26 or later. The generated fallback assets in `src-tauri/generated/` stay committed for machines without Xcode.
 
 ## Frontend architecture
@@ -29,7 +30,7 @@ Vidra is an open-source, local-first desktop video converter built with Tauri, R
 - Shared media and job contracts live in `src/types/media.ts` and mirror the Rust serialization names exactly.
 - Preserve the native desktop interaction model: no document-level scrolling, no browser-like text selection, and working native drag regions. Scroll only bounded lists or panels.
 - Reuse the typography, spacing, color, icon, and shape tokens in `src/styles/tokens.css`.
-- Use Lucide through the shared `Icon` component.
+- Use Lucide through the shared `Icon` component instead of inline or text-based icons.
 
 ## Rust architecture
 
@@ -41,8 +42,8 @@ Vidra is an open-source, local-first desktop video converter built with Tauri, R
 - Destination publication and unfinished temporary outputs: `src-tauri/src/output/`.
 - Return structured `ApiError` values with stable codes and useful English messages. Keep implementation details out of the UI.
 - Release every mutex before an `.await` or a long-running process operation.
-- One FFmpeg encoding process runs at a time.
-- Platform-specific process behavior sits behind `cfg`-gated helpers with a clear unsupported-platform error, so another platform can be added later.
+- One FFmpeg encoding process runs at a time, unless parallel encoding is explicitly designed and approved.
+- Platform-specific behavior sits behind `cfg`-gated helpers with a clear unsupported-platform error.
 
 ## Encoding behavior
 
@@ -50,7 +51,7 @@ Vidra is an open-source, local-first desktop video converter built with Tauri, R
 - Keep container-specific stream mapping explicit. MKV preserves compatible subtitles, chapters, metadata, and tracks. MP4 uses compatible mappings and codec tags.
 - Validate every input and output path in Rust, even when the frontend already validated it.
 - Encode into a temporary file in the destination directory and move it into place only after success. Failure, cancellation, and shutdown may remove that temporary file and leave the source unchanged.
-- An existing destination file is replaced only when replacement was confirmed and the conversion succeeds. A successful conversion whose destination name is taken is saved under the next free numbered name.
+- An existing destination file is replaced only when replacement was confirmed and the conversion succeeds. A successful conversion whose destination name is taken is never deleted: it is saved under the next free numbered name, or kept under a recovery name.
 - Quality presets stay stable. A change to a CRF value or codec behavior comes with a test.
 - FFmpeg stderr is diagnostic data. Show users concise failures and bound what is stored.
 
@@ -61,12 +62,12 @@ Prove a change with these commands from the repository root. Each one passes on 
 ```sh
 pnpm install --frozen-lockfile
 pnpm ffmpeg:prepare   # Pinned, checksum-verified sidecars into src-tauri/binaries (gitignored)
-pnpm build            # TypeScript check, then the frontend bundle
-pnpm test             # Vitest, then the node tests of scripts/
+pnpm build
+pnpm test
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml   # Every test passes; conversion_corpus is the one ignored test
-cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture   # Ends with a "Corpus matrix:" line
+cargo test --manifest-path src-tauri/Cargo.toml   # conversion_corpus is the one ignored test
+cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture   # Prints a "Corpus matrix:" line
 git diff --check
 ```
 
@@ -90,7 +91,7 @@ git diff --check
 - **It silently loses streams or quality.** Mapping in `ffmpeg/encode.rs` and `ffmpeg/encode/` that drops audio, subtitle, chapter, or HDR metadata the container can hold, raises a known audio bitrate, or changes a preset without a test.
 - **It trusts the frontend.** A Tauri command that uses an IPC path or value without Rust validation (`ffmpeg/paths.rs`), lets user text become an FFmpeg option, or widens `src-tauri/capabilities/` or opener URLs.
 - **It stalls or races the queue.** A mutex held across an `.await` or a process wait in `jobs/` or `queue.rs`, a second concurrent FFmpeg process, or job state left behind after cancel, failure, or shutdown.
-- **It weakens the supply or update chain.** An unpinned or unverified sidecar in `scripts/ffmpeg/`, a changed updater endpoint or `pubkey` in `tauri.conf.json`, an update offered for anything other than a newer official release, a release script that can publish an unverified manifest, or any new network call, telemetry, or upload.
+- **It weakens the supply or update chain.** An unpinned or unverified sidecar in `scripts/ffmpeg/`, a changed updater endpoint or `pubkey` in `tauri.conf.json`, an update offered for anything other than a newer official release, a release script that can publish to the wrong channel or publish an unverified manifest, or any new network call, telemetry, or upload.
 
 The security invariants and what counts as a vulnerability are in `SECURITY.md`. The threat model is `docs/security/threat-model.md`.
 
