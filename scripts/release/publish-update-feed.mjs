@@ -73,7 +73,9 @@ try {
   const marker = published.assets.some((asset) => asset.name === COMPLETION_MARKER)
     ? await download(tag, COMPLETION_MARKER, "marker")
     : null;
-  assertReleaseComplete(published.assets, tag, marker);
+  // The commit the tag names now. An annotated tag resolves to its commit.
+  const commit = gh("api", `repos/${repository}/commits/refs/tags/${encodeURIComponent(tag)}`, "--jq", ".sha").trim();
+  assertReleaseComplete(published.assets, tag, marker, commit);
   const incoming = validateReleaseManifest({
     manifest: await download(tag, "latest.json", "incoming"),
     tag,

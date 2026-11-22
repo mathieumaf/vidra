@@ -47,7 +47,7 @@ pull request ──► CI ──► merge ──► tag vX.Y.Z ──► Release
 | Every pull request | `ci.yml`, job "Build the application bundle" | The application bundles, unsigned, exactly as the release does. The bundle has the right version, identifier, and minimum macOS version, the pinned FFmpeg and FFprobe, and the license notices. |
 | Every pull request | `ci.yml`, job "Check Rust dependency policy" | Crate licenses, advisories, and sources (`cargo-deny`). |
 | A `vX.Y.Z` tag | `release.yml` | See below. |
-| A release published by hand | `publish-update-feed.yml` | The release is published, official, and complete: it has the marker of a finished run and everything that marker lists. Its manifest announces its own version and downloads its own archive, and its signatures verify that archive with the committed public key. The feed only moves forward. |
+| A release published by hand | `publish-update-feed.yml` | The release is published, official, and complete: it has the marker of a finished run, made at the commit the tag names, and everything that marker lists. Its manifest announces its own version and downloads its own archive, and its signatures verify that archive with the committed public key. The feed only moves forward. |
 
 The Release workflow, in order:
 

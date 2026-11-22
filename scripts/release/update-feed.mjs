@@ -144,14 +144,18 @@ export function completionMarker({ tag, commit, assets, sourceArchives }) {
 }
 
 /**
- * A published release is complete when it carries the marker of its own tag
- * and still has everything that marker lists. A release without the marker
- * comes from a run that did not finish.
+ * A published release is complete when it carries the marker of its own tag,
+ * made at the commit the tag names today, and still has everything that
+ * marker lists. A release without the marker comes from a run that did not
+ * finish. A marker for another commit comes from a tag that was moved since.
  */
-export function assertReleaseComplete(assets, tag, marker) {
+export function assertReleaseComplete(assets, tag, marker, commit) {
   const names = assetNames(assets);
   if (!marker || marker.tag !== tag || !Array.isArray(marker.assets)) {
     throw new Error(`Release ${tag} has no ${COMPLETION_MARKER} for this tag, so its release workflow did not finish.`);
+  }
+  if (!commit || marker.commit !== commit) {
+    throw new Error(`Release ${tag} was built from commit ${marker.commit}, and the tag names ${commit || "no commit"}.`);
   }
   const missing = [
     ...REQUIRED_ASSETS.filter(([, matches]) => !names.some(matches)).map(([label]) => label),

@@ -129,14 +129,18 @@ test("offers only a published, official, complete release", () => {
   assert.throws(() => assertPublishedOfficialRelease({ draft: false, prerelease: true }, "v0.2.0"), /marked as a prerelease/);
   assert.throws(() => assertPublishedOfficialRelease(null, "v0.2.0"), /is a draft/);
 
-  assert.doesNotThrow(() => assertReleaseComplete(assets, "v0.2.0", marker));
+  assert.doesNotThrow(() => assertReleaseComplete(assets, "v0.2.0", marker, "abc123"));
   const without = (name) => assets.filter((asset) => asset.name !== name);
   // No marker, or the marker of another tag: the release workflow did not finish.
-  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", null), /has no release-complete\.json for this tag/);
-  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", { ...marker, tag: "v0.1.0" }), /has no release-complete\.json for this tag/);
+  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", null, "abc123"), /has no release-complete\.json for this tag/);
+  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", { ...marker, tag: "v0.1.0" }, "abc123"), /has no release-complete\.json for this tag/);
+  // The tag names another commit than the one the release was built from, or none was found.
+  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", marker, "def456"), /was built from commit abc123, and the tag names def456/);
+  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", marker, ""), /the tag names no commit/);
+  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", marker), /the tag names no commit/);
   // Something the marker lists is gone, such as a source archive whose upload was interrupted.
-  assert.throws(() => assertReleaseComplete(without("ffmpeg-8.1.3.tar.xz"), "v0.2.0", marker), /Missing: ffmpeg-8\.1\.3\.tar\.xz\./);
-  assert.throws(() => assertReleaseComplete(without("Vidra_0.2.0_aarch64.dmg.sha256"), "v0.2.0", marker), /the disk image's checksum/);
+  assert.throws(() => assertReleaseComplete(without("ffmpeg-8.1.3.tar.xz"), "v0.2.0", marker, "abc123"), /Missing: ffmpeg-8\.1\.3\.tar\.xz\./);
+  assert.throws(() => assertReleaseComplete(without("Vidra_0.2.0_aarch64.dmg.sha256"), "v0.2.0", marker, "abc123"), /the disk image's checksum/);
 });
 
 test("marks a release complete only with every kind of asset and every pinned source", () => {
@@ -163,7 +167,9 @@ const fixture = JSON.parse(fs.readFileSync(process.env.VIDRA_PUBLISH_FIXTURE, 'u
 const args = process.argv.slice(2);
 const option = (name) => args[args.indexOf(name) + 1];
 if (args[0] === 'api') {
-  if (args[1].endsWith('/updater-manifest')) {
+  if (args[1].includes('/commits/refs/tags/')) {
+    process.stdout.write((fixture.commit ?? 'abc123') + '\\n');
+  } else if (args[1].endsWith('/updater-manifest')) {
     if (fixture.feedError) { process.stderr.write('gh: failed (HTTP ' + fixture.feedError + ')'); process.exit(1); }
     process.stdout.write(JSON.stringify({ draft: false, assets: Object.keys(fixture.feed).map(name => ({ name })) }));
   } else {
@@ -269,6 +275,7 @@ test("a draft, a prerelease, an unfinished release, a failed lookup, or a bad ma
     [{ assets: assets.filter((asset) => asset.name !== "ffmpeg-8.1.3.tar.xz") }, /is incomplete\. Missing: ffmpeg-8\.1\.3\.tar\.xz/],
     [{ assets: assets.filter((asset) => asset.name !== COMPLETION_MARKER) }, /has no release-complete\.json for this tag/],
     [{ marker: { ...marker, tag: "v0.1.9" } }, /has no release-complete\.json for this tag/],
+    [{ commit: "def456" }, /was built from commit abc123, and the tag names def456/],
     [{ feedError: 403 }, /HTTP 403/],
     [{ incoming: manifest("0.2.0", { signedVersion: "0.1.0" }) }, /bound to version 0\.1\.0/],
     [{ incoming: manifest("0.2.0", { url: "https://example.com/a.app.tar.gz" }) }, /does not download an updater archive/],
@@ -306,12 +313,10 @@ test("the marker command reads the recipe's sources and refuses a draft that lac
         join(directory, "release.json"), "v0.2.0", "abc123", join(directory, COMPLETION_MARKER),
       ], { encoding: "utf8", stdio: "pipe" });
     };
-    assert.match(run(attached), /Release v0\.2\.0 is complete: 14 assets\./);
+    assert.equal(run(attached), `Release v0.2.0 is complete: ${attached.length} assets.\n`);
     const written = JSON.parse(readFileSync(join(directory, COMPLETION_MARKER), "utf8"));
-    assert.equal(written.tag, "v0.2.0");
-    assert.equal(written.commit, "abc123");
-    assert.equal(written.assets.length, 14);
-    assert.doesNotThrow(() => assertReleaseComplete([...attached, { name: COMPLETION_MARKER }], "v0.2.0", written));
+    assert.deepEqual(written, { tag: "v0.2.0", commit: "abc123", assets: attached.map((asset) => asset.name).sort() });
+    assert.doesNotThrow(() => assertReleaseComplete([...attached, { name: COMPLETION_MARKER }], "v0.2.0", written, "abc123"));
 
     assert.throws(() => run(attached.filter((asset) => asset.name !== sources[0])), new RegExp(`Missing: ${sources[0].replaceAll(".", "\\.")}`));
   } finally {
