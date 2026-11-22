@@ -1,5 +1,6 @@
 import { availableParallelism } from "node:os";
-import { BUILD_RECIPE_VERSION, releaseRecipeFingerprint } from "./recipe.mjs";
+import { engineMarkerPath, localBuildMarker } from "./engine.mjs";
+import { BUILD_RECIPE_VERSION, recipeFingerprint } from "./recipe.mjs";
 import {
   access,
   chmod,
@@ -14,7 +15,7 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { hostTargetTriple, releaseEntry } from "./target.mjs";
+import { hostTargetTriple, recipeEntry } from "./target.mjs";
 import { verifyAv1Decoding } from "./verify-av1.mjs";
 import { ffmpegVersionMatches, ffmpegVersionToken } from "./version.mjs";
 import { ensureDownloaded as downloadSource } from "./source-download.mjs";
@@ -23,7 +24,7 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
 const target = hostTargetTriple();
-const release = releaseEntry(manifest, target);
+const release = recipeEntry(manifest, target);
 
 const jobs = String(Math.max(1, availableParallelism()));
 const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", "release", target);
@@ -40,7 +41,7 @@ const prefixMapFlags = [
   `-ffile-prefix-map=${cacheDirectory}=${reproducibleSourceRoot}`,
   `-fdebug-prefix-map=${cacheDirectory}=${reproducibleSourceRoot}`,
 ].join(" ");
-const recipeFingerprint = releaseRecipeFingerprint(release);
+const fingerprint = recipeFingerprint(release);
 const deploymentTarget = release.minimumMacOSVersion;
 const commonEnvironment = {
   ...process.env,
@@ -69,7 +70,7 @@ await Promise.all([
 const builtFfmpeg = join(ffmpegPrefix, "bin", "ffmpeg");
 const builtFfprobe = join(ffmpegPrefix, "bin", "ffprobe");
 const currentMarker = await readJson(markerPath);
-const needsRebuild = currentMarker?.fingerprint !== recipeFingerprint
+const needsRebuild = currentMarker?.fingerprint !== fingerprint
   || !(await exists(builtFfmpeg))
   || !(await exists(builtFfprobe));
 
@@ -103,12 +104,12 @@ if (needsRebuild) {
   buildDav1d(sources.dav1d);
   buildZimg(sources.zimg);
   buildFfmpeg(sources.ffmpeg);
-  await writeFile(markerPath, `${JSON.stringify({ fingerprint: recipeFingerprint }, null, 2)}\n`);
+  await writeFile(markerPath, `${JSON.stringify({ fingerprint }, null, 2)}\n`);
 } else {
   for (const artifact of Object.values(release.sources)) {
     await ensureDownloaded(artifact);
   }
-  console.log(`Release FFmpeg ${release.sources.ffmpeg.version} is already built.`);
+  console.log(`FFmpeg ${release.sources.ffmpeg.version} is already built.`);
 }
 
 for (const name of ["ffmpeg", "ffprobe"]) {
@@ -129,7 +130,10 @@ verifySystemDependencies(releaseFfmpeg);
 verifySystemDependencies(releaseFfprobe);
 await verifyAv1Decoding(releaseFfmpeg, releaseFfprobe);
 await packageCorrespondingSources();
-console.log(`Release FFmpeg ${release.sources.ffmpeg.version} is ready for ${target}.`);
+// Tell `pnpm ffmpeg:prepare` that these sidecars were compiled here from this
+// recipe, so it keeps them until the recipe changes.
+await writeFile(engineMarkerPath(binaryDirectory, target), `${localBuildMarker(fingerprint)}\n`);
+console.log(`FFmpeg ${release.sources.ffmpeg.version}, compiled on this machine, is ready for ${target}.`);
 
 function buildX264(source) {
   const build = join(buildDirectory, "x264");
@@ -397,7 +401,7 @@ async function packageCorrespondingSources() {
   }
   await writeFile(join(assetDirectory, "SHA256SUMS"), `${checksumLines.join("\n")}\n`);
   await writeFile(join(assetDirectory, "BUILD_CONFIGURATION.txt"), [
-    `Vidra FFmpeg release build recipe ${BUILD_RECIPE_VERSION}`,
+    `Vidra FFmpeg engine build recipe ${BUILD_RECIPE_VERSION}`,
     `Target: ${target}`,
     `Minimum macOS: ${deploymentTarget}`,
     "",
@@ -405,7 +409,7 @@ async function packageCorrespondingSources() {
     ...ffmpegConfiguration().map((argument) => `  ${argument}`),
     "",
     "All source archives and their checksums are included in this directory.",
-    "The complete executable build recipe is scripts/ffmpeg/build-release.mjs in the Vidra source tree.",
+    "The complete executable build recipe is scripts/ffmpeg/build.mjs in the Vidra source tree.",
     "No local patches are applied.",
     "",
   ].join("\n"));
@@ -414,7 +418,7 @@ async function packageCorrespondingSources() {
 function requireCommand(command) {
   const result = spawnSync("/usr/bin/env", ["which", command], { encoding: "utf8" });
   if (result.status !== 0) {
-    throw new Error(`The release build requires ${command}. Install the documented build prerequisites first.`);
+    throw new Error(`Compiling FFmpeg requires ${command}. Install the build tools listed in docs/RELEASING.md first.`);
   }
 }
 

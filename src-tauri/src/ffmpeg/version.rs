@@ -3,7 +3,7 @@ use super::FfmpegStatus;
 const SOURCES_JSON: &str = include_str!("../../../scripts/ffmpeg/sources.json");
 
 pub(super) fn expected_ffmpeg_version() -> Result<String, String> {
-    pinned_version("/targets/aarch64-apple-darwin/release/sources/ffmpeg/version")
+    pinned_version("/targets/aarch64-apple-darwin/sources/ffmpeg/version")
 }
 
 pub(super) fn assess_engine(ffmpeg_version: &str, ffprobe_version: &str) -> FfmpegStatus {
@@ -51,9 +51,7 @@ fn pinned_version(pointer: &str) -> Result<String, String> {
         .pointer(pointer)
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| {
-            String::from("The pinned FFmpeg version is missing from the release recipe.")
-        })
+        .ok_or_else(|| String::from("The pinned FFmpeg version is missing from the engine recipe."))
 }
 
 /// Version token after `version`, with one leading `n` removed when it comes
@@ -101,16 +99,14 @@ mod tests {
     const FFPROBE_715: &str = "ffprobe version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers";
 
     #[test]
-    fn pins_the_release_ffmpeg_version_used_by_development() {
-        let manifest: serde_json::Value =
-            serde_json::from_str(super::SOURCES_JSON).expect("sources.json");
-        let development = manifest
-            .pointer("/targets/aarch64-apple-darwin/development/version")
-            .and_then(serde_json::Value::as_str);
+    fn expects_the_ffmpeg_version_of_the_pinned_engine_archive() {
+        let engine: serde_json::Value =
+            serde_json::from_str(include_str!("../../../scripts/ffmpeg/engine.json"))
+                .expect("engine.json");
         let expected = expected_ffmpeg_version().expect("pinned version");
 
         assert_eq!(expected, "8.1.3");
-        assert_eq!(development, Some(expected.as_str()));
+        assert_eq!(engine["version"].as_str(), Some(expected.as_str()));
     }
 
     #[test]

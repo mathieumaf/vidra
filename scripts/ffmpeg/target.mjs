@@ -1,7 +1,7 @@
 import { arch, platform } from "node:os";
 
 // Rust target triples used in Tauri sidecar filenames. Node's platform and
-// architecture names differ from Rust's, so both prepare scripts share this map.
+// architecture names differ from Rust's.
 const HOST_TARGET_TRIPLES = {
   "darwin:arm64": "aarch64-apple-darwin",
   "darwin:x64": "x86_64-apple-darwin",
@@ -19,20 +19,13 @@ export function hostTargetTriple(hostPlatform = platform(), hostArchitecture = a
   return target;
 }
 
-export function developmentEntry(manifest, target) {
-  const entry = manifest?.targets?.[target]?.development;
-  if (!entry) {
-    throw new Error(
-      `Unsupported target ${target}. Vidra pins FFmpeg sidecars for macOS on Apple Silicon only.`,
-    );
-  }
-  return entry;
-}
-
-export function releaseEntry(manifest, target) {
-  const entry = manifest?.targets?.[target]?.release;
+/** The pinned sources and build settings of the FFmpeg engine for one target. */
+export function recipeEntry(manifest, target) {
+  const entry = manifest?.targets?.[target];
   if (!entry || entry.target !== target) {
-    throw new Error(`Unsupported target ${target}. Release FFmpeg builds do not include this target.`);
+    throw new Error(
+      `Unsupported target ${target}. Vidra pins an FFmpeg engine for macOS on Apple Silicon only.`,
+    );
   }
   return entry;
 }

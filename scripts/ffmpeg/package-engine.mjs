@@ -2,14 +2,31 @@ import { spawnSync } from "node:child_process";
 import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { assertDevArchiveMatchesRecipe, DEV_ARCHIVE_ROOT, devArchivePinPath, sha256 } from "./dev-archive.mjs";
+import { assertEngineMatchesRecipe, engineArchiveRoot, enginePinPath, sha256 } from "./engine.mjs";
 import { BUILD_RECIPE_VERSION } from "./recipe.mjs";
-import { releaseEntry } from "./target.mjs";
+import { recipeEntry } from "./target.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
 
-export async function packageDevArchive({
+/** Every file build.mjs needs to compile the engine, so the archive carries its complete recipe. */
+export const RECIPE_FILES = [
+  "build.mjs",
+  "engine.mjs",
+  "recipe.mjs",
+  "source-download.mjs",
+  "sources.json",
+  "target.mjs",
+  "verify-av1.mjs",
+  "version.mjs",
+];
+
+/**
+ * Pack the compiled sidecars with their GPL corresponding sources and the
+ * recipe that built them. The result is the one archive that development, CI,
+ * and the application release all install.
+ */
+export async function packageEngine({
   binaryDirectory,
   target,
   sourceAssetDirectory,
@@ -32,8 +49,9 @@ export async function packageDevArchive({
     throw new Error("Corresponding source archives are missing. Refusing to package binaries alone.");
   }
 
+  const root = engineArchiveRoot(pin);
   const stagingParent = join(outputDirectory, ".staging");
-  const staging = join(stagingParent, DEV_ARCHIVE_ROOT);
+  const staging = join(stagingParent, root);
   await rm(stagingParent, { recursive: true, force: true });
   await mkdir(join(staging, "corresponding-sources"), { recursive: true });
   await mkdir(join(staging, "build-recipe"), { recursive: true });
@@ -53,11 +71,11 @@ export async function packageDevArchive({
   await mkdir(outputDirectory, { recursive: true });
   const archivePath = join(outputDirectory, pin.archiveName);
   await rm(archivePath, { force: true });
-  const packed = spawnSync("tar", ["-cJf", archivePath, "-C", stagingParent, DEV_ARCHIVE_ROOT], {
+  const packed = spawnSync("tar", ["-cJf", archivePath, "-C", stagingParent, root], {
     encoding: "utf8",
   });
   if (packed.status !== 0) {
-    throw new Error(`Unable to create the development archive: ${packed.stderr || "tar failed"}`);
+    throw new Error(`Unable to create the engine archive: ${packed.stderr || "tar failed"}`);
   }
   await rm(stagingParent, { recursive: true, force: true });
 
@@ -69,18 +87,18 @@ export async function packageDevArchive({
 
 function noticeText(pin) {
   return [
-    "Vidra FFmpeg development sidecar",
+    "Vidra FFmpeg engine",
     `FFmpeg version: ${pin.version}`,
     `Recipe: ${pin.recipeVersion}`,
     `Target: ${pin.target}`,
     `Recipe fingerprint: ${pin.recipeFingerprint}`,
     "",
-    "These executables are a development copy of Vidra's GPL-enabled release build.",
+    "These are the FFmpeg and FFprobe executables that Vidra bundles. Development, CI, and the application release install this same archive.",
     "FFmpeg is GPL-2.0-or-later when built with the GPL components in this recipe, including libx264 and libx265.",
     "",
     "The corresponding source archives, their SHA-256 checksums, and the configure arguments are in corresponding-sources/.",
     "Those archives are the pinned inputs recorded in build-recipe/sources.json. No local patches are applied.",
-    "The commands that compile them are in build-recipe/build-release.mjs.",
+    "The commands that compile them are in build-recipe/build.mjs.",
     "License summaries are in THIRD_PARTY_NOTICES.md. The license texts are inside the source archives.",
     "",
     "This archive is not a Vidra application release and it is not an application update.",
@@ -89,24 +107,19 @@ function noticeText(pin) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const pin = JSON.parse(await readFile(devArchivePinPath(), "utf8"));
+  const pin = JSON.parse(await readFile(enginePinPath(), "utf8"));
   const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
   if (pin.recipeVersion !== BUILD_RECIPE_VERSION) {
-    throw new Error(`dev-archive.json recipe ${pin.recipeVersion} does not match recipe ${BUILD_RECIPE_VERSION}.`);
+    throw new Error(`engine.json recipe ${pin.recipeVersion} does not match recipe ${BUILD_RECIPE_VERSION}.`);
   }
-  assertDevArchiveMatchesRecipe(pin, releaseEntry(manifest, pin.target));
-  const packaged = await packageDevArchive({
+  assertEngineMatchesRecipe(pin, recipeEntry(manifest, pin.target));
+  const packaged = await packageEngine({
     binaryDirectory: join(rootDirectory, "src-tauri", "binaries"),
     target: pin.target,
     sourceAssetDirectory: join(rootDirectory, "release-assets", "ffmpeg-sources"),
     noticesPath: join(rootDirectory, "THIRD_PARTY_NOTICES.md"),
-    recipeFiles: {
-      "build-release.mjs": join(scriptDirectory, "build-release.mjs"),
-      "source-download.mjs": join(scriptDirectory, "source-download.mjs"),
-      "sources.json": join(scriptDirectory, "sources.json"),
-      "recipe.mjs": join(scriptDirectory, "recipe.mjs"),
-    },
-    outputDirectory: join(rootDirectory, "release-assets", "dev-archive"),
+    recipeFiles: Object.fromEntries(RECIPE_FILES.map((name) => [name, join(scriptDirectory, name)])),
+    outputDirectory: join(rootDirectory, "release-assets", "engine"),
     pin,
   });
   console.log(`${packaged.sha256}  ${packaged.archivePath}`);
