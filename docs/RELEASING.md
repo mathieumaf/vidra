@@ -47,7 +47,7 @@ pull request ──► CI ──► merge ──► tag vX.Y.Z ──► Release
 | Every pull request | `ci.yml`, job "Build the application bundle" | The application bundles, unsigned, exactly as the release does. The bundle has the right version, identifier, and minimum macOS version, the pinned FFmpeg and FFprobe, and the license notices. |
 | Every pull request | `ci.yml`, job "Check Rust dependency policy" | Crate licenses, advisories, and sources (`cargo-deny`). |
 | A `vX.Y.Z` tag | `release.yml` | See below. |
-| A release published by hand | `publish-update-feed.yml` | The release is published, official, and complete. Its manifest announces its own version and downloads its own archive, and its signatures verify that archive with the committed public key. The feed only moves forward. |
+| A release published by hand | `publish-update-feed.yml` | The release is published, official, and complete: it has the marker of a finished run and everything that marker lists. Its manifest announces its own version and downloads its own archive, and its signatures verify that archive with the committed public key. The feed only moves forward. |
 
 The Release workflow, in order:
 
@@ -59,7 +59,8 @@ The Release workflow, in order:
 6. checks the signed bundle: version, identifier, minimum macOS version, engine version, license notices;
 7. checks the update manifest on the draft: it announces the tag's version, its signatures verify the archive built on the runner with the committed public key, they were made for that version, and it downloads that archive;
 8. checks the code signature, the notarization ticket, and Gatekeeper's verdict on the application inside the DMG;
-9. attaches the DMG checksum and the corresponding sources, and writes the changelog section as the release notes.
+9. attaches the DMG checksum and the corresponding sources, and writes the changelog section as the release notes;
+10. reads back what is attached and, when nothing is missing, uploads `release-complete.json`. The update feed refuses a release without that marker.
 
 If a step fails, or the run is cancelled or times out, the workflow deletes the draft, so a release that did not pass every check cannot be published. The tag stays: delete it, fix the cause, and tag again.
 
@@ -94,7 +95,7 @@ Copies that already installed the bad release stay on it until the fixed version
 
 ## The update feed
 
-Installed copies read one file: the `latest.json` asset of the rolling `updater-manifest` release. It is not an application release. Copies installed from a 0.2.0 beta or release candidate read `beta.json` there first, so both assets receive every official release. If one of the two goes missing, the next publication restores it from the other, never from an older release.
+Installed copies read one file: the `latest.json` asset of the rolling `updater-manifest` release. It is not an application release. Copies installed from a 0.2.0 beta or release candidate read `beta.json` there first, so both assets receive every official release. A missing asset is filled by the next release that is published. The publication stops instead when the other asset already offers something newer, so a gap is never filled with an older release.
 
 The app offers an update only for a newer official version. It installs it only when the archive's signature verifies with the public key in `src-tauri/tauri.conf.json` and was made for the announced version (`requireSignedVersion`), and only while no conversion is queued, running, or paused.
 

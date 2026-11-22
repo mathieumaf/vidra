@@ -39,6 +39,15 @@ export function engineMarkerPath(binaryDirectory, target) {
   return join(binaryDirectory, `.ffmpeg-engine-${target}.sha256`);
 }
 
+/**
+ * The marker to believe. On a GitHub runner none is believed: the sidecars
+ * always come out of the verified archive there, so nothing that is already in
+ * src-tauri/binaries, a marker included, can reach a release.
+ */
+export function trustedMarker(environment, marker) {
+  return environment.CI === "true" ? "" : marker;
+}
+
 /** Marker of an engine compiled on this machine from the recipe with that fingerprint. */
 export function localBuildMarker(fingerprint) {
   return `built:${fingerprint}`;

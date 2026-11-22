@@ -71,46 +71,94 @@ export function validateReleaseManifest({ manifest, tag, assets }) {
 }
 
 /**
- * What each feed asset must hold after a release is published: the newest of
- * that release and everything the feed already offers. The feed only moves
- * forward, and a feed asset that went missing is restored from the other one,
- * so an older release can never fill the gap.
+ * Which feed assets move to the incoming release. The feed only moves forward:
+ * an asset that already offers an equal or newer version stays.
  *
  * `current` maps each feed asset name to its manifest, or to null when the
- * asset is missing. Returns the manifest to offer and the assets to write.
+ * asset is missing. A missing asset is filled with the incoming manifest,
+ * unless another feed asset already offers something newer: filling the gap
+ * would then move those installed copies backward, and the surviving manifest
+ * was not verified by this run, so the publication stops instead.
  */
 export function feedUpdate(incoming, current) {
-  let target = incoming;
+  let newest = null;
   for (const [asset, manifest] of Object.entries(current)) {
     if (manifest === null) continue;
     if (!manifest || typeof manifest.version !== "string") {
       throw new Error(`The published ${asset} is not a manifest with a version. Repair the update feed by hand before publishing.`);
     }
-    if (compareVersions(manifest.version, target.version) > 0) target = manifest;
+    if (newest === null || compareVersions(manifest.version, newest.version) > 0) {
+      newest = { asset, version: manifest.version };
+    }
   }
-  const assets = Object.entries(current)
-    .filter(([, manifest]) => manifest === null || compareVersions(target.version, manifest.version) > 0)
-    .map(([asset]) => asset);
-  return { target, assets };
+  const assets = [];
+  for (const [asset, manifest] of Object.entries(current)) {
+    if (manifest === null) {
+      if (newest !== null && compareVersions(newest.version, incoming.version) > 0) {
+        throw new Error(
+          `${asset} is missing from the update feed, and ${newest.asset} already offers ${newest.version}, which is newer than ${incoming.version}. `
+          + `Restore ${asset} by publishing the feed for ${newest.version} again, or by hand.`,
+        );
+      }
+      assets.push(asset);
+    } else if (compareVersions(incoming.version, manifest.version) > 0) {
+      assets.push(asset);
+    }
+  }
+  return assets;
+}
+
+/** The asset the release workflow uploads last, after every other step succeeded. */
+export const COMPLETION_MARKER = "release-complete.json";
+
+const REQUIRED_ASSETS = [
+  ["an updater archive", (name) => name.endsWith(".app.tar.gz")],
+  ["the updater archive's signature", (name) => name.endsWith(".app.tar.gz.sig")],
+  ["the update manifest (latest.json)", (name) => name === "latest.json"],
+  ["a disk image", (name) => name.endsWith(".dmg")],
+  ["the disk image's checksum", (name) => name.endsWith(".dmg.sha256")],
+  ["the FFmpeg source checksums (SHA256SUMS)", (name) => name === "SHA256SUMS"],
+  ["the FFmpeg build configuration (BUILD_CONFIGURATION.txt)", (name) => name === "BUILD_CONFIGURATION.txt"],
+];
+
+function assetNames(assets) {
+  return (assets ?? []).map((asset) => (typeof asset === "string" ? asset : asset?.name)).filter((name) => typeof name === "string");
 }
 
 /**
- * The release workflow attaches the disk image's checksum and the FFmpeg
- * corresponding sources in its last step, after every check has passed. A
- * release without them comes from a run that did not finish.
+ * The marker of a finished release: its tag, its commit, and the names of
+ * everything attached to it. It can only be made when every kind of asset and
+ * every FFmpeg source archive the recipe pins is attached.
  */
-export function assertReleaseComplete(assets, tag) {
-  const names = (assets ?? []).map((asset) => asset?.name).filter((name) => typeof name === "string");
-  const required = [
-    ["an updater archive", (name) => name.endsWith(".app.tar.gz")],
-    ["the updater archive's signature", (name) => name.endsWith(".app.tar.gz.sig")],
-    ["a disk image", (name) => name.endsWith(".dmg")],
-    ["the disk image's checksum", (name) => name.endsWith(".dmg.sha256")],
-    ["the FFmpeg corresponding sources (SHA256SUMS)", (name) => name === "SHA256SUMS"],
+export function completionMarker({ tag, commit, assets, sourceArchives }) {
+  versionFromReleaseTag(tag);
+  const names = assetNames(assets);
+  const missing = [
+    ...REQUIRED_ASSETS.filter(([, matches]) => !names.some(matches)).map(([label]) => label),
+    ...sourceArchives.filter((name) => !names.includes(name)),
   ];
-  const missing = required.filter(([, matches]) => !names.some(matches)).map(([label]) => label);
   if (missing.length > 0) {
-    throw new Error(`Release ${tag} is incomplete, so its release workflow did not finish. Missing: ${missing.join(", ")}.`);
+    throw new Error(`Release ${tag} is incomplete. Missing: ${missing.join(", ")}.`);
+  }
+  return { tag, commit, assets: [...names].sort() };
+}
+
+/**
+ * A published release is complete when it carries the marker of its own tag
+ * and still has everything that marker lists. A release without the marker
+ * comes from a run that did not finish.
+ */
+export function assertReleaseComplete(assets, tag, marker) {
+  const names = assetNames(assets);
+  if (!marker || marker.tag !== tag || !Array.isArray(marker.assets)) {
+    throw new Error(`Release ${tag} has no ${COMPLETION_MARKER} for this tag, so its release workflow did not finish.`);
+  }
+  const missing = [
+    ...REQUIRED_ASSETS.filter(([, matches]) => !names.some(matches)).map(([label]) => label),
+    ...marker.assets.filter((name) => !names.includes(name)),
+  ];
+  if (missing.length > 0) {
+    throw new Error(`Release ${tag} is incomplete. Missing: ${missing.join(", ")}.`);
   }
 }
 

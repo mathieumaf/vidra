@@ -15,8 +15,10 @@ import {
   exportCorrespondingSources,
   installEngineBinaries,
   listArchive,
+  localBuildMarker,
   readEnginePin,
   requiredEngineMembers,
+  trustedMarker,
 } from "./engine.mjs";
 import { packageEngine, RECIPE_FILES } from "./package-engine.mjs";
 import { BUILD_RECIPE_VERSION, recipeFingerprint } from "./recipe.mjs";
@@ -221,12 +223,17 @@ test("installs the pinned archive first and compiles only when a build is reques
   assert.doesNotMatch(source.slice(buildImport + buildStatement.length), /build\.mjs/);
 });
 
-test("on a GitHub runner, installed sidecars and their marker are never trusted", () => {
+test("on a GitHub runner, no marker of installed sidecars is believed", () => {
+  const archive = "d89964bedaa6bfd660cb2c39adbda7e04ff00580e10922da9b54b3bb1cfe82c8";
+  for (const marker of [archive, localBuildMarker("fingerprint"), ""]) {
+    assert.equal(trustedMarker({ CI: "true" }, marker), "");
+    assert.equal(trustedMarker({}, marker), marker);
+    assert.equal(trustedMarker({ CI: "false" }, marker), marker);
+  }
+  // Both shortcuts of prepare.mjs compare that marker, and an empty one matches neither.
   const source = readFileSync(new URL("./prepare.mjs", import.meta.url), "utf8");
-  assert.match(source, /const trustInstalled = process\.env\.CI !== "true";/);
-  assert.match(source, /const marker = trustInstalled \? await readOptional\(markerPath\) : "";/);
-  // Both shortcuts depend on the marker, so both are off when it is empty.
-  assert.match(source, /marker === localBuildMarker\(recipeFingerprint\(recipe\)\)/);
+  assert.match(source, /const marker = trustedMarker\(process\.env, await readOptional\(markerPath\)\);/);
+  assert.notEqual(localBuildMarker("fingerprint"), "");
   assert.match(source, /marker !== "" && marker === pin\.sha256/);
 });
 

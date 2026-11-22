@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   assertPublishedOfficialRelease,
   assertReleaseComplete,
+  COMPLETION_MARKER,
   FEED_ASSETS,
   FEED_RELEASE_TAG,
   feedUpdate,
@@ -38,8 +39,9 @@ function release(releaseTag, allowMissing = false) {
 }
 
 const directory = await mkdtemp(join(tmpdir(), "vidra-update-feed-"));
-// VIDRA_TAURI_CONFIG lets the tests supply a configuration with a test key.
-const tauriConfigPath = process.env.VIDRA_TAURI_CONFIG
+// The public key installed copies trust. The tests pass another configuration
+// as an argument. The workflow passes none, which its own test asserts.
+const tauriConfigPath = process.argv[2]
   ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src-tauri", "tauri.conf.json");
 
 async function download(releaseTag, asset, subdirectory) {
@@ -68,7 +70,10 @@ async function verifyArchiveSignatures(manifest, assets) {
 try {
   const published = release(tag);
   assertPublishedOfficialRelease(published, tag);
-  assertReleaseComplete(published.assets, tag);
+  const marker = published.assets.some((asset) => asset.name === COMPLETION_MARKER)
+    ? await download(tag, COMPLETION_MARKER, "marker")
+    : null;
+  assertReleaseComplete(published.assets, tag, marker);
   const incoming = validateReleaseManifest({
     manifest: await download(tag, "latest.json", "incoming"),
     tag,
@@ -85,17 +90,12 @@ try {
       ? await download(FEED_RELEASE_TAG, asset, `current-${asset}`)
       : null;
   }
-  const { target, assets } = feedUpdate(incoming, current);
-  if (target !== incoming) {
-    console.log(`The update feed already offers ${target.version}, which is newer than ${incoming.version}.`);
-  }
-
   const uploads = [];
-  for (const asset of assets) {
+  for (const asset of feedUpdate(incoming, current)) {
     const path = join(directory, asset);
-    await writeFile(path, `${JSON.stringify(target, null, 2)}\n`);
+    await writeFile(path, `${JSON.stringify(incoming, null, 2)}\n`);
     uploads.push(path);
-    console.log(`${asset} moves from ${current[asset]?.version ?? "nothing"} to ${target.version}.`);
+    console.log(`${asset} moves from ${current[asset]?.version ?? "nothing"} to ${incoming.version}.`);
   }
 
   if (uploads.length === 0) {

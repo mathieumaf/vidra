@@ -98,7 +98,7 @@ test("a release runs only for a vX.Y.Z tag, on main, in the release environment,
 test("a release that did not finish leaves no draft that could be published", () => {
   const release = workflows["release.yml"];
   const cleanup = release.indexOf("if: ${{ !success() }}");
-  assert.ok(cleanup > release.indexOf("gh release upload"), "the cleanup must be the last step");
+  assert.ok(cleanup > release.indexOf("release-complete.json"), "the cleanup must be the last step");
   assert.match(release.slice(cleanup), /--json isDraft --jq \.isDraft[^\n]*= "true"[\s\S]*gh release delete "\$GITHUB_REF_NAME" --yes\n/);
   // The tag is kept, and a published release is never deleted.
   assert.doesNotMatch(release, /--cleanup-tag|git push .*--delete|git tag -d/);
@@ -115,6 +115,8 @@ test("a release proves the source and verifies what it built before the draft is
     "node scripts/release/verify-updater-manifest.mjs",
     "spctl --assess --type execute",
     "gh release upload",
+    "node scripts/release/mark-complete.mjs",
+    'gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-complete.json"',
   ].map((step) => {
     const index = release.indexOf(step);
     assert.ok(index > 0, `release.yml is missing: ${step}`);
@@ -144,7 +146,8 @@ test("the update feed moves only for a published application release, with scrip
   assert.match(feed, /^on:\n  release:\n    types: \[published\]\n/m);
   assert.match(feed, /if: startsWith\(github\.event\.release\.tag_name, 'v'\) && !github\.event\.release\.prerelease/);
   assert.match(feed, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
-  assert.match(feed, /node scripts\/release\/publish-update-feed\.mjs/);
+  // No argument: the script then trusts the public key in src-tauri/tauri.conf.json.
+  assert.match(feed, /run: node scripts\/release\/publish-update-feed\.mjs\n/);
   // Runs are serialized and none is dropped while another one is waiting.
   assert.match(feed, /^concurrency:\n  group: update-feed\n  cancel-in-progress: false\n  queue: max\n/m);
 });

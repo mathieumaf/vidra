@@ -7,6 +7,8 @@ import test from "node:test";
 import {
   assertPublishedOfficialRelease,
   assertReleaseComplete,
+  COMPLETION_MARKER,
+  completionMarker,
   feedUpdate,
   updaterArchiveUrls,
   validateManifest,
@@ -22,8 +24,13 @@ const assets = [
   { name: "Vidra_0.2.0_aarch64.dmg", url: "https://api.github.com/repos/test/vidra/releases/assets/43" },
   { name: "Vidra_0.2.0_aarch64.dmg.sha256", url: "https://api.github.com/repos/test/vidra/releases/assets/46" },
   { name: "SHA256SUMS", url: "https://api.github.com/repos/test/vidra/releases/assets/47" },
+  { name: "BUILD_CONFIGURATION.txt", url: "https://api.github.com/repos/test/vidra/releases/assets/48" },
+  { name: "ffmpeg-8.1.3.tar.xz", url: "https://api.github.com/repos/test/vidra/releases/assets/49" },
   { name: "latest.json", url: "https://api.github.com/repos/test/vidra/releases/assets/44" },
+  { name: COMPLETION_MARKER, url: "https://api.github.com/repos/test/vidra/releases/assets/50" },
 ];
+const sourceArchives = ["ffmpeg-8.1.3.tar.xz"];
+const marker = completionMarker({ tag: "v0.2.0", commit: "abc123", assets, sourceArchives });
 const manifest = (version, { signedVersion = version, url = ARCHIVE_URL, signature = fixtureSignature(signedVersion) } = {}) => ({
   version,
   platforms: {
@@ -91,20 +98,23 @@ test("refuses a manifest the updater cannot read", () => {
 
 test("moves each feed asset forward, and never backward", () => {
   const incoming = manifest("0.2.0");
-  const names = (current) => feedUpdate(incoming, current).assets;
-  assert.deepEqual(names({ "latest.json": null, "beta.json": null }), ["latest.json", "beta.json"]);
-  assert.deepEqual(names({ "latest.json": manifest("0.1.0"), "beta.json": manifest("0.2.0-rc.3") }), ["latest.json", "beta.json"]);
-  assert.deepEqual(names({ "latest.json": manifest("0.2.0"), "beta.json": manifest("0.2.0-rc.3") }), ["beta.json"]);
-  assert.deepEqual(names({ "latest.json": manifest("0.2.0"), "beta.json": manifest("0.2.0") }), []);
-  assert.deepEqual(names({ "latest.json": manifest("0.2.1"), "beta.json": manifest("0.2.1") }), []);
-  assert.equal(feedUpdate(incoming, { "latest.json": manifest("0.1.0"), "beta.json": null }).target, incoming);
+  const moved = (current) => feedUpdate(incoming, current);
+  assert.deepEqual(moved({ "latest.json": null, "beta.json": null }), ["latest.json", "beta.json"]);
+  assert.deepEqual(moved({ "latest.json": manifest("0.1.0"), "beta.json": manifest("0.2.0-rc.3") }), ["latest.json", "beta.json"]);
+  assert.deepEqual(moved({ "latest.json": manifest("0.2.0"), "beta.json": manifest("0.2.0-rc.3") }), ["beta.json"]);
+  assert.deepEqual(moved({ "latest.json": manifest("0.2.0"), "beta.json": manifest("0.2.0") }), []);
+  assert.deepEqual(moved({ "latest.json": manifest("0.2.1"), "beta.json": manifest("0.2.1") }), []);
+  // A missing asset is filled when the other one is not ahead of this release.
+  assert.deepEqual(moved({ "latest.json": null, "beta.json": manifest("0.1.0") }), ["latest.json", "beta.json"]);
+  assert.deepEqual(moved({ "latest.json": null, "beta.json": manifest("0.2.0") }), ["latest.json"]);
 });
 
-test("restores a missing feed asset from the newest one, never from an older release", () => {
-  const newer = manifest("0.3.0");
-  const repaired = feedUpdate(manifest("0.2.0"), { "latest.json": null, "beta.json": newer });
-  assert.equal(repaired.target, newer);
-  assert.deepEqual(repaired.assets, ["latest.json"]);
+test("never fills a missing feed asset with a release older than what the feed already offers", () => {
+  // The surviving manifest was not verified by this run, so it is not copied either.
+  assert.throws(
+    () => feedUpdate(manifest("0.2.0"), { "latest.json": null, "beta.json": { version: "0.2.1" } }),
+    /latest\.json is missing from the update feed, and beta\.json already offers 0\.2\.1, which is newer than 0\.2\.0/,
+  );
 });
 
 test("stops on a published feed asset that is not a manifest", () => {
@@ -119,12 +129,26 @@ test("offers only a published, official, complete release", () => {
   assert.throws(() => assertPublishedOfficialRelease({ draft: false, prerelease: true }, "v0.2.0"), /marked as a prerelease/);
   assert.throws(() => assertPublishedOfficialRelease(null, "v0.2.0"), /is a draft/);
 
-  assert.doesNotThrow(() => assertReleaseComplete(assets, "v0.2.0"));
+  assert.doesNotThrow(() => assertReleaseComplete(assets, "v0.2.0", marker));
   const without = (name) => assets.filter((asset) => asset.name !== name);
-  assert.throws(() => assertReleaseComplete(without("SHA256SUMS"), "v0.2.0"), /incomplete.*FFmpeg corresponding sources/);
-  assert.throws(() => assertReleaseComplete(without("Vidra_0.2.0_aarch64.dmg.sha256"), "v0.2.0"), /Missing: the disk image's checksum\./);
-  assert.throws(() => assertReleaseComplete(without(`${ARCHIVE_NAME}.sig`), "v0.2.0"), /the updater archive's signature/);
-  assert.throws(() => assertReleaseComplete([], "v0.2.0"), /an updater archive, the updater archive's signature, a disk image/);
+  // No marker, or the marker of another tag: the release workflow did not finish.
+  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", null), /has no release-complete\.json for this tag/);
+  assert.throws(() => assertReleaseComplete(assets, "v0.2.0", { ...marker, tag: "v0.1.0" }), /has no release-complete\.json for this tag/);
+  // Something the marker lists is gone, such as a source archive whose upload was interrupted.
+  assert.throws(() => assertReleaseComplete(without("ffmpeg-8.1.3.tar.xz"), "v0.2.0", marker), /Missing: ffmpeg-8\.1\.3\.tar\.xz\./);
+  assert.throws(() => assertReleaseComplete(without("Vidra_0.2.0_aarch64.dmg.sha256"), "v0.2.0", marker), /the disk image's checksum/);
+});
+
+test("marks a release complete only with every kind of asset and every pinned source", () => {
+  assert.deepEqual(marker, { tag: "v0.2.0", commit: "abc123", assets: assets.map((asset) => asset.name).sort() });
+  const make = (attached, sources = sourceArchives) => completionMarker({ tag: "v0.2.0", commit: "abc123", assets: attached, sourceArchives: sources });
+  const without = (name) => assets.filter((asset) => asset.name !== name);
+  assert.throws(() => make(without("SHA256SUMS")), /Missing: the FFmpeg source checksums \(SHA256SUMS\)\./);
+  assert.throws(() => make(without(`${ARCHIVE_NAME}.sig`)), /the updater archive's signature/);
+  assert.throws(() => make(without("latest.json")), /the update manifest/);
+  // SHA256SUMS is there, but one of the sources it lists never arrived.
+  assert.throws(() => make(assets, [...sourceArchives, "x265-4.2.tar.gz"]), /Missing: x265-4\.2\.tar\.gz\./);
+  assert.throws(() => completionMarker({ tag: "v0.2.0-rc.1", commit: "abc123", assets, sourceArchives }), /is not a release tag/);
 });
 
 // Exercise the real CLI entry point without contacting or changing GitHub.
@@ -150,6 +174,7 @@ if (args[0] === 'api') {
   fs.mkdirSync(option('--dir'), { recursive: true });
   const destination = path.join(option('--dir'), name);
   if (name.endsWith('.app.tar.gz')) fs.writeFileSync(destination, Buffer.from(fixture.archive, 'base64'));
+  else if (name === 'release-complete.json') fs.writeFileSync(destination, JSON.stringify(fixture.marker));
   else fs.writeFileSync(destination, JSON.stringify(args[2] === 'updater-manifest' ? fixture.feed[name] : fixture.incoming));
 } else if (args[0] === 'release' && ['upload', 'create'].includes(args[1])) {
   const files = args.slice(3, args.indexOf('--repo')).map(file => ({ name: path.basename(file), version: JSON.parse(fs.readFileSync(file, 'utf8')).version }));
@@ -165,13 +190,13 @@ function publish(fixture, tag = `v${fixture.incoming.version}`) {
     const logPath = join(directory, "writes.json");
     const configPath = join(directory, "tauri.conf.json");
     writeFileSync(configPath, JSON.stringify({ plugins: { updater: { pubkey: keys.publicKey } } }));
-    writeFileSync(fixturePath, JSON.stringify({ assets, feed: {}, archive: archive.toString("base64"), ...fixture }));
+    writeFileSync(fixturePath, JSON.stringify({ assets, marker, feed: {}, archive: archive.toString("base64"), ...fixture }));
     let error;
     let output = "";
     try {
-      output = execFileSync(process.execPath, [publisher], { encoding: "utf8", stdio: "pipe", env: {
+      output = execFileSync(process.execPath, [publisher, configPath], { encoding: "utf8", stdio: "pipe", env: {
         ...process.env, PATH: `${directory}${delimiter}${process.env.PATH}`,
-        GITHUB_REPOSITORY: "test/vidra", RELEASE_TAG: tag, VIDRA_TAURI_CONFIG: configPath,
+        GITHUB_REPOSITORY: "test/vidra", RELEASE_TAG: tag,
         VIDRA_PUBLISH_FIXTURE: fixturePath, VIDRA_PUBLISH_LOG: logPath,
       } });
     } catch (cause) { error = cause; }
@@ -204,13 +229,15 @@ test("publishing an older release writes nothing", () => {
   const result = publish({ incoming: signed("0.2.0"), feed: { "latest.json": manifest("0.2.1"), "beta.json": manifest("0.2.1") } });
   assert.equal(result.error, undefined);
   assert.equal(result.writes, null);
-  assert.match(result.output, /already offers 0\.2\.1, which is newer than 0\.2\.0/);
+  assert.match(result.output, /already offers an equal or newer release/);
 });
 
-test("publishing an older release restores a missing feed asset with the newer manifest", () => {
-  const result = publish({ incoming: signed("0.2.0"), feed: { "beta.json": manifest("0.2.1") } });
-  assert.equal(result.error, undefined);
-  assert.deepEqual(result.writes.files, [{ name: "latest.json", version: "0.2.1" }]);
+test("publishing an older release never fills a gap in the feed", () => {
+  // An unverified leftover in the other asset is neither copied nor overtaken.
+  const result = publish({ incoming: signed("0.2.0"), feed: { "beta.json": { version: "0.2.1" } } });
+  assert.ok(result.error);
+  assert.match(result.error.stderr, /latest\.json is missing from the update feed, and beta\.json already offers 0\.2\.1/);
+  assert.equal(result.writes, null);
 });
 
 test("publishing moves only the feed asset that is behind", () => {
@@ -239,7 +266,9 @@ test("a draft, a prerelease, an unfinished release, a failed lookup, or a bad ma
   for (const [fixture, message] of [
     [{ draft: true }, /is a draft/],
     [{ prerelease: true }, /marked as a prerelease/],
-    [{ assets: assets.filter((asset) => asset.name !== "SHA256SUMS") }, /is incomplete/],
+    [{ assets: assets.filter((asset) => asset.name !== "ffmpeg-8.1.3.tar.xz") }, /is incomplete\. Missing: ffmpeg-8\.1\.3\.tar\.xz/],
+    [{ assets: assets.filter((asset) => asset.name !== COMPLETION_MARKER) }, /has no release-complete\.json for this tag/],
+    [{ marker: { ...marker, tag: "v0.1.9" } }, /has no release-complete\.json for this tag/],
     [{ feedError: 403 }, /HTTP 403/],
     [{ incoming: manifest("0.2.0", { signedVersion: "0.1.0" }) }, /bound to version 0\.1\.0/],
     [{ incoming: manifest("0.2.0", { url: "https://example.com/a.app.tar.gz" }) }, /does not download an updater archive/],
@@ -258,5 +287,34 @@ test("a tag that is not a release tag writes nothing", () => {
     assert.ok(result.error, tag);
     assert.match(result.error.stderr, /is not a release tag/);
     assert.equal(result.writes, null);
+  }
+});
+
+test("the marker command reads the recipe's sources and refuses a draft that lacks one", () => {
+  const directory = mkdtempSync(join(tmpdir(), "vidra-mark-complete-"));
+  try {
+    const recipe = JSON.parse(readFileSync(resolve(import.meta.dirname, "..", "ffmpeg", "sources.json"), "utf8"));
+    const sources = Object.values(recipe.targets["aarch64-apple-darwin"].sources).map((source) => source.archiveName);
+    const attached = [
+      ARCHIVE_NAME, `${ARCHIVE_NAME}.sig`, "latest.json", "Vidra_0.2.0_aarch64.dmg", "Vidra_0.2.0_aarch64.dmg.sha256",
+      "SHA256SUMS", "BUILD_CONFIGURATION.txt", ...sources,
+    ].map((name) => ({ name }));
+    const run = (assetList) => {
+      writeFileSync(join(directory, "release.json"), JSON.stringify({ assets: assetList }));
+      return execFileSync(process.execPath, [
+        resolve(import.meta.dirname, "mark-complete.mjs"),
+        join(directory, "release.json"), "v0.2.0", "abc123", join(directory, COMPLETION_MARKER),
+      ], { encoding: "utf8", stdio: "pipe" });
+    };
+    assert.match(run(attached), /Release v0\.2\.0 is complete: 14 assets\./);
+    const written = JSON.parse(readFileSync(join(directory, COMPLETION_MARKER), "utf8"));
+    assert.equal(written.tag, "v0.2.0");
+    assert.equal(written.commit, "abc123");
+    assert.equal(written.assets.length, 14);
+    assert.doesNotThrow(() => assertReleaseComplete([...attached, { name: COMPLETION_MARKER }], "v0.2.0", written));
+
+    assert.throws(() => run(attached.filter((asset) => asset.name !== sources[0])), new RegExp(`Missing: ${sources[0].replaceAll(".", "\\.")}`));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

@@ -12,6 +12,7 @@ import {
   installEngineBinaries,
   localBuildMarker,
   readEnginePin,
+  trustedMarker,
 } from "./engine.mjs";
 import { recipeFingerprint } from "./recipe.mjs";
 import { hostTargetTriple, recipeEntry } from "./target.mjs";
@@ -37,11 +38,7 @@ const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json")
 const recipe = recipeEntry(manifest, target);
 const expectedVersion = recipe.sources.ffmpeg.version;
 const markerPath = engineMarkerPath(binaryDirectory, target);
-// On a GitHub runner the sidecars always come out of the verified archive.
-// Whatever is already in src-tauri/binaries, a marker included, is ignored
-// there, so nothing but the pinned archive can reach a release.
-const trustInstalled = process.env.CI !== "true";
-const marker = trustInstalled ? await readOptional(markerPath) : "";
+const marker = trustedMarker(process.env, await readOptional(markerPath));
 
 // An engine compiled here from the current recipe stays in place, so a recipe
 // change can be developed before its archive is published.

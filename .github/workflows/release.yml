@@ -153,6 +153,18 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" release-assets/ffmpeg-sources/* "$DMG_PATH.sha256" --clobber
           gh release edit "$GITHUB_REF_NAME" --draft --notes-file "$RUNNER_TEMP/release-notes.md"
 
+      # The marker lists what is attached, read back from GitHub after every
+      # upload. The update feed refuses a release without it, so an
+      # interrupted upload can never pass for a finished release.
+      - name: Mark the release complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json assets > "$RUNNER_TEMP/attached.json"
+          node scripts/release/mark-complete.mjs \
+            "$RUNNER_TEMP/attached.json" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUNNER_TEMP/release-complete.json"
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-complete.json"
+
       # A draft that failed a check, or whose run was cancelled or timed out,
       # must not stay publishable. The tag stays.
       - name: Delete the draft unless every step succeeded
