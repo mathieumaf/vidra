@@ -63,6 +63,21 @@ struct Case {
     speed: EncodingSpeed,
 }
 
+/// The encoders `encode/video.rs` and `encode/audio.rs` can select.
+const REQUIRED_ENCODERS: [&str; 7] = [
+    "libx264",
+    "libx265",
+    "libsvtav1",
+    "h264_videotoolbox",
+    "hevc_videotoolbox",
+    "aac",
+    "libopus",
+];
+/// HDR to SDR tone mapping for H.264 needs both.
+const REQUIRED_FILTERS: [&str; 2] = ["zscale", "tonemap"];
+/// H.265 and AV1 keep HDR and deeper sources as 10-bit video.
+const TEN_BIT_ENCODERS: [&str; 2] = ["libx265", "libsvtav1"];
+
 struct Capabilities {
     encoders: HashSet<String>,
     filters: HashSet<String>,
@@ -466,7 +481,7 @@ fn expect_rejection(label: &str, case: Case, media: &MediaInfo, error: &ApiError
 
 fn expected_rejection(case: Case, media: &MediaInfo) -> Option<(&'static str, &'static str)> {
     // Match `video_arguments`: Dolby Vision is refused before the encoder is
-    // chosen, and hardware encoding is refused before tone-map validation.
+    // chosen.
     if case.codec != VideoCodec::Copy
         && media.video.as_ref().is_some_and(|video| {
             video.hdr_format == Some(HdrFormat::DolbyVision) && !compatible_dolby(video)
@@ -958,20 +973,15 @@ impl Capabilities {
     fn load(ffmpeg: &Path) -> Self {
         let encoders = capability_names(&command_text(ffmpeg, &["-hide_banner", "-encoders"]));
         let filters = capability_names(&command_text(ffmpeg, &["-hide_banner", "-filters"]));
-        let encoder_help = [
-            "libx264",
-            "libx265",
-            "libsvtav1",
-            "h264_videotoolbox",
-            "hevc_videotoolbox",
-        ]
-        .into_iter()
-        .filter(|name| encoders.contains(*name))
-        .map(|name| {
-            let help = command_text(ffmpeg, &["-hide_banner", "-h", &format!("encoder={name}")]);
-            (name.to_owned(), help)
-        })
-        .collect();
+        let encoder_help = TEN_BIT_ENCODERS
+            .into_iter()
+            .filter(|name| encoders.contains(*name))
+            .map(|name| {
+                let help =
+                    command_text(ffmpeg, &["-hide_banner", "-h", &format!("encoder={name}")]);
+                (name.to_owned(), help)
+            })
+            .collect();
         Self {
             encoders,
             filters,
@@ -989,39 +999,26 @@ impl Capabilities {
     /// Every encoder and filter Vidra uses must be in the pinned sidecar.
     fn require_all(&self) {
         let mut missing = Vec::new();
-        for name in [
-            "libx264",
-            "libx265",
-            "libsvtav1",
-            "aac",
-            "zscale",
-            "tonemap",
-        ] {
-            let present = if name == "zscale" || name == "tonemap" {
-                self.filters.contains(name)
-            } else {
-                self.encoders.contains(name)
-            };
-            if !present {
-                missing.push(name.to_owned());
-            }
-        }
-        for encoder in ["libx265", "libsvtav1"] {
-            if !self.supports_pixel_format(encoder, "yuv420p10le") {
-                missing.push(format!("{encoder} yuv420p10le"));
-            }
-        }
-        for encoder in ["h264_videotoolbox", "hevc_videotoolbox"] {
+        for encoder in REQUIRED_ENCODERS {
             if !self.encoders.contains(encoder) {
                 missing.push(encoder.to_owned());
             }
         }
-        if !missing.is_empty() {
-            panic!(
-                "This FFmpeg build is missing encoders or filters required by the corpus: {}",
-                missing.join(", ")
-            );
+        for filter in REQUIRED_FILTERS {
+            if !self.filters.contains(filter) {
+                missing.push(filter.to_owned());
+            }
         }
+        for encoder in TEN_BIT_ENCODERS {
+            if !self.supports_pixel_format(encoder, "yuv420p10le") {
+                missing.push(format!("{encoder} yuv420p10le"));
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "This FFmpeg build is missing encoders or filters required by the corpus: {}",
+            missing.join(", ")
+        );
     }
 }
 
