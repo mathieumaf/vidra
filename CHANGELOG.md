@@ -2,17 +2,51 @@
 
 All notable changes to Vidra are documented in this file.
 
-## Unreleased
+## 0.2.0 - 2026-11-22
+
+Vidra 0.2.0 for macOS on Apple Silicon. It is the first official release since 0.1.0, and it brings together the 0.2.0 betas and release candidates. Windows, Linux, and Intel Mac builds are not included.
+
+### Added
+
+- Trim a video: choose an optional start and end time, and Vidra converts only that part. Re-encoded video starts and ends on the selected frames. Original video is copied unchanged, so it starts on the previous saved picture, and Vidra shows the real length before you start. Chapters and text subtitles follow the new timeline. [Segment trimming](https://github.com/mathieumaf/vidra/blob/v0.2.0/docs/TRIM.md) has the details.
+- Use the whole conversion workflow from the keyboard and with VoiceOver. [Accessibility](https://github.com/mathieumaf/vidra/blob/v0.2.0/docs/ACCESSIBILITY.md) lists what is supported.
+
+### Safer files
+
+- An existing destination file stays in place when a conversion fails, is cancelled, or Vidra quits. It is replaced only after you confirmed it, only after the conversion succeeded, and only if it is still the same file.
+- A finished video is not thrown away because its name is taken. It is saved under the next free numbered name, and Vidra says which name it used.
+- The source of another waiting, running, or paused conversion can no longer be overwritten by an output.
+- A diagnostic report is saved only as a new `.txt` file, so it cannot overwrite another file.
+- Vidra explains when the destination is full, read-only, or unavailable, and when a source or destination file disappears during a conversion.
+
+### Fixed
+
+- Convert MOV text subtitles to SubRip when saving MKV. Copying that track made the conversion fail.
+- Drop the HDR metadata when H.264 tone-maps HDR to SDR. The result was still treated as HDR.
+- Keep subtitle order, language, titles, and default and forced flags when trimming.
+- Keep the Original video and Original audio choices when importing videos of different formats.
+- Report a conversion cancelled during its preparation as Cancelled, and remove temporary outputs when Vidra quits, including while a conversion is paused.
+- Compute the time remaining from recent progress, so it recovers after a long pause.
 
 ### Changed
 
-- Bundle the FFmpeg engine that the conversion tests ran on. A release used to compile FFmpeg again, so the shipped build was never the tested one. Development, CI, and the release now install one checksum-pinned archive.
+- Bundle FFmpeg 8.1.3. Settings shows the version.
+- Bundle the FFmpeg build that the conversion tests ran on. A release used to compile FFmpeg again, so the shipped build was never the tested one. Development, CI, and the release now install one checksum-pinned archive.
+- Offer one kind of update: newer official releases. The Beta update channel and its selector in Settings are gone, and Vidra no longer publishes beta or release-candidate builds.
 - Refuse an update whose signature was not made for the version it announces.
-- Offer one kind of update: newer official releases. The Beta update channel and its selector in Settings are gone, and Vidra no longer publishes beta or release-candidate builds. An installed 0.2.0 beta or release candidate keeps its own updater and still moves to the next official release.
+- Require free space for the new file while a confirmed replacement is encoding. The existing file stays on disk until the conversion succeeds.
 
-### Removed
+### Installation
+
+- Download the Apple Silicon DMG from this release. From Vidra 0.1.0 or a 0.2.0 beta or release candidate, use "Check for updates" in Settings instead.
+- An installed 0.2.0 beta or release candidate keeps its own updater and moves to this release.
+
+### Internal
 
 - Stop supporting a system FFmpeg through `VIDRA_FFMPEG_DIR`, and stop compiling and testing on Linux in CI. Vidra builds, tests, and ships with its pinned FFmpeg on macOS on Apple Silicon only. The conversion corpus no longer skips a combination when an encoder is missing: it fails.
+- Check every step of a release before its draft can be published: the version files, the bundle, the update manifest and its signature, the notarization, and the attached FFmpeg sources. [Releasing Vidra](https://github.com/mathieumaf/vidra/blob/v0.2.0/docs/RELEASING.md) describes the workflows.
+
+The sections below retain the detailed prerelease history.
 
 ## 0.2.0-rc.3 - 2026-11-09
 
