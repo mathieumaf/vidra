@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -9,21 +9,12 @@ import {
   installDevArchiveBinaries,
   readDevArchivePin,
 } from "./dev-archive.mjs";
-import { developmentOverrideMarker, installDevelopmentSidecars } from "./development-override.mjs";
-import { developmentEntry, hostTargetTriple, rejectReleaseDevelopmentOverride, releaseEntry } from "./target.mjs";
+import { developmentEntry, hostTargetTriple, releaseEntry } from "./target.mjs";
 import { ffmpegVersionMatches, pinnedReleaseFfmpegVersion } from "./version.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = join(scriptDirectory, "..", "..");
-const overrideDirectory = process.env.VIDRA_FFMPEG_DIR?.trim() ?? "";
 const buildRequested = process.argv.includes("--build") || process.env.VIDRA_FFMPEG_MODE === "release";
-
-rejectReleaseDevelopmentOverride(process.env.VIDRA_FFMPEG_MODE, overrideDirectory);
-if (buildRequested && overrideDirectory) {
-  throw new Error(
-    "VIDRA_FFMPEG_DIR cannot be used when compiling FFmpeg. A source build must use the pinned release recipe.",
-  );
-}
 
 if (buildRequested) {
   await import("./build-release.mjs");
@@ -51,27 +42,6 @@ function signExecutable(executable, destination) {
   }
 }
 
-if (overrideDirectory) {
-  await installDevelopmentSidecars({
-    sourceDirectory: overrideDirectory,
-    target,
-    binaryDirectory,
-  });
-  if (process.platform === "darwin") {
-    for (const name of ["ffmpeg", "ffprobe"]) {
-      signExecutable(name, join(binaryDirectory, `${name}-${target}`));
-    }
-  }
-  const reports = ["ffmpeg", "ffprobe"].map((name) => versionOutput(join(binaryDirectory, `${name}-${target}`)));
-  if (reports.some((report) => !ffmpegVersionMatches(report, expectedVersion))) {
-    console.warn(
-      `Development FFmpeg override does not match the pinned ${expectedVersion} engine. Vidra will not treat this engine as ready.`,
-    );
-  }
-  console.log(`Using local FFmpeg sidecars from ${overrideDirectory} for ${target}.`);
-  process.exit(0);
-}
-
 const development = developmentEntry(manifest, target);
 if (development.version !== expectedVersion) {
   throw new Error(
@@ -93,8 +63,7 @@ const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", target);
 const archivePath = join(cacheDirectory, pin.archiveName);
 const markerPath = join(binaryDirectory, `.ffmpeg-dev-archive-${target}.sha256`);
 const marker = await readOptional(markerPath);
-const overrideMarker = await readOptional(developmentOverrideMarker(binaryDirectory, target));
-const ready = !overrideMarker && marker === pin.sha256 && ["ffmpeg", "ffprobe"].every((name) => {
+const ready = marker === pin.sha256 && ["ffmpeg", "ffprobe"].every((name) => {
   const binary = join(binaryDirectory, `${name}-${target}`);
   return ffmpegVersionMatches(versionOutput(binary), expectedVersion);
 });
@@ -104,16 +73,12 @@ if (ready) {
 }
 
 await downloadDevArchive(pin, archivePath);
-await rm(developmentOverrideMarker(binaryDirectory, target), { force: true });
-for (const name of ["ffmpeg", "ffprobe"]) {
-  await rm(join(binaryDirectory, `.${name}-${target}.sha256`), { force: true });
-}
 await installDevArchiveBinaries({
   archivePath,
   binaryDirectory,
   target,
   expectedVersion,
-  sign: process.platform === "darwin" ? signExecutable : async () => {},
+  sign: signExecutable,
 });
 await writeFile(markerPath, `${pin.sha256}\n`);
 console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);

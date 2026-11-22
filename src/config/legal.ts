@@ -1,16 +1,12 @@
 export const SOURCE_REPOSITORY_URL = "https://github.com/mathieumaf/vidra";
 
-export function releaseTag(version: string, injectedTag = __VIDRA_RELEASE_TAG__): string {
-  const versionTag = `v${version}`;
-  return typeof injectedTag === "string"
-    && injectedTag.startsWith(versionTag)
-    && /^v[0-9A-Za-z.+-]+$/.test(injectedTag)
-    ? injectedTag
-    : versionTag;
+/** Every release is tagged with its exact application version. */
+export function releaseTag(version: string): string {
+  return `v${version}`;
 }
 
-export function releaseUrl(version: string, injectedTag = __VIDRA_RELEASE_TAG__): string {
-  return `${SOURCE_REPOSITORY_URL}/releases/tag/${releaseTag(version, injectedTag)}`;
+export function releaseUrl(version: string): string {
+  return `${SOURCE_REPOSITORY_URL}/releases/tag/${releaseTag(version)}`;
 }
 
 export type ThirdPartyNotice = {

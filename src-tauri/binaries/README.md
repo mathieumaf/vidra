@@ -2,13 +2,11 @@
 
 This directory is populated by `pnpm ffmpeg:prepare`.
 
-Prepared executables are intentionally ignored by Git. Each sidecar is named `<name>-<target-triple>`, for example:
+Prepared executables are intentionally ignored by Git. Each sidecar is named `<name>-<target-triple>`:
 
 - `ffmpeg-aarch64-apple-darwin`
 - `ffprobe-aarch64-apple-darwin`
-- `ffmpeg-x86_64-unknown-linux-gnu`
-- `ffprobe-x86_64-unknown-linux-gnu`
 
-The development manifest in `scripts/ffmpeg/sources.json` is keyed by target triple. macOS on Apple Silicon downloads the archive pinned in `scripts/ffmpeg/dev-archive.json`, at the same FFmpeg version as the release recipe. Other targets fail with an unsupported-target error until a pinned sidecar is added. For local development and CI only, `VIDRA_FFMPEG_DIR` can supply `ffmpeg` and `ffprobe`; those copies are not release artifacts. The app treats an engine as ready only when both tools report the pinned release version.
+macOS on Apple Silicon downloads the archive pinned in `scripts/ffmpeg/dev-archive.json`, at the same FFmpeg version as the release recipe in `scripts/ffmpeg/sources.json`. Other targets fail with an unsupported-target error until a pinned sidecar is added. The app treats an engine as ready only when both tools report the pinned release version.
 
 Release artifacts must be built from pinned source by Vidra's release pipeline before public distribution. The development archive is not a substitute for that pipeline.

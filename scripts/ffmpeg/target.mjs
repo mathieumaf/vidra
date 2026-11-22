@@ -23,7 +23,7 @@ export function developmentEntry(manifest, target) {
   const entry = manifest?.targets?.[target]?.development;
   if (!entry) {
     throw new Error(
-      `Unsupported target ${target}. Pinned development FFmpeg sidecars are not available for this target. Set VIDRA_FFMPEG_DIR to a directory that contains ffmpeg and ffprobe.`,
+      `Unsupported target ${target}. Vidra pins FFmpeg sidecars for macOS on Apple Silicon only.`,
     );
   }
   return entry;
@@ -35,12 +35,4 @@ export function releaseEntry(manifest, target) {
     throw new Error(`Unsupported target ${target}. Release FFmpeg builds do not include this target.`);
   }
   return entry;
-}
-
-export function rejectReleaseDevelopmentOverride(mode, overrideDirectory) {
-  if (mode === "release" && overrideDirectory) {
-    throw new Error(
-      "VIDRA_FFMPEG_DIR cannot be used for a release FFmpeg build. Release builds must use the pinned source recipe.",
-    );
-  }
 }

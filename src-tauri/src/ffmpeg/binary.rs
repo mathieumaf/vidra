@@ -1,7 +1,5 @@
-use super::version::{assess_engine, development_override_marker_name, host_target_triple};
+use super::version::assess_engine;
 use super::FfmpegStatus;
-#[cfg(debug_assertions)]
-use std::path::Path;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
@@ -44,11 +42,10 @@ fn parse_version_output(
 fn status_from_versions(
     ffmpeg: Result<String, String>,
     ffprobe: Result<String, String>,
-    development_override: bool,
 ) -> FfmpegStatus {
     match (ffmpeg, ffprobe) {
         (Ok(ffmpeg_version), Ok(ffprobe_version)) => {
-            assess_engine(&ffmpeg_version, &ffprobe_version, development_override)
+            assess_engine(&ffmpeg_version, &ffprobe_version)
         }
         (ffmpeg, ffprobe) => {
             let error = ffmpeg.err().or_else(|| ffprobe.err());
@@ -63,34 +60,7 @@ fn status_from_versions(
 }
 
 pub async fn status(app: &AppHandle) -> FfmpegStatus {
-    status_from_versions(
-        version(app, "ffmpeg").await,
-        version(app, "ffprobe").await,
-        development_override_active(),
-    )
-}
-
-fn development_override_active() -> bool {
-    let name = development_override_marker_name(host_target_triple());
-    // A packaged release has no source tree. Only debug builds may find the
-    // override marker under the Cargo manifest directory.
-    #[cfg(debug_assertions)]
-    if debug_manifest_override_marker(&name) {
-        return true;
-    }
-
-    std::env::current_exe()
-        .ok()
-        .and_then(|executable| executable.parent().map(|directory| directory.join(&name)))
-        .is_some_and(|path| path.is_file())
-}
-
-#[cfg(debug_assertions)]
-fn debug_manifest_override_marker(name: &str) -> bool {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("binaries")
-        .join(name)
-        .is_file()
+    status_from_versions(version(app, "ffmpeg").await, version(app, "ffprobe").await)
 }
 
 #[cfg(test)]
@@ -136,15 +106,13 @@ mod tests {
 
     #[test]
     fn status_is_ready_only_for_the_pinned_engine() {
-        let ready =
-            status_from_versions(Ok(FFMPEG_813.to_owned()), Ok(FFPROBE_813.to_owned()), false);
+        let ready = status_from_versions(Ok(FFMPEG_813.to_owned()), Ok(FFPROBE_813.to_owned()));
         assert!(ready.ready);
         assert_eq!(ready.ffmpeg_version.as_deref(), Some(FFMPEG_813));
         assert_eq!(ready.ffprobe_version.as_deref(), Some(FFPROBE_813));
         assert!(ready.error.is_none());
 
-        let previous =
-            status_from_versions(Ok(FFMPEG_812.to_owned()), Ok(FFPROBE_812.to_owned()), false);
+        let previous = status_from_versions(Ok(FFMPEG_812.to_owned()), Ok(FFPROBE_812.to_owned()));
         assert!(!previous.ready);
         assert_eq!(previous.ffmpeg_version.as_deref(), Some(FFMPEG_812));
         assert_eq!(previous.ffprobe_version.as_deref(), Some(FFPROBE_812));
@@ -155,21 +123,15 @@ mod tests {
             )
         );
 
-        let ffmpeg_failed = status_from_versions(
-            Err("ffmpeg missing".to_owned()),
-            Ok(FFPROBE_813.to_owned()),
-            false,
-        );
+        let ffmpeg_failed =
+            status_from_versions(Err("ffmpeg missing".to_owned()), Ok(FFPROBE_813.to_owned()));
         assert!(!ffmpeg_failed.ready);
         assert!(ffmpeg_failed.ffmpeg_version.is_none());
         assert!(ffmpeg_failed.ffprobe_version.is_none());
         assert_eq!(ffmpeg_failed.error.as_deref(), Some("ffmpeg missing"));
 
-        let probe_failed = status_from_versions(
-            Ok(FFMPEG_813.to_owned()),
-            Err("ffprobe missing".to_owned()),
-            false,
-        );
+        let probe_failed =
+            status_from_versions(Ok(FFMPEG_813.to_owned()), Err("ffprobe missing".to_owned()));
         assert!(!probe_failed.ready);
         assert_eq!(probe_failed.error.as_deref(), Some("ffprobe missing"));
     }

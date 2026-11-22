@@ -43,7 +43,7 @@ export function installGlobalFailureHandlers(target: Window = window): () => voi
   return uninstall;
 }
 
-export function reportRuntimeFailure(source: FailureSource, error: unknown): RuntimeFailure {
+function reportRuntimeFailure(source: FailureSource, error: unknown): RuntimeFailure {
   const message = errorMessage(error);
   if (current && current.source === source && current.message === message) {
     current = { ...current, occurrences: current.occurrences + 1 };

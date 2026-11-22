@@ -2,12 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import {
-  developmentEntry,
-  hostTargetTriple,
-  rejectReleaseDevelopmentOverride,
-  releaseEntry,
-} from "./target.mjs";
+import { developmentEntry, hostTargetTriple, releaseEntry } from "./target.mjs";
 
 const manifest = JSON.parse(readFileSync(new URL("./sources.json", import.meta.url), "utf8"));
 
@@ -62,13 +57,4 @@ test("reports an unsupported target when no pinned sidecar exists", () => {
     ),
     /Unsupported target aarch64-apple-darwin/,
   );
-});
-
-test("refuses to mix a release build with the local FFmpeg override", () => {
-  assert.throws(
-    () => rejectReleaseDevelopmentOverride("release", "/usr/bin"),
-    /VIDRA_FFMPEG_DIR cannot be used for a release FFmpeg build/,
-  );
-  assert.doesNotThrow(() => rejectReleaseDevelopmentOverride("release", ""));
-  assert.doesNotThrow(() => rejectReleaseDevelopmentOverride(undefined, "/usr/bin"));
 });

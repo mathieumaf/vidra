@@ -2,6 +2,16 @@
 
 All notable changes to Vidra are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Offer one kind of update: newer official releases. The Beta update channel and its selector in Settings are gone, and Vidra no longer publishes beta or release-candidate builds. An installed 0.2.0 beta or release candidate keeps its own updater and still moves to the next official release.
+
+### Removed
+
+- Stop supporting a system FFmpeg through `VIDRA_FFMPEG_DIR`, and stop compiling and testing on Linux in CI. Vidra builds, tests, and ships with its pinned FFmpeg on macOS on Apple Silicon only. The conversion corpus no longer skips a combination when an encoder is missing: it fails.
+
 ## 0.2.0-rc.3 - 2026-11-09
 
 Release candidate **0.2.0-rc.3** for macOS on Apple Silicon. The application bundle version is `0.2.0`. The updater version is the full tag `v0.2.0-rc.3`. Windows, Linux, and Intel Mac builds are not included.
@@ -41,7 +51,7 @@ This candidate includes the conversion safety and lifecycle fixes from [#116](ht
 ### Installation and testing
 
 - Once published, choose Beta in Settings to update from 0.2.0-rc.1, 0.2.0-beta.2, 0.2.0-beta.1, or 0.1.0. Stable does not offer this release candidate. The bundle version shown in Settings remains 0.2.0; the release link is `v0.2.0-rc.2`.
-- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist](docs/RELEASING.md#beta-validation), including replacement safety, trimming, cancellation, native Quit, and the update from rc.1. The [application audit](docs/AUDIT-2026-11-08.md) records development-build evidence and its limits; it does not replace signed-release validation.
+- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist](docs/RELEASING.md#beta-validation), including replacement safety, trimming, cancellation, native Quit, and the update from rc.1.
 
 ## 0.2.0-rc.1 - 2026-11-05
 
@@ -143,7 +153,7 @@ Prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle v
 - Download the Apple Silicon DMG from this release, or check for updates in an installed beta or release candidate. Beta.5 uses the legacy feed; beta.6 and rc.1 can use either Stable or Beta to receive 0.1.0.
 - Windows, Linux, and Intel Mac installers are not included. The 0.x series continues to develop the core app; the multiplatform 1.0 milestone is documented in the roadmap.
 
-The sections below retain the detailed prerelease history. Artifact and updater validation are tracked in [the 0.1.0 release checklist](docs/RELEASE-0.1.0.md).
+The sections below retain the detailed prerelease history.
 
 ## 0.1.0-rc.1 - 2026-09-05
 
@@ -183,7 +193,7 @@ The sections below retain the detailed prerelease history. Artifact and updater 
 - This prerelease targets macOS on Apple Silicon. Windows, Linux, and Intel Mac installers are not included.
 - Install the beta.6 DMG manually when upgrading from beta.5 or earlier. The beta.5 updater uses the legacy update feed, which is now reserved for official releases and will not advertise beta.6.
 - Choose Beta in Settings to receive future test builds. Selecting Beta does not reinstall beta.6 when it is already installed.
-- Validate the signed beta.6 installer and both channel choices before the next release candidate. A later `0.1.0-rc.1` will let beta.6 users test an actual update on Beta while Stable ignores that prerelease. See the [prerelease validation checklist](docs/RELEASE-0.1.0.md#prerelease-validation).
+- Validate the signed beta.6 installer and both channel choices before the next release candidate. A later `0.1.0-rc.1` will let beta.6 users test an actual update on Beta while Stable ignores that prerelease.
 
 ## 0.1.0-beta.5 - 2026-09-04
 

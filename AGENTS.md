@@ -19,7 +19,7 @@ This file applies to the entire repository.
 
 - Use pnpm as the only JavaScript package manager. The pinned version is declared in `package.json`.
 - Use the Rust toolchain and Cargo for the Tauri backend.
-- Use `pnpm ffmpeg:prepare` for local FFmpeg and FFprobe sidecars. Do not rely on a system FFmpeg installation for normal development. On Apple Silicon, that command downloads the checksum-pinned development archive and does not compile FFmpeg. `pnpm ffmpeg:prepare -- --build` compiles the pinned release recipe locally. `VIDRA_FFMPEG_DIR` may point at a directory containing `ffmpeg` and `ffprobe` for a development or CI build on any target, including Apple Silicon. Release builds reject that override. The app treats a sidecar as ready only when its reported version matches the pinned release FFmpeg version. A development override with a different version is not ready.
+- Use `pnpm ffmpeg:prepare` for local FFmpeg and FFprobe sidecars. Do not rely on a system FFmpeg installation for normal development. On Apple Silicon, that command downloads the checksum-pinned development archive and does not compile FFmpeg. `pnpm ffmpeg:prepare -- --build` compiles the pinned release recipe locally. The app treats a sidecar as ready only when its reported version matches the pinned release FFmpeg version.
 - Keep sidecar versions and checksums pinned in `scripts/ffmpeg/sources.json`. Pin the Apple Silicon development archive in `scripts/ffmpeg/dev-archive.json`. Its FFmpeg version and recipe fingerprint must match the release recipe.
 - Use `pnpm icon:prepare` for macOS Icon Composer assets. Keep generated fallback assets committed for environments without Xcode.
 
@@ -94,8 +94,7 @@ pnpm test
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
-VIDRA_CORPUS_REQUIRED=1 VIDRA_CORPUS_MATRIX=reduced VIDRA_CORPUS_STRICT_ENCODERS=1 \
-  cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture
+cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture
 git diff --check
 ```
 

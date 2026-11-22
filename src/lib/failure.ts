@@ -47,7 +47,7 @@ export type FailureInput = {
   environment?: FailureEnvironment;
 };
 
-export function failureEnvironment(): FailureEnvironment {
+function failureEnvironment(): FailureEnvironment {
   const client = typeof navigator === "undefined" ? null : navigator;
   return {
     appVersion: typeof __VIDRA_VERSION__ === "string" ? __VIDRA_VERSION__ : "unknown",

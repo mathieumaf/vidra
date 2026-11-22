@@ -14,7 +14,6 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { developmentOverrideMarker } from "./development-override.mjs";
 import { hostTargetTriple, releaseEntry } from "./target.mjs";
 import { verifyAv1Decoding } from "./verify-av1.mjs";
 import { ffmpegVersionMatches, ffmpegVersionToken } from "./version.mjs";
@@ -112,9 +111,7 @@ if (needsRebuild) {
   console.log(`Release FFmpeg ${release.sources.ffmpeg.version} is already built.`);
 }
 
-await rm(developmentOverrideMarker(binaryDirectory, target), { force: true });
 for (const name of ["ffmpeg", "ffprobe"]) {
-  await rm(join(binaryDirectory, `.${name}-${target}.sha256`), { force: true });
   const source = join(ffmpegPrefix, "bin", name);
   const destination = join(binaryDirectory, `${name}-${target}`);
   await copyFile(source, destination);

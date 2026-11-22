@@ -163,7 +163,7 @@ export function colorConversionNotice(
   return null;
 }
 
-export function hasCompatibleDolbyVisionBase(video: VideoStream): boolean {
+function hasCompatibleDolbyVisionBase(video: VideoStream): boolean {
   const info = video.dolbyVision;
   return info !== null
     && (info.baseLayerCompatibilityId === 1 || info.baseLayerCompatibilityId === 4)

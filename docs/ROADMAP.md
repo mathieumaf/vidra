@@ -6,20 +6,20 @@ Vidra is a local-first desktop video converter. Its core promise is to inspect v
 
 | Version | Scope |
 | --- | --- |
-| 0.1.0 | First official release for macOS on Apple Silicon, based on the existing beta workflow. |
+| 0.1.0 | First official release for macOS on Apple Silicon. |
 | 0.1.x | Bug fixes and reliability improvements within the 0.1 scope. |
 | 0.2.0 and later 0.x releases | Core workflow improvements and progressive Windows and Linux support. Platform work is not tied to a specific minor version or date yet. |
 | 1.0.0 | A dependable core workflow with validated distribution on macOS, Windows, and Linux. |
 
-One version sequence covers the product across platforms. A new platform can first appear in a beta release; its availability and supported architectures must be stated in the release notes. Additional architectures, including Intel Macs, require their own build and validation work and are not a prerequisite for 1.0.
+One version sequence covers the product across platforms. A new platform is announced in the release that first ships it; its availability and supported architectures must be stated in the release notes. Additional architectures, including Intel Macs, require their own build and validation work and are not a prerequisite for 1.0.
 
 ## Version policy
 
 - Use three-part versions, such as `0.1.0`, with Git tags such as `v0.1.0`.
 - Use patch releases for corrections and minor releases for new capabilities or intentional behavior changes during 0.x development. Document changes to saved settings or profiles and preserve user data where possible.
-- Use suffixes such as `0.2.0-beta.1` or `1.0.0-rc.1` for test builds. An official 0.x release has no prerelease suffix and is not marked as a prerelease on GitHub.
-- Keep application version metadata aligned across the JavaScript, Tauri, and Cargo manifests. A beta suffix may exist only in the release tag; the updater uses that full tag to order releases.
-- Offer two update channels: Stable (the default) for official releases, and Beta for official releases plus prereleases, including release candidates. Users explicitly opt into Beta in Settings. Both channels only offer newer versions; switching channels never downgrades an installation.
+- Publish official releases only. Vidra has no beta or release-candidate builds: a release is validated before its tag is published, and a defect is fixed in the next patch release.
+- Keep the application version identical in the JavaScript, Tauri, and Cargo manifests and in the release tag.
+- Offer one update channel. The app offers a newer official release and never a downgrade.
 - Never replace the contents of a published version. Ship a new version for corrections.
 
 These conventions use [Semantic Versioning](https://semver.org/) as a basis. The platform requirements for 1.0 are Vidra's product milestone, not a requirement imposed by SemVer.

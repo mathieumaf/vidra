@@ -1,7 +1,6 @@
 import type {
   AudioBitrate,
   AudioChannels,
-  AudioTrackMode,
   EncodingSettings,
   OutputFrameRate,
   VideoStream,
@@ -38,14 +37,6 @@ export const AUDIO_CHANNEL_OPTIONS: ReadonlyArray<{
   { id: "source", label: "Original" },
   { id: "stereo", label: "Stereo" },
   { id: "mono", label: "Mono" },
-];
-
-export const AUDIO_TRACK_OPTIONS: ReadonlyArray<{
-  id: AudioTrackMode;
-  label: string;
-}> = [
-  { id: "all", label: "All tracks" },
-  { id: "first", label: "First track" },
 ];
 
 export const QUALITY_TUNING_LABELS = [
