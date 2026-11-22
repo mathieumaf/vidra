@@ -15,8 +15,8 @@ Include the affected version, macOS version and hardware, reproduction steps, ex
 The [threat model](docs/security/threat-model.md) describes the system, its untrusted inputs, its trust boundaries, and the known limits of each mechanism below. A change that breaks one of these is a security bug.
 
 1. **A source file is never modified or deleted.** The engine opens sources for reading. An output path that names a source, or a hard link to one, is refused.
-2. **A destination file is replaced only on purpose.** Replacement needs the user's confirmation in the save panel and a successful conversion, and happens only if the file at that path is still the one that was there when the job was queued. Otherwise the finished video is kept under another name.
-3. **A finished video is never deleted.** When its name is taken it is saved under the next free numbered name, or kept under a recovery name.
+2. **A destination file is replaced only on purpose.** The save panel asks the user, and the interface passes that answer on as a replace flag. The core replaces a file only with that flag, only after a successful conversion, and only if the file at that path is still the one that was there when the job was queued. Otherwise the finished video is saved under another name.
+3. **A finished video is not discarded because its name is taken.** It is saved under the next free numbered name, or kept under a recovery name or at its temporary name.
 4. **Conversion writes only Vidra's own files:** the temporary output in the destination folder, the published output, and work files in a folder Vidra creates under the system temporary folder. Cleanup removes only files and folders Vidra created or recorded as its own.
 5. **Media stays on the device.** The only network requests are the update check at the fixed endpoint in `src-tauri/tauri.conf.json`, the download of the archive that the update feed names, and the two kinds of GitHub link the user can open from Settings.
 6. **The interface is not trusted.** Every source and output path is validated in Rust. Text from the user or from a media file reaches FFmpeg only as an argument value or a file, never as an option or a shell string. The interface has no shell, filesystem, or HTTP plugin permission: it reaches files only through Vidra's own commands.
@@ -47,5 +47,5 @@ The [threat model](docs/security/threat-model.md) describes the system, its untr
 
 - **Bugs inside FFmpeg or its codec libraries.** Report them upstream. Vidra's part is to ship a fixed version: report a bundled version that is known to be vulnerable when a fixed release exists.
 - **An attacker who already runs code as the user and attacks the application, its bundle, or its data files directly.** Interference with files in a destination folder while a job waits or runs is in scope.
-- **The known limits listed in the threat model**, as described there: the check-then-rename windows when publishing an output, the temporary output addressed by path, recovery by recorded path and name, and the update version checked on the manifest.
+- **The known limits listed in the threat model**, as described there: confirmation inferred by the interface, the check-then-rename windows when publishing an output, the temporary output addressed by path, recovery by recorded path, a kept video that depends on the ledger, and the update version checked on the manifest.
 - **Builds that Vidra did not publish.** Only the signed and notarized artifacts on the GitHub Releases page are covered.

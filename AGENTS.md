@@ -51,7 +51,7 @@ Vidra is an open-source, local-first desktop video converter built with Tauri, R
 - Keep container-specific stream mapping explicit. MKV preserves compatible subtitles, chapters, metadata, and tracks. MP4 uses compatible mappings and codec tags.
 - Validate every input and output path in Rust, even when the frontend already validated it.
 - Encode into a temporary file in the destination directory and move it into place only after success. Failure, cancellation, and shutdown may remove that temporary file and leave the source unchanged.
-- An existing destination file is replaced only when replacement was confirmed and the conversion succeeds. A successful conversion whose destination name is taken is never deleted: it is saved under the next free numbered name, or kept under a recovery name.
+- An existing destination file is replaced only when replacement was confirmed and the conversion succeeds. A successful conversion whose destination name is taken is kept: it is saved under the next free numbered name, or under a recovery name.
 - Quality presets stay stable. A change to a CRF value or codec behavior comes with a test.
 - FFmpeg stderr is diagnostic data. Show users concise failures and bound what is stored.
 
