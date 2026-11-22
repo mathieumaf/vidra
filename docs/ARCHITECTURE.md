@@ -14,10 +14,10 @@ This is the map of Vidra's code: what runs where, where each kind of code lives,
 ```
 
 - The **interface** holds what the user is editing: the selected videos, their settings, profiles. It never touches a file. It asks the core.
-- The **core** validates every request again, owns the conversion queue, starts the engine, and is the only code that writes or removes files.
-- The **engine** is the FFmpeg and FFprobe build that Vidra bundles. The core starts it with a list of arguments, never through a shell. How it is built and pinned is in [RELEASING.md](RELEASING.md#the-ffmpeg-engine).
+- The **core** validates every request again, owns the conversion queue, and starts the engine. It decides every file operation: it creates the temporary output, publishes it under its final name, and removes what is unfinished.
+- The **engine** is the FFmpeg and FFprobe build that Vidra bundles. The core starts it with a list of arguments, never through a shell. FFmpeg reads the source and writes the media into the temporary file the core created. How the engine is built and pinned is in [RELEASING.md](RELEASING.md#the-ffmpeg-engine).
 
-Media never leaves these three processes. The only network use is the update check.
+Media never leaves these three processes. The network is used for three things only: the update check, the download of the update it announces, and the two GitHub links in Settings.
 
 ## Repository map
 
@@ -40,13 +40,13 @@ docs/                   this documentation
 
 | Folder | Holds | Rule |
 | --- | --- | --- |
-| `app/` | `App.tsx`: composition, navigation, wiring | No domain workflow and no IPC call here. |
+| `app/` | `App.tsx`: composition, navigation, wiring. It also holds the settings being edited and the rules between options. | No domain workflow and no IPC call here. |
 | `components/` | What is drawn. `convert/`, `views/` (queue, history, settings), `layout/`, `queue/`, `update/`, `error/`, `ui/` | Presentational. State comes in as props. |
 | `hooks/` | Stateful workflows and event subscriptions. `useEncodingQueue` is the main one. | One workflow per hook. |
 | `services/` | One function per Tauri command | The only place that imports `invoke`. |
 | `lib/` | Pure helpers: formatting, queue rules, trim arithmetic, color and HDR classification | No React, no IPC. Easy to test. |
-| `config/` | Static product choices: containers, codecs, quality levels, resolutions, built-in profiles | Labels and options live here, not in components. |
-| `types/` | `media.ts`: every shape shared with the core | Field names mirror the Rust serialization exactly. |
+| `config/` | Static product choices: containers, codecs, quality levels, resolutions, advanced defaults, built-in profiles | Labels and options live here, not in components. |
+| `types/` | The shapes shared with the core: `media.ts`, and `applicationUpdate.ts` for the update response | Field names mirror the Rust serialization exactly. |
 | `styles/` | CSS. `tokens.css` holds the design tokens. | Reuse tokens. |
 | `test/` | Test helpers: a mount function and fixtures | |
 
@@ -79,12 +79,13 @@ docs/                   this documentation
 
 1. **Open.** The user picks or drops a file. `useEncodingQueue` calls `probeMedia`. The core validates the path (`paths.rs`), runs FFprobe, and returns a `MediaInfo`.
 2. **Choose.** The interface holds an `EncodeQueueItem` with `EncodingSettings`, the track selection, and an optional trim. `lib/` and `config/` decide what is possible: for example, H.264 is refused for an HDR source whose transfer characteristic is unknown.
-3. **Queue.** The user picks a destination in the save panel. The interface sends `EncodeRequest` values with `enqueueEncodes`. The core validates each one again, probes the source again, checks the settings against the media (`encode::validate_settings`), checks free space, and adds a `PendingJob` to the `JobManager`.
-4. **Start.** `startEncodeQueue` takes the next job. The core creates a temporary file in the destination folder (`output/partial.rs`), records it in the ledger, builds the arguments (`encode::command_arguments`), and starts FFmpeg. One encode runs at a time.
-5. **Follow.** `queue.rs` reads FFmpeg's progress and emits `encode-progress`. The interface can pause, resume, or cancel the active job, and reorder or remove the waiting ones.
-6. **Finish.** On success, `output::partial::finalize_output` moves the temporary file to the final name. On failure or cancellation, it removes the temporary file. The core writes a history entry and emits `encode-finished`, then starts the next job.
+3. **Pick a destination.** For one video, the save panel returns a path, and asks first when that name is taken. For several, the user picks a folder, and the interface adds a number to any name already used there (`lib/queue.ts`).
+4. **Queue.** The interface sends `EncodeRequest` values with `enqueueEncodes`. The core validates each one again, probes the source again, checks the settings against the media (`encode::validate_settings`), checks free space, and adds a `PendingJob` to the `JobManager`.
+5. **Start.** `startEncodeQueue` resumes a paused job if there is one. Otherwise it takes the next waiting job: the core creates a temporary file in the destination folder (`output/partial.rs`), records it in the ledger, prepares the trim if any, builds the arguments (`encode::command_arguments`), and starts FFmpeg. One encode runs at a time.
+6. **Follow.** `queue.rs` reads FFmpeg's progress and emits `encode-progress`. The interface can pause, resume, or cancel the active job, and reorder or remove the waiting ones. Removing a waiting job reports it as cancelled and writes no history entry.
+7. **Finish.** A trim that copies the original video may first run a second FFmpeg pass that puts the clipped subtitles back. On success, `output::partial::finalize_output` moves the temporary file to the final name, or keeps the finished video under another name when that name is no longer available. On failure or cancellation, it removes the temporary file, and a removal that fails is tried again at the next launch. The core writes a history entry and emits `encode-finished`, then starts the next job.
 
-The source file is only ever read.
+The source file is only ever read. The exact publication and cleanup rules, with their limits, are in the [threat model](security/threat-model.md#sensitive-data-flows-and-privileged-actions).
 
 ## The contract between interface and core
 
@@ -96,14 +97,22 @@ The source file is only ever read.
 | `probe_media` | `encoding.ts` | Inspect one file. |
 | `segment_keyframe` | `encoding.ts` | Where a trimmed copy of the original video would really start. |
 | `enqueue_encodes` | `encoding.ts` | Validate requests and add them to the queue. |
-| `start_encode_queue` | `encoding.ts` | Start the next waiting job. |
+| `start_encode_queue` | `encoding.ts` | Resume a paused job, or start the next waiting one. |
 | `cancel_encode`, `set_encode_paused`, `move_queued_encode` | `encoding.ts` | Control the queue. |
 | `list_conversion_history`, `delete_history_entry`, `clear_conversion_history`, `reveal_history_output` | `history.ts` | History. |
 | `reveal_output_file`, `list_destination_files`, `take_opened_files` | `files.ts` | Finder, destination folder, files opened from outside. |
 | `save_diagnostic_report` | `diagnostics.ts` | Save a failure report as a new `.txt` file. |
 | `check_application_update`, `install_application_update` | `updates.ts` | Updates. |
 
-**Events** go from the core to the interface: `encode-started`, `encode-progress`, `encode-finished`, `encode-pause-changed`, `history-entry-created`, and `open-files`. Their payloads are in `ffmpeg/types.rs` and `src/types/media.ts`.
+**Events** go from the core to the interface.
+
+| Event | Payload defined in |
+| --- | --- |
+| `encode-started`, `encode-progress`, `encode-finished`, `encode-pause-changed` | `ffmpeg/types.rs` |
+| `history-entry-created` | `history/types.rs` (`HistoryEntry`) |
+| `open-files` | `open_files.rs` (`OpenFilesPayload`) |
+
+Each payload is mirrored in `src/types/media.ts`.
 
 **Errors** are `ApiError` values. The `code` is stable and the interface may branch on it. The `message` is English text for the user.
 
@@ -120,21 +129,25 @@ What the interface may call beyond these commands is listed in `src-tauri/capabi
 | History | `conversion-history.json` in the app data folder | |
 | Unfinished temporary outputs | `partial-outputs.json` in the app data folder | Lets the next launch remove what a crash left behind. |
 
-The app data folder is `~/Library/Application Support/io.github.mathieumaf.vidra/`. Saved data outlives the code that wrote it: a new field needs a default when an old file or an old stored value is read.
+The app data folder is `~/Library/Application Support/io.github.mathieumaf.vidra/`. Saved data outlives the code that wrote it. Stored profiles and the pending queue are both checked by `isEncodingSettings` in `src/config/profiles.ts`, which rejects a value it does not know: an entry saved before a field existed, or with a value that was later removed, is dropped unless that function is taught to accept it.
 
 ## How to
 
+These recipes list every place the change touches today. The Rust compiler flags a missing arm in an exhaustive `match`. Nothing flags a missing entry in the TypeScript lists named below, so follow the list.
+
 ### Add an encoding option
 
-The output frame rate is a complete example. Search for `outputFrameRate` and `output_frame_rate` to see every place it touches.
+The output frame rate is the example to follow. `git grep -n "outputFrameRate\|output_frame_rate"` shows every place it touches.
 
-1. **Core type.** Add the enum and the `EncodeRequest` field in `ffmpeg/types.rs`. Give the field a serde default if old data can omit it.
+1. **Core type.** Add the enum and the `EncodeRequest` field in `ffmpeg/types.rs`.
 2. **Arguments.** Produce the FFmpeg arguments in `ffmpeg/encode/video.rs` or `audio.rs`, with a unit test of the exact argument list. Refuse impossible combinations in `validate_settings`.
-3. **History.** Add it to `HistorySettings` in `history/types.rs`, with a default, so old history files still load.
-4. **Shared type.** Mirror it in `src/types/media.ts` (`EncodingSettings`) and in `EncodeRequest` in `src/services/encoding.ts`.
-5. **Choices and labels.** Add the option list to `src/config/`. Add it to the built-in profiles in `src/config/profiles.ts`. That file also checks stored profiles, so decide what a profile saved before the option existed becomes.
-6. **Interface.** Add the control to a component in `src/components/convert/`, and pass the value through `useEncodingQueue`, which builds the request.
-7. **Corpus.** If the option changes what the encoder produces, add a case to `ffmpeg/corpus.rs` so a real encode proves it.
+3. **Where the core reports settings.** Add it to `HistorySettings` in `history/types.rs`, with a serde default so old history files still load, and assign it in `HistoryDraft::from_job`. Add it to `settings_summary` in `diagnostics.rs`. If it changes the output size, add it to the estimate in `ffmpeg/disk_space.rs`.
+4. **Shared type.** Mirror it in `EncodingSettings` in `src/types/media.ts` and in `EncodeRequest` in `src/services/encoding.ts`.
+5. **Choices, labels, defaults.** Add the option list to `src/config/`. An advanced option also goes in `AdvancedEncodingSettings`, `DEFAULT_ADVANCED_SETTINGS`, and `advancedSettings` in `src/config/advanced.ts`, which is where the built-in profiles get its value.
+6. **Stored settings.** In `src/config/profiles.ts`, add it to `settingKeys` (or two profiles that differ only by it compare as equal), to `validValues`, to `isEncodingSettings`, and to `compatibleProfileSettings` if it depends on the source. Decide what a profile or a pending queue saved before the option existed becomes, and add a test with such an old value.
+7. **Interface.** `src/app/App.tsx` holds the setting being edited and the rules between options, such as resetting it when the video is copied. Add the control to a component in `src/components/convert/`. `useEncodingQueue` copies the value into the request.
+8. **Summaries.** Show it where settings are summarised: `ConvertView.tsx`, `QueueView.tsx`, and `src/lib/history.ts`.
+9. **Corpus.** If the option changes what the encoder produces, add a case to `ffmpeg/corpus.rs` so a real encode proves it.
 
 ### Add a command
 
@@ -143,12 +156,22 @@ The output frame rate is a complete example. Search for `outputFrameRate` and `o
 3. Wrap it in one function in `src/services/`, and call that from a hook.
 4. Validate every argument in Rust. A path from the interface is untrusted, even when the interface already checked it.
 
-### Add a codec or a container
+### Add a video codec
 
-1. Check the license and add the encoder to the engine recipe if it is not there. That means a new engine archive: see [RELEASING.md](RELEASING.md#the-ffmpeg-engine).
-2. Add the variant in `ffmpeg/types.rs`, the arguments in `ffmpeg/encode/`, and the stream mapping rules in `ffmpeg/encode.rs`. Say what happens to audio, subtitles, chapters, and HDR metadata the container cannot hold.
-3. Add it to `REQUIRED_ENCODERS` and to the matrix in `ffmpeg/corpus.rs`.
-4. Mirror it in `src/types/media.ts` and `src/config/encoding.ts`, and document it in [FORMATS.md](FORMATS.md) and `THIRD_PARTY_NOTICES.md`.
+1. **Engine.** Check the license. If the encoder is not in the engine, add it to the recipe, to the encoder check in `scripts/ffmpeg/build.mjs`, and to `THIRD_PARTY_NOTICES.md` and `src/config/legal.ts`, which is what Settings shows. That means a new engine archive: see [RELEASING.md](RELEASING.md#the-ffmpeg-engine).
+2. **Core.** Add the variant to `VideoCodec` in `ffmpeg/types.rs`, the arguments in `ffmpeg/encode/video.rs`, and the stream mapping rules in `ffmpeg/encode.rs`. The compiler then asks for it in the size estimate in `ffmpeg/disk_space.rs`. Say what happens to HDR.
+3. **Interface.** Mirror it in `src/types/media.ts` and `src/config/encoding.ts`, and add it to `validValues.videoCodec` in `src/config/profiles.ts`, or saved profiles and a restored queue that use it are dropped. Check the codec rules in `src/app/App.tsx`, `src/components/convert/EncodingOptions.tsx`, and `src/lib/color.ts`, which assumes that every codec except the copy and H.264 keeps 10-bit HDR.
+4. **Tests.** Add the encoder to `REQUIRED_ENCODERS` and the codec to the matrix and the output assertions in `ffmpeg/corpus.rs`.
+5. **Documentation.** [FORMATS.md](FORMATS.md).
+
+### Add an output container
+
+1. **Core.** Add the variant and its extension to `OutputContainer` in `ffmpeg/types.rs`, and the mapping rules in `ffmpeg/encode.rs`: say what happens to audio, subtitles, chapters, and metadata it cannot hold. Trimming branches on the container in `ffmpeg/segment.rs` and `ffmpeg/queue.rs`.
+2. **Interface.** Mirror it in `src/types/media.ts` and `src/config/encoding.ts`, and add it to `validValues.container` in `src/config/profiles.ts`.
+3. **Tests.** Add it to the matrix and the output assertions in `ffmpeg/corpus.rs`.
+4. **Documentation.** [FORMATS.md](FORMATS.md).
+
+Accepting a new file type as a source is a separate change. The list of extensions is in three places that must agree: `SUPPORTED_VIDEO_EXTENSIONS` in `open_files.rs`, `supportedExtensions` in `src/hooks/useEncodingQueue.ts`, and `fileAssociations` in `src-tauri/tauri.conf.json`.
 
 ### Add something to Settings
 

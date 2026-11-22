@@ -12,4 +12,4 @@
 
 ## Verification
 
-<!-- Commands you ran and what they printed. For a change to the interface, what you saw in the running Tauri app. For a change to bundling or the engine, the bundle check. Say what you could not verify. -->
+<!-- Commands you ran and what they printed. For a user-facing or workflow change, note what you checked: for the interface, what you saw in the running Tauri app, not only in a browser; for bundling or the engine, the bundle check; for a workflow, which run shows it. Say what you could not verify. -->

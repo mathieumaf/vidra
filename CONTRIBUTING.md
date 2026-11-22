@@ -16,16 +16,12 @@ Xcode 26 or later is needed only to regenerate the app icon. Without it, the com
 
 ```sh
 pnpm install
-pnpm tauri dev
-```
-
-`pnpm tauri dev` first installs the FFmpeg engine: it downloads the archive pinned in `scripts/ffmpeg/engine.json`, checks its SHA-256, and puts `ffmpeg` and `ffprobe` in `src-tauri/binaries/`. Nothing is compiled, and a system FFmpeg is never used. `pnpm ffmpeg:prepare` does that step alone.
-
-**Use a throwaway identifier when you try things.** A plain `pnpm tauri dev` shares the data folder of an installed Vidra, so your experiments would land in your real history:
-
-```sh
 pnpm tauri dev --config '{"identifier":"io.github.mathieumaf.vidra.proof"}'
 ```
+
+**Keep the `--config` part.** It gives the development build a throwaway identifier. A plain `pnpm tauri dev` shares the data folder of an installed Vidra, so your experiments would land in your real conversion history. Every development run still shares one browser storage, so decline any offer to restore a pending queue.
+
+`pnpm tauri dev` first installs the FFmpeg engine: it downloads the archive pinned in `scripts/ffmpeg/engine.json`, checks its SHA-256, and puts `ffmpeg` and `ffprobe` in `src-tauri/binaries/`. Nothing is compiled, and a system FFmpeg is never used. `pnpm ffmpeg:prepare` does that step alone, and the tests need it.
 
 Convert only synthetic clips while developing. `node scripts/corpus/generate.mjs --output <new folder>` writes a set.
 
@@ -46,11 +42,12 @@ The rules each area follows are in [AGENTS.md](AGENTS.md). They apply to people 
 ## Prove your change
 
 ```sh
+pnpm ffmpeg:prepare   # once, and after the engine changes
 pnpm check
 git diff --check
 ```
 
-`pnpm check` builds the interface, runs Vitest and the script tests, checks Rust formatting, runs Clippy with warnings as errors, runs the Rust tests, encodes the conversion corpus with the bundled engine, and checks the version files. It stops at the first failure. CI runs the same steps.
+`pnpm check` builds the interface, runs Vitest and the script tests, checks Rust formatting, runs Clippy with warnings as errors, runs the Rust tests, encodes the conversion corpus with the bundled engine, and checks the version files. It stops at the first failure. CI runs the same steps. Two checks are not part of it: the running app, and the application bundle.
 
 - A behavior change comes with a test. [docs/TESTING.md](docs/TESTING.md) says which kind goes where.
 - A test never skips. If it cannot run, it fails.
@@ -61,15 +58,15 @@ git diff --check
 
 - Keep it to one purpose. Source code, interface text, documentation, tests, and commit messages are in English.
 - Fill in the template: what changed and why, the checks, and what you verified by hand.
-- CI runs three jobs: the Apple Silicon validation, the application bundle, and the Rust dependency policy. A pull request is merged when they pass.
-- An automated code review and security review comment on every pull request. Answer each finding: fix it, or say why not.
-- Pull requests are squashed. The title becomes the commit message, so write it as a sentence that says why the change matters.
+- CI runs three jobs on a pull request to `main`: the Apple Silicon validation, the application bundle, and the Rust dependency policy. They must pass on a branch that is up to date with `main`.
+- Answer every review finding, from a person or from an automated reviewer: fix it, or say why not.
+- `main` takes squashed pull requests, so write the title as a sentence that says why the change matters.
 
 Do not commit FFmpeg binaries, credentials, signing material, or media.
 
 ## Dependencies
 
-Vidra is GPL-3.0-or-later, and it bundles FFmpeg. Before adding a dependency or a codec, check that its license can be combined with that, and record a bundled component in `THIRD_PARTY_NOTICES.md`.
+Vidra is GPL-3.0-or-later, and it bundles FFmpeg. Before adding a dependency or a codec, check that its license can be combined with that. Record a bundled component in `THIRD_PARTY_NOTICES.md` and in `src/config/legal.ts`, which is what Settings shows.
 
 Rust crate licenses, security advisories, and crate sources are checked with [cargo-deny](https://embarkstudios.github.io/cargo-deny/) 0.20.2. The rules are in `src-tauri/deny.toml`. CI runs it on every pull request. To run it yourself when Rust dependencies change:
 

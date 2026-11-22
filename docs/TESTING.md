@@ -1,12 +1,14 @@
 # Testing
 
-Every change is proved before it is merged. One command runs the whole proof:
+Every change is proved before it is merged:
 
 ```sh
+pnpm ffmpeg:prepare   # once, and after the engine changes: the tests run the bundled FFmpeg
 pnpm check
+git diff --check
 ```
 
-It stops at the first failure. CI runs the same steps, each as its own step, plus two things a laptop does not need on every change: the unsigned application bundle and the Rust dependency policy.
+`pnpm check` stops at the first failure. CI runs the same steps, each as its own step, plus two things a laptop does not need on every change: the unsigned application bundle and the Rust dependency policy. A change to the interface is also checked [in the app](#in-the-app).
 
 ## The layers
 
@@ -41,7 +43,7 @@ It stops at the first failure. CI runs the same steps, each as its own step, plu
 | Path validation, the queue, output publication | A Rust test in the module's test section or its `tests.rs` file. These use temporary folders. |
 | What an encode produces | A case in the conversion corpus. |
 | An engine or release script | A `*.node-test.mjs` file next to it. |
-| A workflow | An assertion in `scripts/ci/workflows.node-test.mjs`. A workflow cannot be run from a pull request, so its properties are tested as text. |
+| A workflow | An assertion in `scripts/ci/workflows.node-test.mjs`. `ci.yml` runs on the pull request itself. The release, update feed, and engine workflows run only from a tag, a published release, or by hand, so their properties are tested as text. |
 
 ## The conversion corpus
 
@@ -51,7 +53,7 @@ It is one ignored Rust test, so plain `cargo test` stays fast:
 
 ```sh
 pnpm test:corpus                          # the reduced matrix, a few seconds
-VIDRA_CORPUS_MATRIX=full pnpm test:corpus # every preset with every codec and container
+VIDRA_CORPUS_MATRIX=full pnpm test:corpus # every quality preset with every re-encode codec and container
 VIDRA_CORPUS_KEEP=1 pnpm test:corpus      # leave the clips and outputs in place
 ```
 
@@ -69,7 +71,9 @@ VIDRA_CORPUS_KEEP=1 pnpm test:corpus      # leave the clips and outputs in place
 | `corrupt` | The first bytes of a real MP4, truncated so inspection fails. |
 | `unknown-transfer` | 10-bit HEVC with BT.2020 primaries, no transfer characteristic, and stream-level mastering-display metadata. |
 
-The reduced matrix encodes every quality preset with efficient H.264 MP4, the Smaller file profile (efficient H.265 MP4), and the Fast export profile (hardware H.264 MP4) on `sdr-h264-aac`. Every clip is also encoded with Copy, H.264, H.265, and AV1 into both MP4 and MKV at the balanced preset. The full matrix repeats every quality preset for every re-encode codec and container, and adds hardware H.264 and H.265.
+The reduced matrix encodes every quality preset with efficient H.264 MP4, the Smaller file profile (efficient H.265 MP4), and the Fast export profile (hardware H.264 MP4) on `sdr-h264-aac`. Every clip except `corrupt` is also attempted with Copy, H.264, H.265, and AV1 into both MP4 and MKV at the balanced preset. The full matrix repeats every quality preset for every re-encode codec and container, and adds hardware H.264 and H.265.
+
+Some attempts must be refused, and the test checks the refusal: `corrupt` fails inspection, copying the video of `audio-only` is rejected, and so is H.264 for `unknown-transfer`. The summary line counts them as clean rejections.
 
 Known gaps:
 
@@ -100,4 +104,6 @@ Convert only synthetic clips, into a temporary folder. Decline any offer to rest
 
 ## What only a person can check
 
-Signing, notarization, installing from the DMG, playing an output, and installing an update need a signed release. They are the short list in [RELEASING.md](RELEASING.md#checks-a-person-makes). VoiceOver is covered by the checklist in [ACCESSIBILITY.md](ACCESSIBILITY.md).
+- **Playback.** The tests inspect an output, they do not play it. Play one whenever a change affects what is encoded.
+- **The signed release.** The release workflow checks the code signature, the notarization ticket, and Gatekeeper's verdict by itself. Installing from the DMG, and installing the update once it is published, are the short list in [RELEASING.md](RELEASING.md#checks-a-person-makes).
+- **VoiceOver.** The checklist is in [ACCESSIBILITY.md](ACCESSIBILITY.md).

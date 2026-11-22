@@ -33,14 +33,14 @@ The resolution can stay at the source's or be limited from 360p through 4K. Vidr
 | Opus | Switches the container to MKV. | Copies an Opus track when its bitrate and channel layout stay as they are. Otherwise encodes with libopus. |
 | None | No audio. | No audio. |
 
-When the source bitrate is known, the encoded bitrate stays at or below it. Channels are only reduced, never added.
+When the source bitrate is known, the encoded bitrate stays at or below it. When the source's channel count is known, channels are only reduced, never added.
 
 ## Subtitles, chapters, and metadata
 
 | Kind | Behavior |
 | --- | --- |
 | MP4 subtitles | Text tracks (SubRip, ASS, SSA, MOV text, WebVTT) are converted to MOV text. ASS and SSA styling is dropped. Image-based tracks, including PGS and DVD subtitles, are left out. |
-| MKV subtitles | Tracks are copied, including image-based tracks. MOV text is converted to SubRip, because Matroska cannot store MOV text. |
+| MKV subtitles | Tracks are copied, including image-based tracks. MOV text is converted to SubRip, because Matroska cannot store MOV text. A trim also rewrites text tracks: see [TRIM.md](TRIM.md). |
 | Chapters and metadata | Kept for MP4 and MKV when those options are on, which is the default. |
 
 You choose which audio and subtitle tracks to keep.
