@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, readFileSync } from "node:fs";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,19 +40,15 @@ export function bundleProblems({ bundle, expected, plist = infoPlist(bundle), ve
   expectPlist("CFBundleIdentifier", expected.identifier);
   expectPlist("LSMinimumSystemVersion", expected.minimumSystemVersion);
 
-  const main = join(bundle, "Contents", "MacOS", String(plist.CFBundleExecutable ?? ""));
-  for (const [label, path] of [["the application executable", main]]) {
-    try {
-      accessSync(path, constants.X_OK);
-    } catch {
-      problems.push(`The bundle has no runnable ${label} at ${path}.`);
-    }
+  const executable = plist.CFBundleExecutable;
+  if (typeof executable !== "string" || !/^[^/.][^/]*$/.test(executable)) {
+    problems.push(`Info.plist CFBundleExecutable is ${JSON.stringify(executable)}, expected a file name.`);
+  } else if (!runnableFile(join(bundle, "Contents", "MacOS", executable))) {
+    problems.push(`The bundle has no runnable application executable at Contents/MacOS/${executable}.`);
   }
   for (const name of ["ffmpeg", "ffprobe"]) {
     const sidecar = join(bundle, "Contents", "MacOS", name);
-    try {
-      accessSync(sidecar, constants.X_OK);
-    } catch {
+    if (!runnableFile(sidecar)) {
       problems.push(`The bundle has no runnable ${name} sidecar at ${sidecar}.`);
       continue;
     }
@@ -72,6 +68,15 @@ export function bundleProblems({ bundle, expected, plist = infoPlist(bundle), ve
     problems.push("The bundled THIRD_PARTY_NOTICES.md differs from the one in the repository.");
   }
   return problems;
+}
+
+function runnableFile(path) {
+  try {
+    accessSync(path, constants.X_OK);
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /** What the repository says a bundle built from it contains. */

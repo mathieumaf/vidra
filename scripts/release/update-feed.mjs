@@ -1,5 +1,5 @@
 import { assertSignedVersionsMatch } from "./updater-signature.mjs";
-import { compareVersions, isOfficialVersion, versionFromReleaseTag } from "./version.mjs";
+import { compareVersions, versionFromReleaseTag } from "./version.mjs";
 
 // Installed copies of Vidra read one update feed: the `latest.json` asset of
 // the rolling `updater-manifest` release. Copies installed from a 0.2.0 beta
@@ -9,7 +9,10 @@ import { compareVersions, isOfficialVersion, versionFromReleaseTag } from "./ver
 export const FEED_RELEASE_TAG = "updater-manifest";
 export const FEED_ASSETS = ["latest.json", "beta.json"];
 
-/** A manifest the updater can use: a version and, per platform, an HTTPS URL and a signature. */
+/** The entry of the update manifest that a copy of Vidra on Apple Silicon selects. */
+export const REQUIRED_PLATFORM = "darwin-aarch64";
+
+/** A manifest the updater can read: a semantic version and, per platform, an HTTPS URL and a signature. */
 export function validateManifest(manifest) {
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
     throw new Error("The update manifest must be a JSON object.");
@@ -17,8 +20,13 @@ export function validateManifest(manifest) {
   if (typeof manifest.version !== "string") {
     throw new Error("The update manifest must contain a version.");
   }
-  isOfficialVersion(manifest.version);
-  const platforms = Object.values(manifest.platforms ?? {});
+  // Throws when the version is not a semantic version. A feed asset left by
+  // the last release candidate holds a prerelease version, which is valid here.
+  compareVersions(manifest.version, manifest.version);
+  if (!manifest.platforms || typeof manifest.platforms !== "object" || Array.isArray(manifest.platforms)) {
+    throw new Error("The update manifest must contain a platforms object.");
+  }
+  const platforms = Object.values(manifest.platforms);
   if (platforms.length === 0 || platforms.some((platform) => (
     !platform || typeof platform.url !== "string" || typeof platform.signature !== "string"
   ))) {
@@ -49,6 +57,9 @@ export function validateReleaseManifest({ manifest, tag, assets }) {
   if (manifest.version !== version) {
     throw new Error(`The update manifest announces ${manifest.version}, but the release tag is ${tag}.`);
   }
+  if (!Object.hasOwn(manifest.platforms, REQUIRED_PLATFORM)) {
+    throw new Error(`The update manifest has no ${REQUIRED_PLATFORM} entry, so no copy of Vidra could select this update.`);
+  }
   assertSignedVersionsMatch(manifest);
   const allowed = new Set(updaterArchiveUrls(assets));
   for (const [platform, entry] of Object.entries(manifest.platforms)) {
@@ -60,15 +71,47 @@ export function validateReleaseManifest({ manifest, tag, assets }) {
 }
 
 /**
- * Whether a feed asset moves to the incoming release. The feed only moves
- * forward: an equal or older release never replaces what is published.
+ * What each feed asset must hold after a release is published: the newest of
+ * that release and everything the feed already offers. The feed only moves
+ * forward, and a feed asset that went missing is restored from the other one,
+ * so an older release can never fill the gap.
+ *
+ * `current` maps each feed asset name to its manifest, or to null when the
+ * asset is missing. Returns the manifest to offer and the assets to write.
  */
-export function feedMovesTo(incoming, current) {
-  if (current === null || current === undefined) return true;
-  if (!current || typeof current.version !== "string") {
-    throw new Error("The published update feed is not a manifest with a version. Repair it by hand before publishing.");
+export function feedUpdate(incoming, current) {
+  let target = incoming;
+  for (const [asset, manifest] of Object.entries(current)) {
+    if (manifest === null) continue;
+    if (!manifest || typeof manifest.version !== "string") {
+      throw new Error(`The published ${asset} is not a manifest with a version. Repair the update feed by hand before publishing.`);
+    }
+    if (compareVersions(manifest.version, target.version) > 0) target = manifest;
   }
-  return compareVersions(incoming.version, current.version) > 0;
+  const assets = Object.entries(current)
+    .filter(([, manifest]) => manifest === null || compareVersions(target.version, manifest.version) > 0)
+    .map(([asset]) => asset);
+  return { target, assets };
+}
+
+/**
+ * The release workflow attaches the disk image's checksum and the FFmpeg
+ * corresponding sources in its last step, after every check has passed. A
+ * release without them comes from a run that did not finish.
+ */
+export function assertReleaseComplete(assets, tag) {
+  const names = (assets ?? []).map((asset) => asset?.name).filter((name) => typeof name === "string");
+  const required = [
+    ["an updater archive", (name) => name.endsWith(".app.tar.gz")],
+    ["the updater archive's signature", (name) => name.endsWith(".app.tar.gz.sig")],
+    ["a disk image", (name) => name.endsWith(".dmg")],
+    ["the disk image's checksum", (name) => name.endsWith(".dmg.sha256")],
+    ["the FFmpeg corresponding sources (SHA256SUMS)", (name) => name === "SHA256SUMS"],
+  ];
+  const missing = required.filter(([, matches]) => !names.some(matches)).map(([label]) => label);
+  if (missing.length > 0) {
+    throw new Error(`Release ${tag} is incomplete, so its release workflow did not finish. Missing: ${missing.join(", ")}.`);
+  }
 }
 
 /** Refuse to offer a release that GitHub does not show as a published, official one. */

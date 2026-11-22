@@ -37,7 +37,11 @@ const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json")
 const recipe = recipeEntry(manifest, target);
 const expectedVersion = recipe.sources.ffmpeg.version;
 const markerPath = engineMarkerPath(binaryDirectory, target);
-const marker = await readOptional(markerPath);
+// On a GitHub runner the sidecars always come out of the verified archive.
+// Whatever is already in src-tauri/binaries, a marker included, is ignored
+// there, so nothing but the pinned archive can reach a release.
+const trustInstalled = process.env.CI !== "true";
+const marker = trustInstalled ? await readOptional(markerPath) : "";
 
 // An engine compiled here from the current recipe stays in place, so a recipe
 // change can be developed before its archive is published.
@@ -56,7 +60,7 @@ if (pin.target !== target) {
 const archivePath = join(rootDirectory, ".cache", "ffmpeg", target, pin.archiveName);
 await downloadEngine(pin, archivePath);
 
-if (marker === pin.sha256 && sidecarsReport(expectedVersion)) {
+if (marker !== "" && marker === pin.sha256 && sidecarsReport(expectedVersion)) {
   console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);
 } else {
   await installEngineBinaries({

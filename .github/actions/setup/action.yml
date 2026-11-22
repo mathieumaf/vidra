@@ -27,7 +27,8 @@ runs:
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: .node-version
-        cache: pnpm
+        cache: ${{ inputs.cache == 'true' && 'pnpm' || '' }}
+        package-manager-cache: ${{ inputs.cache }}
 
     # rust-toolchain.toml names the version, the components, and the target.
     - name: Install the pinned Rust toolchain
@@ -47,7 +48,7 @@ runs:
       run: pnpm install --frozen-lockfile
 
     # The archive is re-hashed against scripts/ffmpeg/engine.json every time
-    # it is used, cached or not.
+    # it is used, cached or not, and the sidecars are extracted from it again.
     - name: Cache the FFmpeg engine archive
       if: inputs.cache == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -9,9 +9,12 @@ on:
 permissions:
   contents: write
 
+# One run at a time, and none dropped: every published release is checked
+# against the feed in turn.
 concurrency:
   group: update-feed
   cancel-in-progress: false
+  queue: max
 
 jobs:
   publish:

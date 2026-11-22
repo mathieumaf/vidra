@@ -47,7 +47,7 @@ pull request ──► CI ──► merge ──► tag vX.Y.Z ──► Release
 | Every pull request | `ci.yml`, job "Build the application bundle" | The application bundles, unsigned, exactly as the release does. The bundle has the right version, identifier, and minimum macOS version, the pinned FFmpeg and FFprobe, and the license notices. |
 | Every pull request | `ci.yml`, job "Check Rust dependency policy" | Crate licenses, advisories, and sources (`cargo-deny`). |
 | A `vX.Y.Z` tag | `release.yml` | See below. |
-| A release published by hand | `publish-update-feed.yml` | The release is published and official, its manifest announces its own version, is signed for that version, and downloads its own archive. The feed only moves forward. |
+| A release published by hand | `publish-update-feed.yml` | The release is published, official, and complete. Its manifest announces its own version and downloads its own archive, and its signatures verify that archive with the committed public key. The feed only moves forward. |
 
 The Release workflow, in order:
 
@@ -55,13 +55,13 @@ The Release workflow, in order:
 2. installs the pinned toolchains and the pinned FFmpeg engine, without any cache;
 3. runs `pnpm check`: the same proof as CI, on the tagged commit;
 4. exports the engine's GPL corresponding sources and checks each one against the checksum the recipe pins;
-5. builds, signs, and notarizes the application and the DMG, and creates a draft release with the update archive, its signature, and its manifest;
+5. builds, signs, and notarizes the application and the DMG, and creates a draft release with the update archive, its signature, and its manifest. The manifest's note, which the app shows with the update, is one fixed line that points to the release page;
 6. checks the signed bundle: version, identifier, minimum macOS version, engine version, license notices;
 7. checks the update manifest on the draft: it announces the tag's version, its signatures verify the archive built on the runner with the committed public key, they were made for that version, and it downloads that archive;
 8. checks the code signature, the notarization ticket, and Gatekeeper's verdict on the application inside the DMG;
 9. attaches the DMG checksum and the corresponding sources, and writes the changelog section as the release notes.
 
-A failure at any step leaves no published release. Fix the cause, delete the tag and the draft, and tag again.
+If a step fails, or the run is cancelled or times out, the workflow deletes the draft, so a release that did not pass every check cannot be published. The tag stays: delete it, fix the cause, and tag again.
 
 ## Checks a person makes
 
@@ -86,14 +86,15 @@ The update feed only moves forward, so publishing an older release changes nothi
 
 ```sh
 gh release download vX.Y.(Z-1) --pattern latest.json --dir /tmp/previous
-gh release upload updater-manifest /tmp/previous/latest.json --clobber
+cp /tmp/previous/latest.json /tmp/previous/beta.json
+gh release upload updater-manifest /tmp/previous/latest.json /tmp/previous/beta.json --clobber
 ```
 
 Copies that already installed the bad release stay on it until the fixed version is published. Vidra never downgrades.
 
 ## The update feed
 
-Installed copies read one file: the `latest.json` asset of the rolling `updater-manifest` release. It is not an application release. Copies installed from a 0.2.0 beta or release candidate read `beta.json` there first, so both assets receive every official release.
+Installed copies read one file: the `latest.json` asset of the rolling `updater-manifest` release. It is not an application release. Copies installed from a 0.2.0 beta or release candidate read `beta.json` there first, so both assets receive every official release. If one of the two goes missing, the next publication restores it from the other, never from an older release.
 
 The app offers an update only for a newer official version. It installs it only when the archive's signature verifies with the public key in `src-tauri/tauri.conf.json` and was made for the announced version (`requireSignedVersion`), and only while no conversion is queued, running, or paused.
 
@@ -109,8 +110,10 @@ The engine is the FFmpeg and FFprobe build that Vidra bundles. One archive is us
 
 A change to the sources or to the recipe version changes the fingerprint. Preparation then refuses the pinned archive, and CI fails until a new archive is published and pinned. To update the engine:
 
-1. Change `scripts/ffmpeg/sources.json`, and `BUILD_RECIPE_VERSION` if the build commands change. Update the fingerprint asserted in `scripts/ffmpeg/target.node-test.mjs` and the component versions in `THIRD_PARTY_NOTICES.md`.
-2. Compile it locally and prove it, full corpus included. The locally compiled engine stays installed until the recipe changes again.
+1. **Change the recipe.** Edit `scripts/ffmpeg/sources.json`, and raise `BUILD_RECIPE_VERSION` in `recipe.mjs` if the build commands change.
+2. **Describe the new archive** in `scripts/ffmpeg/engine.json`: the new `version`, `recipeVersion`, and `recipeFingerprint`, a new `tag` (`ffmpeg-engine-<version>-r<recipe>`), `archiveName`, and `url`. Remove `archiveRoot`, and set `sha256` to `"placeholder"`. `node --test scripts/ffmpeg/target.node-test.mjs` prints the new fingerprint when it fails: put it in that test too.
+3. **Follow the version through.** For a new FFmpeg version, update the tests that name the old one (`git grep -n "8\.1\.3" -- scripts src src-tauri/src`) and the component versions in `THIRD_PARTY_NOTICES.md` and `src/config/legal.ts`.
+4. **Compile it locally and prove it**, full corpus included. The locally compiled engine stays installed until the recipe changes again, so `pnpm check` and `pnpm tauri dev` use it while the checksum is still the placeholder.
 
    ```sh
    brew install autoconf automake libtool cmake meson ninja pkgconf nasm
@@ -119,9 +122,10 @@ A change to the sources or to the recipe version changes the fingerprint. Prepar
    VIDRA_CORPUS_MATRIX=full pnpm test:corpus
    ```
 
-3. In `scripts/ffmpeg/engine.json`, set the new `version`, `recipeVersion`, `recipeFingerprint`, a new `tag` (`ffmpeg-engine-<version>-r<recipe>`), `archiveName`, and `url`, remove `archiveRoot`, and set `sha256` to `"placeholder"`. Push the branch.
-4. Run the "FFmpeg engine" workflow on that branch. It compiles the recipe on a GitHub runner, checks the result, and uploads the archive with its `.sha256` file to that tag. It refuses a tag that already has an archive.
-5. Replace the placeholder with the published SHA-256. CI now installs the new archive and goes green.
+5. **Publish the archive.** Push the branch and run the "FFmpeg engine" workflow on it. It refuses a tag that already has an archive, compiles the recipe on a GitHub runner, checks the result, and uploads the archive with its `.sha256` file to that tag.
+6. **Pin it.** Replace the placeholder with the published SHA-256. CI now installs the new archive and goes green.
+
+That checksum is what everything else trusts. When `sha256` changes in a pull request, check that it is the value in the `.sha256` file of the release the workflow created from that pull request's commit. The archive pinned today, `ffmpeg-dev-8.1.3-r6`, was built by this workflow's predecessor from the same recipe.
 
 A source download retries transport errors, and the Opus source has a mirror. Every location must match the same pinned SHA-256.
 

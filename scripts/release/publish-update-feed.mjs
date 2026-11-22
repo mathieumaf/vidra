@@ -1,14 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   assertPublishedOfficialRelease,
+  assertReleaseComplete,
   FEED_ASSETS,
   FEED_RELEASE_TAG,
-  feedMovesTo,
+  feedUpdate,
   validateReleaseManifest,
 } from "./update-feed.mjs";
+import { verifyUpdaterSignature } from "./updater-signature.mjs";
 import { versionFromReleaseTag } from "./version.mjs";
 
 // Runs when a release is published. It copies that release's manifest into the
@@ -35,6 +38,9 @@ function release(releaseTag, allowMissing = false) {
 }
 
 const directory = await mkdtemp(join(tmpdir(), "vidra-update-feed-"));
+// VIDRA_TAURI_CONFIG lets the tests supply a configuration with a test key.
+const tauriConfigPath = process.env.VIDRA_TAURI_CONFIG
+  ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src-tauri", "tauri.conf.json");
 
 async function download(releaseTag, asset, subdirectory) {
   const destination = join(directory, subdirectory);
@@ -42,31 +48,54 @@ async function download(releaseTag, asset, subdirectory) {
   return JSON.parse(await readFile(join(destination, asset), "utf8"));
 }
 
+// An installed copy refuses an update whose signature does not verify its
+// archive. Check that here, with the public key the app ships, so the feed
+// never offers an update that cannot be installed.
+async function verifyArchiveSignatures(manifest, assets) {
+  const archives = assets.filter((asset) => asset.name.endsWith(".app.tar.gz"));
+  if (archives.length !== 1) {
+    throw new Error(`Release ${tag} must have exactly one updater archive, found ${archives.length}.`);
+  }
+  const destination = join(directory, "archive");
+  gh("release", "download", tag, "--repo", repository, "--pattern", archives[0].name, "--dir", destination);
+  const data = await readFile(join(destination, archives[0].name));
+  const publicKey = JSON.parse(await readFile(tauriConfigPath, "utf8")).plugins.updater.pubkey;
+  for (const entry of Object.values(manifest.platforms)) {
+    verifyUpdaterSignature({ data, signature: entry.signature, publicKey });
+  }
+}
+
 try {
   const published = release(tag);
   assertPublishedOfficialRelease(published, tag);
+  assertReleaseComplete(published.assets, tag);
   const incoming = validateReleaseManifest({
     manifest: await download(tag, "latest.json", "incoming"),
     tag,
     assets: published.assets,
   });
+  await verifyArchiveSignatures(incoming, published.assets);
 
   const feed = release(FEED_RELEASE_TAG, true);
   if (feed?.draft) throw new Error("The update feed release must be published.");
 
-  const uploads = [];
+  const current = {};
   for (const asset of FEED_ASSETS) {
-    const current = feed?.assets.some((item) => item.name === asset)
+    current[asset] = feed?.assets.some((item) => item.name === asset)
       ? await download(FEED_RELEASE_TAG, asset, `current-${asset}`)
       : null;
-    if (!feedMovesTo(incoming, current)) {
-      console.log(`${asset} already offers ${current.version}. It stays.`);
-      continue;
-    }
+  }
+  const { target, assets } = feedUpdate(incoming, current);
+  if (target !== incoming) {
+    console.log(`The update feed already offers ${target.version}, which is newer than ${incoming.version}.`);
+  }
+
+  const uploads = [];
+  for (const asset of assets) {
     const path = join(directory, asset);
-    await writeFile(path, `${JSON.stringify(incoming, null, 2)}\n`);
+    await writeFile(path, `${JSON.stringify(target, null, 2)}\n`);
     uploads.push(path);
-    console.log(`${asset} moves from ${current?.version ?? "nothing"} to ${incoming.version}.`);
+    console.log(`${asset} moves from ${current[asset]?.version ?? "nothing"} to ${target.version}.`);
   }
 
   if (uploads.length === 0) {

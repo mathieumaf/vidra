@@ -79,13 +79,29 @@ test("a release runs only for a vX.Y.Z tag, on main, in the release environment,
   assert.match(release, /^on:\n  push:\n    tags:\n      - "v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+"\n/m);
   assert.doesNotMatch(release, /workflow_dispatch|pull_request|schedule/);
   assert.match(release, /^    environment: release$/m);
-  assert.match(release, /git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
+  // The full ref, so a tag named origin/main cannot stand in for the branch.
+  assert.match(release, /git merge-base --is-ancestor "\$GITHUB_SHA" refs\/remotes\/origin\/main\n/);
+  // One run per tag: a shared group would drop a pending release.
+  assert.match(release, /^concurrency:\n  group: release-\$\{\{ github\.ref \}\}\n  cancel-in-progress: false\n/m);
   assert.match(release, /releaseDraft: true/);
   assert.match(release, /prerelease: false/);
   assert.match(release, /gh release edit "\$GITHUB_REF_NAME" --draft /);
   // A release never depends on a cache, and never compiles or overrides FFmpeg.
   assert.match(release, /uses: \.\/\.github\/actions\/setup\n        with:\n          cache: "false"/);
   assert.doesNotMatch(release, /--build|brew install/);
+  // Every cache in the setup action obeys that input.
+  assert.doesNotMatch(setupAction, /cache: pnpm/);
+  assert.match(setupAction, /cache: \$\{\{ inputs\.cache == 'true' && 'pnpm' \|\| '' \}\}/);
+  assert.equal(setupAction.match(/if: inputs\.cache == 'true'/g)?.length, 2);
+});
+
+test("a release that did not finish leaves no draft that could be published", () => {
+  const release = workflows["release.yml"];
+  const cleanup = release.indexOf("if: ${{ !success() }}");
+  assert.ok(cleanup > release.indexOf("gh release upload"), "the cleanup must be the last step");
+  assert.match(release.slice(cleanup), /--json isDraft --jq \.isDraft[^\n]*= "true"[\s\S]*gh release delete "\$GITHUB_REF_NAME" --yes\n/);
+  // The tag is kept, and a published release is never deleted.
+  assert.doesNotMatch(release, /--cleanup-tag|git push .*--delete|git tag -d/);
 });
 
 test("a release proves the source and verifies what it built before the draft is complete", () => {
@@ -129,13 +145,17 @@ test("the update feed moves only for a published application release, with scrip
   assert.match(feed, /if: startsWith\(github\.event\.release\.tag_name, 'v'\) && !github\.event\.release\.prerelease/);
   assert.match(feed, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
   assert.match(feed, /node scripts\/release\/publish-update-feed\.mjs/);
+  // Runs are serialized and none is dropped while another one is waiting.
+  assert.match(feed, /^concurrency:\n  group: update-feed\n  cancel-in-progress: false\n  queue: max\n/m);
 });
 
 test("the engine workflow is manual and never replaces a published archive", () => {
   const engine = workflows["ffmpeg-engine.yml"];
   assert.match(engine, /^on:\n  workflow_dispatch:\n/m);
-  assert.doesNotMatch(engine, /--clobber/);
-  assert.match(engine, /A published archive is never replaced/);
+  assert.doesNotMatch(engine, /--clobber|gh release upload/);
+  // The refusal comes before the compilation, which takes several minutes.
+  const refusal = engine.indexOf("A published archive is never replaced");
+  assert.ok(refusal > 0 && refusal < engine.indexOf("prepare.mjs --build"));
 });
 
 test("untrusted event text never reaches a shell command directly", () => {

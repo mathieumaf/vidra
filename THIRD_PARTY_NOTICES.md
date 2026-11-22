@@ -19,7 +19,7 @@ The release build currently links these optional libraries statically:
 - Opus, licensed under the BSD 3-Clause License;
 - zimg, licensed under the Do What The Fuck You Want To Public License version 2.
 
-The bundled FFmpeg and FFprobe come from one archive, pinned by SHA-256 in `scripts/ffmpeg/engine.json`. It is built by the repository's "FFmpeg engine" workflow from the pinned sources, checksums, and configure arguments in `scripts/ffmpeg/sources.json` and `scripts/ffmpeg/build.mjs`, and it contains those corresponding source archives. Development, CI, and public builds all install that same archive. The corresponding sources are also attached to each GitHub release.
+The bundled FFmpeg and FFprobe come from one archive, pinned by SHA-256 in `scripts/ffmpeg/engine.json`. It is built on a GitHub runner by the repository's "FFmpeg engine" workflow, or for the archive pinned today by that workflow's predecessor, from the pinned sources, checksums, and configure arguments in `scripts/ffmpeg/sources.json` and `scripts/ffmpeg/build.mjs`. It contains those corresponding source archives. Development, CI, and public builds all install that same archive. The corresponding sources are also attached to each GitHub release.
 
 See [FFmpeg's legal and license documentation](https://ffmpeg.org/legal.html).
 

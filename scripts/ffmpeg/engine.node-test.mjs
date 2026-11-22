@@ -25,10 +25,12 @@ import { recipeEntry } from "./target.mjs";
 const manifest = JSON.parse(await readFile(new URL("./sources.json", import.meta.url), "utf8"));
 const recipe = recipeEntry(manifest, "aarch64-apple-darwin");
 
-test("pins one published engine archive built from the current recipe", async () => {
+// These hold at every step of an engine update, including while the new
+// archive is not published yet and the checksum is still the placeholder.
+// Whether the archive really has that checksum is checked by prepare.mjs.
+test("the engine pin describes an archive built from the current recipe", async () => {
   const pin = await readEnginePin();
   assert.equal(pin.version, recipe.sources.ffmpeg.version);
-  assert.equal(pin.version, "8.1.3");
   assert.equal(pin.recipeVersion, BUILD_RECIPE_VERSION);
   assert.equal(pin.target, "aarch64-apple-darwin");
   // The application release workflow runs on vX.Y.Z tags only.
@@ -39,8 +41,7 @@ test("pins one published engine archive built from the current recipe", async ()
     `https://github.com/mathieumaf/vidra/releases/download/${pin.tag}/${pin.archiveName}`,
   );
   assert.equal(pin.recipeFingerprint, recipeFingerprint(recipe));
-  assert.equal(pin.sha256, "d89964bedaa6bfd660cb2c39adbda7e04ff00580e10922da9b54b3bb1cfe82c8");
-  assert.doesNotThrow(() => assertEnginePinned(pin));
+  assert.match(pin.sha256, new RegExp(`^(?:[0-9a-f]{64}|${ENGINE_SHA256_PLACEHOLDER})$`));
   assert.doesNotThrow(() => assertEngineMatchesRecipe(pin, recipe));
 });
 
@@ -157,6 +158,20 @@ test("exports corresponding sources only when they are the ones the recipe pins"
       }),
       /Unexpected: ffmpeg-8\.1\.3\.tar\.xz/,
     );
+
+    // Nothing already in the destination is ever removed.
+    const occupied = join(fixture.directory, "occupied");
+    await mkdir(occupied);
+    await writeFile(join(occupied, "keep.txt"), "mine\n");
+    await assert.rejects(
+      () => exportCorrespondingSources({ archivePath: packaged.archivePath, recipe: fixture.recipe, outputDirectory: occupied }),
+      /is not empty\. Export the corresponding sources into a new or empty folder/,
+    );
+    assert.equal(await readFile(join(occupied, "keep.txt"), "utf8"), "mine\n");
+    const empty = join(fixture.directory, "empty");
+    await mkdir(empty);
+    await exportCorrespondingSources({ archivePath: packaged.archivePath, recipe: fixture.recipe, outputDirectory: empty });
+    assert.equal((await readdir(empty)).length, 3);
   } finally {
     await fixture.remove();
   }
@@ -204,6 +219,15 @@ test("installs the pinned archive first and compiles only when a build is reques
   assert.ok(download > pinCheck);
   assert.match(source.slice(0, buildImport), /if \(options\.build\) \{\s*$/);
   assert.doesNotMatch(source.slice(buildImport + buildStatement.length), /build\.mjs/);
+});
+
+test("on a GitHub runner, installed sidecars and their marker are never trusted", () => {
+  const source = readFileSync(new URL("./prepare.mjs", import.meta.url), "utf8");
+  assert.match(source, /const trustInstalled = process\.env\.CI !== "true";/);
+  assert.match(source, /const marker = trustInstalled \? await readOptional\(markerPath\) : "";/);
+  // Both shortcuts depend on the marker, so both are off when it is empty.
+  assert.match(source, /marker === localBuildMarker\(recipeFingerprint\(recipe\)\)/);
+  assert.match(source, /marker !== "" && marker === pin\.sha256/);
 });
 
 async function engineFixture() {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { access, chmod, copyFile, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -184,7 +185,8 @@ export async function installEngineBinaries({
  * Write the archive's source archives, their checksums, and the build
  * configuration into `outputDirectory`, for publication next to an
  * application release. Every source archive must be one the recipe pins, with
- * the pinned SHA-256, and every pinned source must be present.
+ * the pinned SHA-256, and every pinned source must be present. The folder
+ * must be new or empty: nothing that is already there is removed.
  */
 export async function exportCorrespondingSources({
   archivePath,
@@ -206,7 +208,10 @@ export async function exportCorrespondingSources({
     ].filter(Boolean).join(" "));
   }
 
-  const temporary = `${outputDirectory}.extract`;
+  if ((await exists(outputDirectory)) && (await readdir(outputDirectory)).length > 0) {
+    throw new Error(`${outputDirectory} is not empty. Export the corresponding sources into a new or empty folder.`);
+  }
+  const temporary = await mkdtemp(join(tmpdir(), "vidra-engine-sources-"));
   await extract(archivePath, temporary, [`${root}/corresponding-sources`]);
   try {
     const extracted = join(temporary, root, "corresponding-sources");
@@ -216,7 +221,6 @@ export async function exportCorrespondingSources({
         throw new Error(`Checksum mismatch for ${name}: the recipe pins ${expected}, the archive holds ${digest}.`);
       }
     }
-    await rm(outputDirectory, { recursive: true, force: true });
     await mkdir(outputDirectory, { recursive: true });
     const files = await readdir(extracted);
     for (const name of files) {

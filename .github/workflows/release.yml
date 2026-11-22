@@ -11,8 +11,10 @@ on:
 permissions:
   contents: write
 
+# One run per tag. Runs for different tags do not wait for each other, so a
+# pending release is never dropped.
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -32,7 +34,7 @@ jobs:
           fetch-depth: 0
 
       - name: Require a tag on main
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
 
       - name: Set up the build
         uses: ./.github/actions/setup
@@ -83,7 +85,9 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Vidra ${{ github.ref_name }}
-          releaseBody: See CHANGELOG.md for the changes in this release.
+          # This line also becomes the note the app shows with the update. The
+          # release page gets the changelog section in the last step.
+          releaseBody: The changes in this release are listed on its GitHub release page.
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
@@ -148,3 +152,14 @@ jobs:
 
           gh release upload "$GITHUB_REF_NAME" release-assets/ffmpeg-sources/* "$DMG_PATH.sha256" --clobber
           gh release edit "$GITHUB_REF_NAME" --draft --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      # A draft that failed a check, or whose run was cancelled or timed out,
+      # must not stay publishable. The tag stays.
+      - name: Delete the draft unless every step succeeded
+        if: ${{ !success() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi
