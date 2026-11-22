@@ -40,7 +40,7 @@ The screenshots show the real interface rendered in a browser with sample media 
 - **Nothing leaves your Mac.** No account, no telemetry, no upload. The network is used for three things only: the check for a new release on GitHub, the download of that release, and the two GitHub links you can open from Settings.
 - **The source file is never modified or deleted.**
 - **An existing file is replaced only when you confirmed it**, only after the conversion succeeded, and only if it is still the same file. Until then it stays in place.
-- **A finished video is not thrown away because its name is taken.** It is saved under the next free numbered name: `holiday-2.mp4`, then `holiday-3.mp4`. A name that already ends in a number keeps it, so `movie-2024.mp4` continues with `movie-2024-2.mp4`. If no such name can be used, the video is kept under a recovery name and Vidra says where.
+- **A finished video is not thrown away because its name is taken.** It is saved under the next free numbered name: `holiday-2.mp4`, then `holiday-3.mp4`. A larger number at the end, such as a year, stays part of the name, so `movie-2024.mp4` continues with `movie-2024-2.mp4`. If no such name can be used, the video is kept under a recovery name and Vidra says where.
 - **Encoding writes a temporary file** in the destination folder and moves it into place after success. Failure, cancellation, and quitting may remove that temporary file.
 - **Too little free space?** Vidra asks before it starts.
 
@@ -73,7 +73,7 @@ pnpm install
 pnpm tauri dev --config '{"identifier":"io.github.mathieumaf.vidra.proof"}'
 ```
 
-The `--config` part gives the development build its own data folder, so it does not write into the history of a Vidra you have installed. The first run downloads the pinned FFmpeg engine and checks its SHA-256. It does not compile FFmpeg, and it never uses an FFmpeg installed on your system. rustup installs the Rust version named in `rust-toolchain.toml` by itself.
+The `--config` part gives the development build its own data folder, so it does not write into the history of a Vidra you have installed. Development runs still share one browser storage, so decline any offer to restore a pending queue. The first run downloads the pinned FFmpeg engine and checks its SHA-256. It does not compile FFmpeg, and it never uses an FFmpeg installed on your system. rustup installs the Rust version named in `rust-toolchain.toml` by itself.
 
 Before a pull request, run `pnpm check` and `git diff --check`. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest.
 

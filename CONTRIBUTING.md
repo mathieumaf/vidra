@@ -47,7 +47,7 @@ pnpm check
 git diff --check
 ```
 
-`pnpm check` builds the interface, runs Vitest and the script tests, checks Rust formatting, runs Clippy with warnings as errors, runs the Rust tests, encodes the conversion corpus with the bundled engine, and checks the version files. It stops at the first failure. CI runs the same steps. Two checks are not part of it: the running app, and the application bundle.
+`pnpm check` builds the interface, runs Vitest and the script tests, checks Rust formatting, runs Clippy with warnings as errors, runs the Rust tests, encodes the conversion corpus with the bundled engine, and checks the version files. It stops at the first failure. CI runs the same steps. Three checks are not part of it: the running app, the application bundle, and the Rust dependency policy (see [Dependencies](#dependencies)).
 
 - A behavior change comes with a test. [docs/TESTING.md](docs/TESTING.md) says which kind goes where.
 - A test never skips. If it cannot run, it fails.

@@ -27,7 +27,7 @@ This candidate has the same application code as 0.2.0-rc.2. It replaces rc.2, wh
 ### Installation and testing
 
 - Once published, choose Beta in Settings to update from 0.2.0-rc.2, 0.2.0-rc.1, 0.2.0-beta.2, 0.2.0-beta.1, or 0.1.0. Stable does not offer this release candidate. The bundle version shown in Settings remains 0.2.0; the release link is `v0.2.0-rc.3`.
-- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist of that time](https://github.com/mathieumaf/vidra/blob/cd22f6955f847bf91891cd3fb1c1e1c9cc008d52/docs/RELEASING.md#beta-validation).
+- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist of that time](https://github.com/mathieumaf/vidra/blob/v0.2.0-rc.3/docs/RELEASING.md#beta-validation).
 
 ## 0.2.0-rc.2 - 2026-11-08
 
@@ -53,7 +53,7 @@ This candidate includes the conversion safety and lifecycle fixes from [#116](ht
 ### Installation and testing
 
 - Once published, choose Beta in Settings to update from 0.2.0-rc.1, 0.2.0-beta.2, 0.2.0-beta.1, or 0.1.0. Stable does not offer this release candidate. The bundle version shown in Settings remains 0.2.0; the release link is `v0.2.0-rc.2`.
-- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist of that time](https://github.com/mathieumaf/vidra/blob/cd22f6955f847bf91891cd3fb1c1e1c9cc008d52/docs/RELEASING.md#beta-validation), including replacement safety, trimming, cancellation, native Quit, and the update from rc.1.
+- Validate the signed app and bundled FFmpeg 8.1.3 using the [prerelease checklist of that time](https://github.com/mathieumaf/vidra/blob/v0.2.0-rc.2/docs/RELEASING.md#beta-validation), including replacement safety, trimming, cancellation, native Quit, and the update from rc.1.
 
 ## 0.2.0-rc.1 - 2026-11-05
 
@@ -64,7 +64,7 @@ This build has the same application code as 0.2.0-beta.2. If it passes validatio
 ### Installation and testing
 
 - From an installed 0.2.0-beta.2, 0.2.0-beta.1, or 0.1.0, choose Beta in Settings and check for updates. Stable does not offer this release candidate. The bundle version shown in Settings is 0.2.0; the release link is `v0.2.0-rc.1`.
-- This release candidate validates the signed app and the FFmpeg 8.1.3 release engine before the official 0.2.0 release. The checks are listed in the [prerelease validation checklist of that time](https://github.com/mathieumaf/vidra/blob/cd22f6955f847bf91891cd3fb1c1e1c9cc008d52/docs/RELEASING.md#beta-validation), including trimming and VoiceOver.
+- This release candidate validates the signed app and the FFmpeg 8.1.3 release engine before the official 0.2.0 release. The checks are listed in the [prerelease validation checklist of that time](https://github.com/mathieumaf/vidra/blob/v0.2.0-rc.1/docs/RELEASING.md#beta-validation), including trimming and VoiceOver.
 
 ## 0.2.0-beta.2 - 2026-11-03
 
@@ -90,7 +90,7 @@ Prerelease **0.2.0-beta.2** for macOS on Apple Silicon. The application bundle v
 
 - From an installed 0.2.0-beta.1 or 0.1.0, choose Beta in Settings and check for updates. Stable does not offer this prerelease. The bundle version shown in Settings is 0.2.0; the release link is `v0.2.0-beta.2`.
 - Please test trimming with a source that has text subtitles and chapters, on both re-encoded and Original video output, and test the app with VoiceOver on a Mac. These cannot be covered by automated checks.
-- Signed-build checks are listed in the [beta validation checklist of that time](https://github.com/mathieumaf/vidra/blob/cd22f6955f847bf91891cd3fb1c1e1c9cc008d52/docs/RELEASING.md#beta-validation).
+- Signed-build checks are listed in the [beta validation checklist of that time](https://github.com/mathieumaf/vidra/blob/v0.2.0-beta.2/docs/RELEASING.md#beta-validation).
 
 ### Internal
 
@@ -122,7 +122,7 @@ Prerelease **0.2.0-beta.1** for macOS on Apple Silicon. The application bundle v
 
 - This prerelease targets macOS on Apple Silicon. Windows, Linux, and Intel Mac installers are not included.
 - From an installed 0.1.0, choose Beta in Settings and check for updates. Stable does not offer this prerelease. The bundle version shown in Settings is 0.2.0; the release link is `v0.2.0-beta.1`.
-- Signed-build checks are listed in the [beta validation checklist of that time](https://github.com/mathieumaf/vidra/blob/cd22f6955f847bf91891cd3fb1c1e1c9cc008d52/docs/RELEASING.md#beta-validation).
+- Signed-build checks are listed in the [beta validation checklist of that time](https://github.com/mathieumaf/vidra/blob/v0.2.0-beta.1/docs/RELEASING.md#beta-validation).
 
 ### Internal
 

@@ -81,7 +81,7 @@ docs/                   this documentation
 2. **Choose.** The interface holds an `EncodeQueueItem` with `EncodingSettings`, the track selection, and an optional trim. `lib/` and `config/` decide what is possible: for example, H.264 is refused for an HDR source whose transfer characteristic is unknown.
 3. **Pick a destination.** For one video, the save panel returns a path, and asks first when that name is taken. For several, the user picks a folder, and the interface adds a number to any name already used there (`lib/queue.ts`).
 4. **Queue.** The interface sends `EncodeRequest` values with `enqueueEncodes`. The core validates each one again, probes the source again, checks the settings against the media (`encode::validate_settings`), checks free space, and adds a `PendingJob` to the `JobManager`.
-5. **Start.** `startEncodeQueue` resumes a paused job if there is one. Otherwise it takes the next waiting job: the core creates a temporary file in the destination folder (`output/partial.rs`), records it in the ledger, prepares the trim if any, builds the arguments (`encode::command_arguments`), and starts FFmpeg. One encode runs at a time.
+5. **Start.** `startEncodeQueue` takes the job at the front of the queue. A paused job is resumed. A waiting job is started: the core creates a temporary file in the destination folder (`output/partial.rs`), records it in the ledger, prepares the trim if any, builds the arguments (`encode::command_arguments`), and starts FFmpeg. One encode runs at a time.
 6. **Follow.** `queue.rs` reads FFmpeg's progress and emits `encode-progress`. The interface can pause, resume, or cancel the active job, and reorder or remove the waiting ones. Removing a waiting job reports it as cancelled and writes no history entry.
 7. **Finish.** A trim that copies the original video may first run a second FFmpeg pass that puts the clipped subtitles back. On success, `output::partial::finalize_output` moves the temporary file to the final name, or keeps the finished video under another name when that name is no longer available. On failure or cancellation, it removes the temporary file, and a removal that fails is tried again at the next launch. The core writes a history entry and emits `encode-finished`, then starts the next job.
 
@@ -97,7 +97,7 @@ The source file is only ever read. The exact publication and cleanup rules, with
 | `probe_media` | `encoding.ts` | Inspect one file. |
 | `segment_keyframe` | `encoding.ts` | Where a trimmed copy of the original video would really start. |
 | `enqueue_encodes` | `encoding.ts` | Validate requests and add them to the queue. |
-| `start_encode_queue` | `encoding.ts` | Resume a paused job, or start the next waiting one. |
+| `start_encode_queue` | `encoding.ts` | Start or resume the job at the front of the queue. |
 | `cancel_encode`, `set_encode_paused`, `move_queued_encode` | `encoding.ts` | Control the queue. |
 | `list_conversion_history`, `delete_history_entry`, `clear_conversion_history`, `reveal_history_output` | `history.ts` | History. |
 | `reveal_output_file`, `list_destination_files`, `take_opened_files` | `files.ts` | Finder, destination folder, files opened from outside. |
@@ -133,7 +133,7 @@ The app data folder is `~/Library/Application Support/io.github.mathieumaf.vidra
 
 ## How to
 
-These recipes list every place the change touches today. The Rust compiler flags a missing arm in an exhaustive `match`. Nothing flags a missing entry in the TypeScript lists named below, so follow the list.
+These recipes list every place the change touches today. The Rust compiler flags a missing arm in an exhaustive `match`. Nothing flags a missing entry in the TypeScript lists named below, or a test such as `container === "mp4"` that a new value lands on the wrong side of, so follow the list.
 
 ### Add an encoding option
 
@@ -159,15 +159,15 @@ The output frame rate is the example to follow. `git grep -n "outputFrameRate\|o
 ### Add a video codec
 
 1. **Engine.** Check the license. If the encoder is not in the engine, add it to the recipe, to the encoder check in `scripts/ffmpeg/build.mjs`, and to `THIRD_PARTY_NOTICES.md` and `src/config/legal.ts`, which is what Settings shows. That means a new engine archive: see [RELEASING.md](RELEASING.md#the-ffmpeg-engine).
-2. **Core.** Add the variant to `VideoCodec` in `ffmpeg/types.rs`, the arguments in `ffmpeg/encode/video.rs`, and the stream mapping rules in `ffmpeg/encode.rs`. The compiler then asks for it in the size estimate in `ffmpeg/disk_space.rs`. Say what happens to HDR.
-3. **Interface.** Mirror it in `src/types/media.ts` and `src/config/encoding.ts`, and add it to `validValues.videoCodec` in `src/config/profiles.ts`, or saved profiles and a restored queue that use it are dropped. Check the codec rules in `src/app/App.tsx`, `src/components/convert/EncodingOptions.tsx`, and `src/lib/color.ts`, which assumes that every codec except the copy and H.264 keeps 10-bit HDR.
+2. **Core.** Add the variant to `VideoCodec` in `ffmpeg/types.rs`, the arguments in `ffmpeg/encode/video.rs`, and the stream mapping rules in `ffmpeg/encode.rs`. The compiler then asks for a value for each quality level in `QualityLevel::crf`, in the same file as `VideoCodec`, and for the codec in the size estimate in `ffmpeg/disk_space.rs`. A quality value comes with a test. Say what happens to HDR.
+3. **Interface.** Mirror it in `src/types/media.ts` and `src/config/encoding.ts`, and add it to `validValues.videoCodec` in `src/config/profiles.ts`, or saved profiles and a restored queue that use it are dropped. Check the codec rules in `src/app/App.tsx`, `src/components/convert/EncodingOptions.tsx`, `compatibleProfileSettings` in `src/config/profiles.ts`, and `src/lib/color.ts`, which assumes that every codec except the copy and H.264 keeps 10-bit HDR.
 4. **Tests.** Add the encoder to `REQUIRED_ENCODERS` and the codec to the matrix and the output assertions in `ffmpeg/corpus.rs`.
 5. **Documentation.** [FORMATS.md](FORMATS.md).
 
 ### Add an output container
 
-1. **Core.** Add the variant and its extension to `OutputContainer` in `ffmpeg/types.rs`, and the mapping rules in `ffmpeg/encode.rs`: say what happens to audio, subtitles, chapters, and metadata it cannot hold. Trimming branches on the container in `ffmpeg/segment.rs` and `ffmpeg/queue.rs`.
-2. **Interface.** Mirror it in `src/types/media.ts` and `src/config/encoding.ts`, and add it to `validValues.container` in `src/config/profiles.ts`.
+1. **Core.** Add the variant and its extension to `OutputContainer` in `ffmpeg/types.rs`. Most container rules are `==` tests, which the compiler does not flag, so visit each one: `git grep -n "OutputContainer::" -- src-tauri/src`. They are the subtitle mapping in `ffmpeg/encode.rs`, the audio that can be copied in `ffmpeg/encode/audio.rs`, the video that can be copied and the MP4 flags and codec tags in `ffmpeg/encode/video.rs`, and the trimming branches in `ffmpeg/segment.rs` and `ffmpeg/queue.rs`. `output/partial.rs` knows the extensions as text: `create_partial_supported` refuses to create a temporary output with another extension, so every conversion into the new container fails, and `is_partial_name` does not recognise such a file as Vidra's own. Say what happens to audio, subtitles, chapters, and metadata the container cannot hold.
+2. **Interface.** Mirror it in `src/types/media.ts` and `src/config/encoding.ts`, and add it to `validValues.container` in `src/config/profiles.ts`. The interface repeats the core's compatibility rules as tests on one container, so a new one silently takes a side of each: `git grep -n -E '=== "(mp4|mkv)"' -- src`. They are in `src/app/App.tsx`, in `AudioOptions.tsx` and `TrackSelectionOptions.tsx` under `src/components/convert/`, in `compatibleProfileSettings`, and in `src/lib/tracks.ts`. Without a change there, the track picker offers a new container the subtitles that MP4 can hold.
 3. **Tests.** Add it to the matrix and the output assertions in `ffmpeg/corpus.rs`.
 4. **Documentation.** [FORMATS.md](FORMATS.md).
 
