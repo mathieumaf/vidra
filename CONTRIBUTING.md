@@ -1,63 +1,88 @@
 # Contributing to Vidra
 
-Thank you for helping improve Vidra. Keep changes focused, preserve the local-first product model, and discuss substantial product or architecture changes in an issue before implementation.
+Thank you for helping improve Vidra. This page gets you from a clone to a pull request.
 
-## Development setup
+Three things do not change: media stays on the user's device, a source file is never modified, and nothing is uploaded or tracked. For a substantial product or architecture change, open an issue before writing code.
 
-Vidra currently targets macOS on Apple Silicon. Install Node.js 26, pnpm 12, Rust, the Tauri prerequisites, and Xcode when regenerating native icon assets. `pnpm ffmpeg:prepare` downloads the checksum-pinned FFmpeg engine archive. It does not compile FFmpeg. CI and the release install the same archive. To compile the recipe locally, run `pnpm ffmpeg:prepare -- --build` after installing the native build tools listed in [docs/RELEASING.md](docs/RELEASING.md).
+## Set up
+
+You need a Mac with Apple Silicon and:
+
+- Node.js 26 (the version is in `.node-version`) and pnpm 12 (pinned in `package.json`);
+- [rustup](https://rustup.rs). It installs the Rust version named in `rust-toolchain.toml` by itself;
+- the [Tauri prerequisites](https://tauri.app/start/prerequisites/), which on macOS means the Xcode Command Line Tools.
+
+Xcode 26 or later is needed only to regenerate the app icon. Without it, the committed icon assets are used.
 
 ```sh
 pnpm install
 pnpm tauri dev
 ```
 
-Use pnpm for every JavaScript dependency operation. Do not commit generated FFmpeg binaries, credentials, signing material, media samples containing private data, or unrelated changes.
+`pnpm tauri dev` first installs the FFmpeg engine: it downloads the archive pinned in `scripts/ffmpeg/engine.json`, checks its SHA-256, and puts `ffmpeg` and `ffprobe` in `src-tauri/binaries/`. Nothing is compiled, and a system FFmpeg is never used. `pnpm ffmpeg:prepare` does that step alone.
 
-## Conversion corpus
-
-The 1.0 conversion check encodes a small synthetic corpus. Nothing from that corpus is committed. `scripts/corpus/generate.mjs` asks the prepared FFmpeg sidecar for short lavfi clips:
-
-| Clip | What it exercises |
-| --- | --- |
-| `sdr-h264-aac` | H.264 and AAC from `testsrc2` and a sine wave. Quality presets and the built-in profiles run on this clip. |
-| `hdr10-hevc` | 10-bit HEVC tagged BT.2020 / SMPTE ST 2084, with mastering-display and content-light metadata. |
-| `hlg-hevc` | 10-bit HEVC tagged BT.2020 / HLG (`arib-std-b67`). |
-| `rotated-h264` | A 90 degree display matrix, with the coded frame left landscape. |
-| `variable-frame-rate` | Two H.264 pieces concatenated so frame duration changes. |
-| `mov-subtitles` | An MOV file with a text subtitle track. |
-| `audio-only` | AAC with no video stream. |
-| `corrupt` | The first bytes of a real MP4, truncated so inspection fails. |
-| `unknown-transfer` | 10-bit HEVC with BT.2020 primaries, no transfer characteristic, and stream-level mastering-display metadata. |
-
-A Dolby Vision clip is added only when this FFmpeg build writes a DOVI configuration record that FFprobe reports on the video stream. libx265 can name a Dolby Vision profile, but the record is not written unless an external RPU bitstream is passed to `dolby-vision-rpu`. lavfi cannot synthesize that RPU, and Vidra does not bundle Dolby's tools or `dovi_tool`. The generator prints that reason and still writes the HDR10 and HLG clips, which cover the backward-compatible base layer. Color tags are written with `setparams` so lavfi frames carry them. An existing `--output` folder is replaced only when it already holds this corpus's manifest and only the files the generator wrote. Each FFmpeg invocation may run for 180 seconds.
-
-The Rust test `conversion_corpus` is ignored during ordinary `cargo test` so those checks stay fast. It probes every clip with the application's FFprobe parser, builds each command with `encode::command_arguments`, and publishes the result through the same temporary-file helper as the queue. Encodes run one at a time. From the repository root, after `pnpm ffmpeg:prepare`:
+**Use a throwaway identifier when you try things.** A plain `pnpm tauri dev` shares the data folder of an installed Vidra, so your experiments would land in your real history:
 
 ```sh
-node scripts/corpus/generate.mjs --output /tmp/vidra-corpus
-cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture
+pnpm tauri dev --config '{"identifier":"io.github.mathieumaf.vidra.proof"}'
 ```
 
-`VIDRA_CORPUS_MATRIX=reduced` is the default and the matrix CI runs. On `sdr-h264-aac` it encodes every quality preset with efficient H.264 MP4, the Smaller file profile (efficient H.265 MP4), and the Fast export profile (hardware H.264 MP4). Every clip is also encoded with Copy, H.264, H.265, and AV1 into both MP4 and MKV at the balanced preset. `VIDRA_CORPUS_MATRIX=full` repeats every quality preset for every re-encode codec and container, and adds hardware H.264 and H.265 where the platform supports them. Fast AV1 is not part of either matrix because the app rejects it.
+Convert only synthetic clips while developing. `node scripts/corpus/generate.mjs --output <new folder>` writes a set.
 
-The test fails when Node.js or the FFmpeg sidecar is missing, and when the sidecar lacks libx264, libx265, libsvtav1, the VideoToolbox encoders, AAC, zscale, tonemap, or 10-bit output for H.265 and AV1. No combination is skipped. `VIDRA_CORPUS_KEEP=1` leaves the temporary clips and outputs in place.
+## Find your way
 
-## Dependency policy
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the map: the three processes, where each kind of code lives, how a conversion travels through it, and step-by-step recipes for adding an encoding option, a command, or a codec.
 
-Rust crate licenses, security advisories, and crate sources are checked with [cargo-deny](https://embarkstudios.github.io/cargo-deny/) 0.20.2. Duplicate crate versions are reported as warnings and do not fail the check. The rules live in `src-tauri/deny.toml`. From the repository root:
+The short version:
+
+```text
+src/              the interface (React). components draw, hooks hold workflows, services call the core
+src-tauri/src/    the core (Rust). commands are thin, ffmpeg/ builds and runs encodes, output/ writes files
+scripts/          the FFmpeg engine, release checks, test clips
+```
+
+The rules each area follows are in [AGENTS.md](AGENTS.md). They apply to people and to coding agents alike.
+
+## Prove your change
+
+```sh
+pnpm check
+git diff --check
+```
+
+`pnpm check` builds the interface, runs Vitest and the script tests, checks Rust formatting, runs Clippy with warnings as errors, runs the Rust tests, encodes the conversion corpus with the bundled engine, and checks the version files. It stops at the first failure. CI runs the same steps.
+
+- A behavior change comes with a test. [docs/TESTING.md](docs/TESTING.md) says which kind goes where.
+- A test never skips. If it cannot run, it fails.
+- A change to the interface is checked in the running app, not only in a browser.
+- A change to bundling, the Tauri configuration, or the engine is checked by building the bundle: see [The bundle](docs/TESTING.md#the-bundle).
+
+## Open a pull request
+
+- Keep it to one purpose. Source code, interface text, documentation, tests, and commit messages are in English.
+- Fill in the template: what changed and why, the checks, and what you verified by hand.
+- CI runs three jobs: the Apple Silicon validation, the application bundle, and the Rust dependency policy. A pull request is merged when they pass.
+- An automated code review and security review comment on every pull request. Answer each finding: fix it, or say why not.
+- Pull requests are squashed. The title becomes the commit message, so write it as a sentence that says why the change matters.
+
+Do not commit FFmpeg binaries, credentials, signing material, or media.
+
+## Dependencies
+
+Vidra is GPL-3.0-or-later, and it bundles FFmpeg. Before adding a dependency or a codec, check that its license can be combined with that, and record a bundled component in `THIRD_PARTY_NOTICES.md`.
+
+Rust crate licenses, security advisories, and crate sources are checked with [cargo-deny](https://embarkstudios.github.io/cargo-deny/) 0.20.2. The rules are in `src-tauri/deny.toml`. CI runs it on every pull request. To run it yourself when Rust dependencies change:
 
 ```sh
 cargo deny check --manifest-path src-tauri/Cargo.toml --locked
 ```
 
-Install that same cargo-deny version so the result matches CI. The command reads the lockfile through `cargo metadata`, so the installed Rust toolchain must be new enough to parse it. Prebuilt cargo-deny binaries are attached to its GitHub releases. CI runs this check on every pull request and fails it when a license, advisory, or crate source check fails. A duplicate-version warning is printed in that log for review. Do not add a version skip for an ordinary duplicate: a skip names an exact version and has to be updated on the next dependency bump. Add a license to the allow list only when it can be combined with GPL-3.0-or-later, and record the reason in `src-tauri/deny.toml`.
+A duplicate crate version is a warning, not a failure. Do not add a version skip for an ordinary duplicate. Add a license to the allow list only when it can be combined with GPL-3.0-or-later, and write the reason in `src-tauri/deny.toml`.
 
-## Pull requests
+## Releases
 
-- Keep source code, UI text, documentation, tests, and commit messages in English.
-- Add focused tests for behavior changes, especially queue state, FFmpeg arguments, path validation, and parsers.
-- Preserve source media. Remove an unfinished temporary output after failure or cancellation. Replace an existing destination file only after explicit confirmation and a successful conversion.
-- Review licensing and distribution implications before adding dependencies or codecs. Run `cargo deny check --manifest-path src-tauri/Cargo.toml --locked` when Rust dependencies change.
-- Run `pnpm check` and `git diff --check` before requesting review.
+Maintainers publish releases. The steps, the workflows, and how the FFmpeg engine is updated are in [docs/RELEASING.md](docs/RELEASING.md).
 
-User-facing or workflow changes should include concise manual verification notes. Meaningful desktop UI changes must be checked in the Tauri application, not only in a browser.
+## Security
+
+Do not open a public issue for a vulnerability. [SECURITY.md](SECURITY.md) has the private reporting channel and what Vidra guarantees.
