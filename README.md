@@ -108,9 +108,9 @@ pnpm ffmpeg:prepare
 pnpm tauri dev
 ```
 
-`pnpm tauri dev` runs icon preparation and `pnpm ffmpeg:prepare` before the app starts. On Apple Silicon, `pnpm ffmpeg:prepare` downloads the development archive pinned in `scripts/ffmpeg/dev-archive.json`. It checks the archive SHA-256, checks that the archive contains the corresponding sources, and checks that FFmpeg and FFprobe report the version pinned on main, **8.1.3**. The published 0.1.0 app shipped 8.1.2. Prepare ad-hoc signs the tools for local use. It does not compile FFmpeg. macOS pull-request CI uses the same download.
+`pnpm tauri dev` runs icon preparation and `pnpm ffmpeg:prepare` before the app starts. `pnpm ffmpeg:prepare` downloads the FFmpeg engine archive pinned in `scripts/ffmpeg/engine.json`, checks its SHA-256, and checks that FFmpeg and FFprobe report the pinned version, **8.1.3**. It does not compile FFmpeg. CI and the release install the same archive.
 
-To compile the pinned release recipe on the machine instead:
+To compile the pinned recipe on the machine instead:
 
 ```sh
 brew install autoconf automake libtool cmake meson ninja pkgconf nasm
@@ -134,7 +134,7 @@ Copyright (C) 2026 Mathieu Mafille.
 
 Vidra is licensed under [GPL-3.0-or-later](LICENSE). The application notice is in [COPYRIGHT](COPYRIGHT).
 
-Vidra 0.1.0 ships FFmpeg and FFprobe 8.1.2. Main and upcoming builds pin 8.1.3. That newer pin is not in the 0.1.0 installer. The changelog still requires a beta or release candidate to re-validate the 8.1.3 engine before publication. The engine is built with GPL components (x264 and x265) plus SVT-AV1, dav1d, Opus, and zimg, from the checksum-pinned sources in `scripts/ffmpeg/sources.json` for that release. The corresponding sources are attached to each GitHub release. The Apple Silicon development archive on main follows the 8.1.3 recipe and is not a substitute for a published application build.
+Vidra 0.1.0 ships FFmpeg and FFprobe 8.1.2. Builds from `main` bundle 8.1.3. The engine is built with GPL components (x264 and x265) plus SVT-AV1, dav1d, Opus, and zimg, from the checksum-pinned sources in `scripts/ffmpeg/sources.json`. The corresponding sources are attached to each GitHub release.
 
 Other dependencies keep their own licenses. The notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and in the app.
 

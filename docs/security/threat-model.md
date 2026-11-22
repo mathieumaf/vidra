@@ -9,7 +9,7 @@ Vidra is a desktop application for macOS on Apple Silicon. It converts video fil
 - **Interface:** a React application in the system WebView, loaded from files inside the app bundle (`src/`, `src-tauri/tauri.conf.json`).
 - **Core:** a Rust process built with Tauri (`src-tauri/src/`). It owns the filesystem, the conversion queue, and the child processes.
 - **Engine:** the `ffmpeg` and `ffprobe` sidecars in `src-tauri/binaries/`, started by the core with an argument list.
-- **Distribution:** a signed and notarized DMG and a signed update archive, built by `.github/workflows/release.yml` and published as GitHub Releases. `.github/workflows/publish-updater.yml` then rewrites the update feed that installed copies read.
+- **Distribution:** a signed and notarized DMG and a signed update archive, built by `.github/workflows/release.yml` and published as GitHub Releases. `.github/workflows/publish-update-feed.yml` then moves the update feed that installed copies read.
 
 There is no server, account, telemetry, or cloud processing. The app is not sandboxed: no App Sandbox entitlement is configured in `src-tauri/`, so it runs with the user's own file permissions.
 
@@ -47,7 +47,7 @@ There is no server, account, telemetry, or cloud processing. The app is not sand
 | The update manifest and archive | `application_update.rs`. The manifest comes from the HTTPS endpoint in `tauri.conf.json`, the archive from the URL that manifest names. | See "Installing an update" below. |
 | Browser storage (profiles, pending queue, theme) | `localStorage` in the WebView | Parsed defensively (`src/lib/pendingQueue.ts`, `src/hooks/useEncodingProfiles.ts`). A restored queue goes through the same Rust validation as a new one. |
 | Application data files | `conversion-history.json`, `partial-outputs.json` in the app data folder | Read at startup. The ledger decides which unfinished temporary files are removed (`output/partial.rs`). |
-| Pull requests, dependency updates, FFmpeg sources | GitHub | Reviewed under `AGENTS.md`. FFmpeg sources and the FFmpeg archive are pinned by SHA-256 (`scripts/ffmpeg/sources.json`, `scripts/ffmpeg/dev-archive.json`), and a download is checked against its pin before it is installed. Actions are pinned by commit. `pnpm install --frozen-lockfile` and `cargo deny --locked` fail on a lockfile that does not match. |
+| Pull requests, dependency updates, FFmpeg sources | GitHub | Reviewed under `AGENTS.md`. FFmpeg sources and the engine archive are pinned by SHA-256 (`scripts/ffmpeg/sources.json`, `scripts/ffmpeg/engine.json`), and the archive is checked against its pin every time it is prepared. Actions are pinned by commit, and the Rust and Node.js versions are pinned. `pnpm install --frozen-lockfile` and `--locked` on every Cargo command fail on a lockfile that does not match. `scripts/ci/workflows.node-test.mjs` holds these properties of the workflows. |
 
 ## Trust boundaries
 
@@ -55,7 +55,7 @@ There is no server, account, telemetry, or cloud processing. The app is not sand
 2. **Core to engine.** FFmpeg and FFprobe run as separate processes with an argument vector built in Rust, never through a shell. The source is a canonical absolute path, and the output is a temporary file the core created.
 3. **Core to filesystem.** During conversion the core writes the temporary output (`.vidra-partial-…`) in the destination folder, the published output, and work files in a folder it creates under the system temporary folder. It also writes its own data files, a diagnostic report when the interface asks, and, through the updater, the application bundle.
 4. **Device to network.** The core requests the update manifest from the fixed endpoint, then the archive at the URL that manifest names. The interface opens the two kinds of link above in the browser. Nothing else connects.
-5. **Repository to release.** A release is built by `release.yml` from a pushed tag, in the GitHub environment named `release`, with the signing secrets it reads from GitHub Actions secrets. `publish-updater.yml` runs with the repository token, outside that environment, and rewrites the update feed when a release is published.
+5. **Repository to release.** A release is built by `release.yml` from a pushed `vX.Y.Z` tag on `main`, in the GitHub environment named `release`, with the signing secrets it reads from GitHub Actions secrets. It bundles the engine archive that CI tested and leaves a draft. `publish-update-feed.yml` runs with the repository token, outside that environment, when a maintainer publishes that draft. It moves the update feed forward to a release whose manifest is signed for its own version and downloads its own archive.
 
 ## Sensitive data flows and privileged actions
 
@@ -66,7 +66,7 @@ There is no server, account, telemetry, or cloud processing. The app is not sand
 - **When the name is not available.** The finished video is saved under the next free numbered name. If no numbered name can be used, it is saved under a `name.vidra-saved-….ext` name, or it stays at its temporary name. In that last case the core removes the file's ledger entry, or marks the entry as a finished video when it cannot save that removal, and the job reports where the file is (`output/partial.rs`, `ffmpeg/queue.rs`).
 - **Cleaning up.** There are three paths. After failure or cancellation, the core removes its temporary file only if the file at that path is still the one it created. At startup and at quit, it goes through the ledger and removes the file at each recorded path, whether or not it is still the file that was recorded, unless the entry marks a finished video that was kept. A recorded path always has a Vidra temporary name, and nothing is removed at a path without one. Trimming removes the work folder it created exclusively for the job (`output/partial.rs`, `ffmpeg/segment.rs`).
 - **Controlling the engine.** The core pauses and resumes only the FFmpeg encoding process it started. On cancellation and at quit it stops only processes it started and tracks: that encoder, and the FFmpeg or FFprobe process that prepares or finishes a trim (`jobs/process.rs`, `jobs/manager.rs`, `ffmpeg/segment.rs`).
-- **Installing an update.** The core offers an update only when the manifest announces an official version newer than the installed one, never a prerelease or a downgrade (`application_update.rs`). The updater plugin downloads the archive from the URL in the manifest and verifies its signature against the public key in `tauri.conf.json`. Installation is refused while a conversion is queued, running, or paused. It replaces the application bundle and restarts the app.
+- **Installing an update.** The core offers an update only when the manifest announces an official version newer than the installed one, never a prerelease or a downgrade (`application_update.rs`). The updater plugin downloads the archive from the URL in the manifest and verifies its signature against the public key in `tauri.conf.json`. Because `requireSignedVersion` is set, that signature must also record the version the manifest announces. Installation is refused while a conversion is queued, running, or paused. It replaces the application bundle and restarts the app.
 - **Signing a release.** The workflow signs with the Developer ID certificate and the updater key, notarizes with Apple, and creates a draft release. The maintainer publishes it by hand.
 
 ## Known limits
@@ -79,7 +79,6 @@ There is no server, account, telemetry, or cloud processing. The app is not sand
 - **The temporary output is addressed by path.** Other software that swaps the temporary file for a link before FFmpeg opens it can redirect the encode to another file the user can write.
 - **Recovery trusts the ledger.** At a recorded path whose entry is not marked as a finished video, recovery can remove a different file that other software put there under the same temporary name.
 - **A finished video kept at its temporary name depends on the ledger.** If the core can neither remove nor mark the file's entry, the job reports a failure without a saved path, and a later recovery can remove the file.
-- **The update version is checked on the manifest.** The plugin compares the version recorded in the archive's signature with the announced one only when the signature records a version. Vidra does not set `requireSignedVersion`, so a signature without one is accepted. Someone who controls the feed could announce a new version for an older, validly signed archive whose signature has no version.
 - **The archive URL comes from the manifest.** The endpoint is fixed and uses HTTPS. The plugin warns about an archive URL that does not use HTTPS and still downloads it. The signature is then the only protection.
 - **Local data is not authenticated.** Other software running as the user can edit the history, the ledger, or browser storage.
 
@@ -91,5 +90,5 @@ These depend on settings outside the tracked files:
 - Branch protection on `main` requires pull requests and the CI checks.
 - The updater private key and the Apple credentials are held as secrets of that environment and in the maintainer's own recovery copy, and nowhere else.
 - GitHub serves release assets over TLS, and the published assets are the ones the workflow built.
-- The published FFmpeg archive was built by `.github/workflows/ffmpeg-dev-archive.yml` from the pinned sources.
-- The Actions cache restores what CI saved. Its key is a hash of `scripts/ffmpeg/dev-archive.json`, `prepare.mjs`, and `dev-archive.mjs`. When the restored marker matches the pinned checksum and both restored sidecars report the pinned version, preparation uses them without downloading or checking the archive again.
+- The published engine archive was built by `.github/workflows/ffmpeg-engine.yml` from the pinned sources.
+- The installed sidecars are the ones extracted from the verified archive. Preparation checks the archive's SHA-256 on every run, then reuses installed sidecars when their marker matches that checksum and both report the pinned version.
