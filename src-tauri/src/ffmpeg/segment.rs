@@ -1154,20 +1154,8 @@ mod tests {
     fn remux_text_subtitles_with_ffmpeg() {
         use std::{fs, process::Command};
 
-        let Some(ffmpeg) = prepared_binary("ffmpeg") else {
-            if std::env::var("VIDRA_CORPUS_REQUIRED").ok().as_deref() == Some("1") {
-                panic!("FFmpeg is required to remux trimmed subtitles");
-            }
-            eprintln!("skipping subtitle remux: prepared FFmpeg sidecar is missing");
-            return;
-        };
-        let Some(ffprobe) = prepared_binary("ffprobe") else {
-            if std::env::var("VIDRA_CORPUS_REQUIRED").ok().as_deref() == Some("1") {
-                panic!("FFprobe is required to check a remuxed subtitle");
-            }
-            eprintln!("skipping subtitle remux: prepared FFprobe sidecar is missing");
-            return;
-        };
+        let ffmpeg = prepared_sidecar("ffmpeg");
+        let ffprobe = prepared_sidecar("ffprobe");
 
         let directory = std::env::temp_dir().join(format!(
             "vidra-remux-{}-{}",
@@ -1300,13 +1288,7 @@ mod tests {
     fn late_subtitles_are_extracted_on_the_source_timeline_with_ffmpeg() {
         use std::{fs, process::Command};
 
-        let Some(ffmpeg) = prepared_binary("ffmpeg") else {
-            if std::env::var("VIDRA_CORPUS_REQUIRED").ok().as_deref() == Some("1") {
-                panic!("FFmpeg is required to extract late subtitles");
-            }
-            eprintln!("skipping late subtitles: prepared FFmpeg sidecar is missing");
-            return;
-        };
+        let ffmpeg = prepared_sidecar("ffmpeg");
 
         let directory = std::env::temp_dir().join(format!(
             "vidra-late-subtitles-{}-{}",
@@ -1390,13 +1372,18 @@ mod tests {
         }
     }
 
-    fn prepared_binary(name: &str) -> Option<PathBuf> {
+    /// These tests run the bundled FFmpeg. They fail without it, so a test run
+    /// can never pass while skipping the remux.
+    fn prepared_sidecar(name: &str) -> PathBuf {
+        let target = tauri::utils::platform::target_triple().expect("a supported host target");
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("binaries")
-            .join(format!(
-                "{name}-{}",
-                super::super::version::host_target_triple()
-            ));
-        path.is_file().then_some(path)
+            .join(format!("{name}-{target}"));
+        assert!(
+            path.is_file(),
+            "The {name} sidecar is missing at {}. Run pnpm ffmpeg:prepare.",
+            path.display()
+        );
+        path
     }
 }

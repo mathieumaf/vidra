@@ -4,20 +4,18 @@ Vidra is an open-source desktop app that converts and encodes video on your comp
 
 **Vidra 0.1.0** is the first official release for **macOS on Apple Silicon** (macOS 12 or later). The signed and notarized installer is on the [0.1.0 release](https://github.com/mathieumaf/vidra/releases/tag/v0.1.0). There is no account. Media is not uploaded.
 
-**0.2.0-rc.3** is a release candidate with fixes for source-file protection, trimming, and conversion cancellation. It replaces 0.2.0-rc.2, whose in-app update could not be installed. Once published, it will be available through the **Beta** update channel for testing. See the [changelog](CHANGELOG.md) and [prerelease validation checklist](docs/RELEASING.md#beta-validation).
-
 ![The conversion screen for a 1920×1080 H.264 video, using the Balanced profile.](docs/screenshots/convert.png)
 
 ![Vidra before a video is selected. Files can be chosen or dropped.](docs/screenshots/convert-empty.png)
 
-![Settings, with encoding profiles, appearance, the update channel, and license notices.](docs/screenshots/settings.png)
+![Settings, with encoding profiles, appearance, application updates, and license notices.](docs/screenshots/settings.png)
 
 These screenshots are the real interface rendered in a browser with sample media data, not the packaged app.
 
 ## Privacy and safety
 
 - Inspection and encoding run on the device. Vidra has no accounts, no telemetry, and no network conversion.
-- Official builds check GitHub Releases for updates when they start. Settings can also check manually, open the source repository, or open the current release page. Those are the only network uses. An update is not installed while a job is encoding, paused, or waiting. The update channel is stored on the device. **Stable** is the default and offers official releases. **Beta** also offers newer test builds, including release candidates. Switching back to Stable leaves the installed version in place until a newer official release exists.
+- Official builds check GitHub Releases for updates when they start. Settings can also check manually, open the source repository, or open the current release page. Those are the only network uses. An update is offered only for a newer official release, and it is not installed while a job is encoding, paused, or waiting.
 - Source files are never modified or deleted.
 - Encoding writes a temporary file in the destination folder and moves it into place only after success. Failure, cancellation, and quitting Vidra may remove that temporary file. An existing destination file stays in place until a conversion you confirmed has succeeded, and only if that same file is still there.
 - If the requested name is already taken, the finished video is saved under the next free numbered name (`holiday-2.mp4`, then `holiday-3.mp4`). A name that already ends in a number, such as `movie-2024.mp4`, keeps that number and continues with `movie-2024-2.mp4`.
@@ -30,7 +28,7 @@ These screenshots are the real interface rendered in a browser with sample media
 | macOS, Apple Silicon | Supported. Official builds require macOS 12 or later and are signed and notarized. |
 | macOS, Intel | Requires its own build and validation. Intel Macs are outside 0.1.0 and are not a prerequisite for version 1.0. |
 | Windows | Planned. Later 0.x releases will add it progressively. The work is not tied to a specific version or date. Version 1.0 includes validated Windows distribution. |
-| Linux | Planned, on the same terms as Windows. Linux can already compile the Rust crate and run the portable checks. That development setup is not a Linux release. |
+| Linux | Planned, on the same terms as Windows. |
 
 Each public release ships the Apple Silicon FFmpeg recipe pinned for that release. A system FFmpeg install is not used. Details and the 1.0 acceptance criteria are in the [roadmap](docs/ROADMAP.md).
 
@@ -96,9 +94,9 @@ The full rules are in [docs/HDR_POLICY.md](docs/HDR_POLICY.md).
 
 ## Install
 
-Download the Apple Silicon DMG and its SHA-256 checksum from [GitHub Releases](https://github.com/mathieumaf/vidra/releases). Verify the checksum, open the DMG, and move Vidra to the Applications folder. Use the latest official release for everyday use. Beta and release candidate builds are for testing. Distribute only signed and notarized release artifacts.
+Download the Apple Silicon DMG and its SHA-256 checksum from [GitHub Releases](https://github.com/mathieumaf/vidra/releases). Verify the checksum, open the DMG, and move Vidra to the Applications folder. Distribute only signed and notarized release artifacts.
 
-Public builds are produced by the GitHub release workflow. The process, including update channels, is described in [docs/RELEASING.md](docs/RELEASING.md).
+Public builds are produced by the GitHub release workflow. The process is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Build from source
 
@@ -119,15 +117,7 @@ brew install autoconf automake libtool cmake meson ninja pkgconf nasm
 pnpm ffmpeg:prepare -- --build
 ```
 
-`VIDRA_FFMPEG_DIR` may name a directory that contains `ffmpeg` and `ffprobe` for a development or CI build, including on Apple Silicon. Release builds reject that override. A build from this tree treats the engine as ready only when both tools report 8.1.3. A different build can still satisfy the sidecar filenames, and the app explains that it is not the pinned engine.
-
-Linux can compile the Rust crate and run the portable checks before a Linux port exists. Install the Tauri Linux dependencies and a local FFmpeg, then run:
-
-```sh
-VIDRA_FFMPEG_DIR=/usr/bin pnpm ffmpeg:prepare
-```
-
-That override is for development and CI. Do not commit generated FFmpeg binaries.
+A build from this tree treats the engine as ready only when both tools report 8.1.3. A system FFmpeg install is never used. Do not commit generated FFmpeg binaries.
 
 Before a pull request:
 

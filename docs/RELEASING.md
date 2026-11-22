@@ -2,7 +2,7 @@
 
 Vidra distributes official releases and optional prereleases for macOS on Apple Silicon. The first official release is 0.1.0. Public builds must be created by the GitHub release workflow; development FFmpeg binaries must never be distributed.
 
-See [ROADMAP.md](ROADMAP.md) for the version policy and 1.0 acceptance criteria, and [RELEASE-0.1.0.md](RELEASE-0.1.0.md) for the first official release checklist. An official 0.x release has a defined, usable scope while the product continues to evolve; it does not imply Windows or Linux support.
+See [ROADMAP.md](ROADMAP.md) for the version policy and 1.0 acceptance criteria. An official 0.x release has a defined, usable scope while the product continues to evolve; it does not imply Windows or Linux support.
 
 ## One-time Apple setup
 
@@ -101,9 +101,8 @@ A release candidate has the application code intended for the official release. 
 These checks run on pull requests. They do not replace the manual checks on a signed build.
 
 - **Apple Silicon** (`.github/workflows/ci.yml`, job `validate`, `macos-26`): frontend build and tests; `cargo fmt --check`; `cargo clippy --all-targets -- -D warnings`; `cargo test`; `git diff --check`. The job downloads the pinned FFmpeg 8.1.3 development archive. It does not compile FFmpeg, sign the app, or notarize it.
-- **Synthetic corpus** (same job, ignored test `conversion_corpus`, `VIDRA_CORPUS_MATRIX=reduced`, `VIDRA_CORPUS_STRICT_ENCODERS=1`): short generated clips encoded through Vidra's argument builder and partial-file publish, then inspected with FFprobe. The reduced matrix covers H.264, H.265, and AV1, MP4 and MKV, HDR10 and HLG sources, and a MOV text subtitle. H.264 output from HDR10 or HLG must be 8-bit BT.709 and must not still be classified as HDR. H.265 and AV1 keep 10-bit HDR. For the HDR10 clip, the macOS sidecar must keep stream-level mastering-display and content-light metadata through those re-encodes. MOV text becomes SubRip in MKV. Source files must be unchanged. This is not playback in a video player, and it does not cancel a running app or write to exFAT, FAT, or SMB.
-- **Output safety unit tests** (inside `cargo test`, on Apple Silicon and on Linux where the helpers compile): exclusive rename leaves an existing file in place; a rename that the volume rejects falls back to a check followed by a plain rename only when the name is free; a published claim is not deleted on recovery; shutdown removes an unfinished partial and keeps an existing destination. These tests do not kill a running Vidra process.
-- **Linux** (job `validate-linux`, `ubuntu-24.04`): the same frontend and Rust checks, with `VIDRA_FFMPEG_DIR=/usr/bin`. That copy is a development sidecar. The app does not treat it as the release engine unless it reports 8.1.3. The corpus run is a smoke test against Ubuntu's older FFmpeg: missing encoders are skipped, and fast hardware encoding is expected to return `unsupported_platform`. This job is not a Linux release.
+- **Synthetic corpus** (same job, ignored test `conversion_corpus`, reduced matrix): short generated clips encoded through Vidra's argument builder and partial-file publish, then inspected with FFprobe. The reduced matrix covers H.264, H.265, and AV1, MP4 and MKV, HDR10 and HLG sources, and a MOV text subtitle. H.264 output from HDR10 or HLG must be 8-bit BT.709 and must not still be classified as HDR. H.265 and AV1 keep 10-bit HDR. For the HDR10 clip, the macOS sidecar must keep stream-level mastering-display and content-light metadata through those re-encodes. MOV text becomes SubRip in MKV. Source files must be unchanged. This is not playback in a video player, and it does not cancel a running app or write to exFAT, FAT, or SMB.
+- **Output safety unit tests** (inside `cargo test`): exclusive rename leaves an existing file in place; a rename that the volume rejects falls back to a check followed by a plain rename only when the name is free; a published claim is not deleted on recovery; shutdown removes an unfinished partial and keeps an existing destination. These tests do not kill a running Vidra process.
 - **cargo-deny** (`.github/workflows/cargo-deny.yml`): licenses, advisories, bans, and crate sources with `--locked`. Duplicate crate versions are warnings and do not fail the job.
 - **Not in pull-request CI:** signed DMG installation, Gatekeeper, media playback, cancel in the running app, `kill -9` and relaunch, exFAT/FAT/SMB volumes, the update from 0.1.0, or the FFmpeg version shown by the packaged app. The release workflow runs those signature and engine checks only after a signed tag is pushed. This preparation change does not push a tag.
 
@@ -124,7 +123,7 @@ Complete these steps on the draft produced by the signed `v0.2.0-rc.3` tag. Pref
 - [ ] Trim a source that has text subtitles and chapters, once with a re-encoded video and once with Original video. Play both outputs and confirm their length, subtitles, and chapters match [TRIM.md](TRIM.md). Confirm subtitle order, language, titles, and default/forced flags are retained. The source must be unchanged.
 - [ ] Complete the [manual VoiceOver checklist](ACCESSIBILITY.md#manual-voiceover-checklist) in the signed app.
 - [ ] From signed Vidra 0.1.0, leave Stable selected and confirm it does not offer 0.2.0-rc.3. Choose Beta, check for updates, and confirm installation stays unavailable while a conversion is queued or running. After the queue is idle, install the update and confirm Vidra restarts. Repeat the Beta update from 0.2.0-beta.1, 0.2.0-beta.2, 0.2.0-rc.1, and 0.2.0-rc.2 installed from its DMG; each must be offered rc.3 even though every bundle displays 0.2.0. Beta.1 is the build that could not install rc.2.
-- [ ] In the updated app, confirm Settings shows bundle version `0.2.0`, the release link is `v0.2.0-rc.3`, and the FFmpeg row includes `8.1.3`. Run a short conversion. Settings, profiles, history, and the update-channel choice must still be there.
+- [ ] In the updated app, confirm Settings shows bundle version `0.2.0`, the release link is `v0.2.0-rc.3`, and the FFmpeg row includes `8.1.3`. Run a short conversion. Settings, profiles, and history must still be there.
 - [ ] Confirm the draft `latest.json` version is `0.2.0-rc.3` and that its `darwin-aarch64` URL and signature match the attached updater archive. The signature's trusted comment must record `version:` followed by that same full version. The draft must be marked as a prerelease.
 - [ ] Publish the draft as a prerelease and do not mark it as the latest GitHub release. Confirm `publish-updater.yml` advances Beta `beta.json` to `0.2.0-rc.3` and leaves Stable `latest.json` on `0.1.0`.
 
@@ -146,8 +145,6 @@ In the app, Stable is the default even for a manually installed test build. The 
 Before the first `beta.json` exists, Beta falls back to the legacy `latest.json` endpoint. The legacy endpoint may still name `0.1.0-beta.5` until the first official publication; new Stable clients ignore that prerelease. Already-installed betas continue to use the legacy endpoint and can upgrade to 0.1.0, after which they can select a channel. Creating or merging the channel implementation does not modify existing GitHub release assets.
 
 ## Verify an application update
-
-The `v0.1.0-rc.1` prerelease validated software AV1 decoding and a full update from beta.6 through the Beta channel. Follow the [prerelease validation checklist](RELEASE-0.1.0.md#prerelease-validation), including manual installation of beta.6 from beta.5 or earlier.
 
 After an official publication, use the previous signed Vidra releases on a second Apple Silicon Mac to complete the end-to-end updater check. For 0.1.0, cover both the legacy `v0.1.0-beta.5` build and a channel-aware prerelease (beta.6 or rc.1):
 

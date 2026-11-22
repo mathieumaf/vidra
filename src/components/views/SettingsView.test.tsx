@@ -15,9 +15,9 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsView>[0]> =
     },
     isReady: true,
     appVersion: "1.2.3",
-    releaseTag: "v1.2.3-beta.1",
+    releaseTag: "v1.2.3",
     applicationError: null,
-    updaterState: { channel: "stable", phase: "up-to-date", update: null, error: null },
+    updaterState: { phase: "up-to-date", update: null, error: null },
     isUpdateBlocked: false,
     profiles: [],
     defaultProfileId: null,
@@ -31,7 +31,6 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsView>[0]> =
     onOpenSource: vi.fn(),
     onOpenRelease: vi.fn(),
     onCheckForUpdates: vi.fn(),
-    onUpdateChannelChange: vi.fn(),
     onInstallUpdate: vi.fn(),
     ...overrides,
   };
@@ -55,7 +54,7 @@ describe("SettingsView application information", () => {
         ready: false,
         ffmpegVersion: "ffmpeg version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers",
         ffprobeVersion: "ffprobe version 7.1.5 Copyright (c) 2000-2025 the FFmpeg developers",
-        error: "FFmpeg 7.1.5 does not match Vidra's required 8.1.3 engine. The development override is in use, so this is not the pinned release build.",
+        error: "FFmpeg 7.1.5 does not match Vidra's required 8.1.3 engine. Run pnpm ffmpeg:prepare and restart Vidra.",
       },
     });
 
@@ -73,7 +72,7 @@ describe("SettingsView application information", () => {
       notes: "Improves update safety.",
     };
     const available = renderSettings({
-      updaterState: { channel: "stable", phase: "available", update, error: null },
+      updaterState: { phase: "available", update, error: null },
     });
 
     available.tree.click("Install and restart");
@@ -82,7 +81,7 @@ describe("SettingsView application information", () => {
     available.tree.unmount();
 
     const blocked = renderSettings({
-      updaterState: { channel: "stable", phase: "available", update, error: null },
+      updaterState: { phase: "available", update, error: null },
       isUpdateBlocked: true,
     });
     expect(blocked.tree.button("Install and restart").disabled).toBe(true);
@@ -94,7 +93,7 @@ describe("SettingsView application information", () => {
     const { props, tree } = renderSettings();
 
     tree.click("Source code");
-    tree.click("Release v1.2.3-beta.1");
+    tree.click("Release v1.2.3");
 
     expect(props.onOpenSource).toHaveBeenCalledOnce();
     expect(props.onOpenRelease).toHaveBeenCalledOnce();
@@ -119,24 +118,30 @@ describe("SettingsView application information", () => {
     tree.unmount();
   });
 
-  it("offers two channels, explains beta opt-in, and locks the choice during installation", () => {
-    const stable = renderSettings();
-    const select = stable.tree.container.querySelector<HTMLSelectElement>('select[aria-label="Update channel"]')!;
-    expect(select.value).toBe("stable");
-    expect([...select.options].map((option) => option.text)).toEqual(["Stable", "Beta"]);
-    expect(stable.tree.text()).toContain("Official releases only");
-    expect(stable.tree.text()).toContain("until a newer stable release is available");
-    act(() => {
-      select.value = "beta";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(stable.props.onUpdateChannelChange).toHaveBeenCalledWith("beta");
-    stable.tree.unmount();
+  it("describes each update state and offers a manual check", () => {
+    const upToDate = renderSettings();
+    expect(upToDate.tree.text()).toContain("Vidra is up to date.");
+    expect(upToDate.tree.container.querySelector("select[aria-label='Update channel']")).toBeNull();
+    upToDate.tree.click("Check for updates");
+    expect(upToDate.props.onCheckForUpdates).toHaveBeenCalledOnce();
+    upToDate.tree.unmount();
 
-    const beta = renderSettings({ updaterState: { channel: "beta", phase: "installing", update: null, error: null } });
-    expect(beta.tree.text()).toContain("Test builds may have issues");
-    expect(beta.tree.container.querySelector<HTMLSelectElement>('select[aria-label="Update channel"]')!.disabled).toBe(true);
-    beta.tree.unmount();
+    const checking = renderSettings({ updaterState: { phase: "checking", update: null, error: null } });
+    expect(checking.tree.text()).toContain("Checking for a newer release…");
+    expect(checking.tree.button("Checking…").disabled).toBe(true);
+    checking.tree.unmount();
+
+    const installing = renderSettings({ updaterState: { phase: "installing", update: null, error: null } });
+    expect(installing.tree.button("Installing…").disabled).toBe(true);
+    installing.tree.unmount();
+
+    const failed = renderSettings({
+      updaterState: { phase: "error", update: null, error: "Vidra could not check for updates: offline" },
+    });
+    expect(failed.tree.text()).toContain("Vidra could not check for updates: offline");
+    failed.tree.click("Check for updates");
+    expect(failed.props.onCheckForUpdates).toHaveBeenCalledOnce();
+    failed.tree.unmount();
   });
 
   it("keeps all principal third-party notices inside the settings view", () => {

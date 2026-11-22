@@ -2,7 +2,6 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, type MountedTree } from "../test/dom";
-import { UPDATE_CHANNEL_STORAGE_KEY } from "../lib/updateChannel";
 import type { AvailableApplicationUpdate } from "../types/applicationUpdate";
 
 const mocks = vi.hoisted(() => ({ check: vi.fn(), install: vi.fn() }));
@@ -19,105 +18,96 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const betaUpdate: AvailableApplicationUpdate = {
-  currentVersion: "0.1.0", version: "0.2.0-beta.1", date: null, notes: null,
+const newerRelease: AvailableApplicationUpdate = {
+  currentVersion: "0.1.0", version: "0.2.0", date: null, notes: null,
 };
 
 let updater: ReturnType<typeof useApplicationUpdater>;
 function Harness({ checkOnStartup = false }: { checkOnStartup?: boolean }) {
   updater = useApplicationUpdater(checkOnStartup);
-  return <p>{updater.state.channel} {updater.state.phase} {updater.state.update?.version}</p>;
+  return <p>{updater.state.phase} {updater.state.update?.version}</p>;
 }
 
-describe("application update channels", () => {
+describe("application updates", () => {
   let tree: MountedTree | undefined;
   beforeEach(() => {
-    localStorage.clear();
     vi.resetAllMocks();
     mocks.check.mockResolvedValue(null);
   });
   afterEach(() => {
     tree?.unmount();
     tree = undefined;
-    vi.restoreAllMocks();
   });
 
-  it("defaults to Stable and remembers an explicit Beta choice after remounting", async () => {
+  it("checks automatically in release builds and stays idle in development builds", async () => {
     tree = mount(<Harness />);
-    expect(updater.state.channel).toBe("stable");
-    await act(async () => updater.setChannel("beta"));
-    expect(mocks.check).toHaveBeenLastCalledWith("beta");
-    expect(localStorage.getItem(UPDATE_CHANNEL_STORAGE_KEY)).toBe("beta");
+    expect(mocks.check).not.toHaveBeenCalled();
+    expect(updater.state.phase).toBe("idle");
     tree.unmount();
-    tree = mount(<Harness />);
-    expect(updater.state.channel).toBe("beta");
-  });
 
-  it("checks the saved channel automatically in release builds", async () => {
-    localStorage.setItem(UPDATE_CHANNEL_STORAGE_KEY, "beta");
     await act(async () => { tree = mount(<Harness checkOnStartup />); });
-    expect(mocks.check).toHaveBeenCalledExactlyOnceWith("beta");
+    expect(mocks.check).toHaveBeenCalledOnce();
+    expect(updater.state.phase).toBe("up-to-date");
   });
 
-  it("falls back to Stable for invalid or unavailable storage", () => {
-    localStorage.setItem(UPDATE_CHANNEL_STORAGE_KEY, "nightly");
+  it("reports an available release, then a failed check without keeping the stale release", async () => {
+    mocks.check.mockResolvedValueOnce(newerRelease);
     tree = mount(<Harness />);
-    expect(updater.state.channel).toBe("stable");
-    tree.unmount();
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("Unavailable"); });
-    tree = mount(<Harness />);
-    expect(updater.state.channel).toBe("stable");
-  });
+    await act(async () => updater.checkForUpdates());
+    expect(updater.state).toEqual({ phase: "available", update: newerRelease, error: null });
 
-  it.each(["success", "failure"])("ignores a late %s from the previous channel", async (outcome) => {
-    const betaCheck = deferred<AvailableApplicationUpdate | null>();
-    mocks.check.mockImplementation((channel) => channel === "beta" ? betaCheck.promise : Promise.resolve(null));
-    tree = mount(<Harness />);
-    act(() => updater.setChannel("beta"));
-    await act(async () => updater.setChannel("stable"));
-    await act(async () => {
-      if (outcome === "success") betaCheck.resolve(betaUpdate);
-      else betaCheck.reject(new Error("Old channel failed"));
+    mocks.check.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => updater.checkForUpdates());
+    expect(updater.state).toEqual({
+      phase: "error",
+      update: null,
+      error: "Vidra could not check for updates: offline",
     });
-    expect(updater.state).toEqual({ channel: "stable", phase: "up-to-date", update: null, error: null });
   });
 
-  it("clears an available beta before checking Stable and prevents stale installation", async () => {
-    mocks.check.mockResolvedValueOnce(betaUpdate);
+  it.each(["success", "failure"])("ignores a late %s from a superseded check", async (outcome) => {
+    const first = deferred<AvailableApplicationUpdate | null>();
+    mocks.check.mockReturnValueOnce(first.promise);
     tree = mount(<Harness />);
-    await act(async () => updater.setChannel("beta"));
-    expect(updater.state.update).toEqual(betaUpdate);
-    const stableCheck = deferred<AvailableApplicationUpdate | null>();
-    mocks.check.mockReturnValueOnce(stableCheck.promise);
+    act(() => { void updater.checkForUpdates(); });
+    await act(async () => updater.checkForUpdates());
     await act(async () => {
-      updater.setChannel("stable");
-      await updater.installUpdate();
+      if (outcome === "success") first.resolve(newerRelease);
+      else first.reject(new Error("Superseded check failed"));
     });
-    expect(updater.state.update).toBeNull();
+    expect(updater.state).toEqual({ phase: "up-to-date", update: null, error: null });
+  });
+
+  it("does not install before a release is available", async () => {
+    tree = mount(<Harness />);
+    await act(async () => updater.installUpdate());
     expect(mocks.install).not.toHaveBeenCalled();
-    await act(async () => stableCheck.resolve(null));
   });
 
-  it("locks the channel and prevents duplicate installation until an install fails", async () => {
-    mocks.check.mockResolvedValue(betaUpdate);
+  it("prevents duplicate installation and checks until an install fails, then allows a retry", async () => {
+    mocks.check.mockResolvedValue(newerRelease);
     const installation = deferred<void>();
-    mocks.install.mockReturnValue(installation.promise);
+    mocks.install.mockReturnValueOnce(installation.promise);
     tree = mount(<Harness />);
-    await act(async () => updater.setChannel("beta"));
+    await act(async () => updater.checkForUpdates());
     act(() => {
       void updater.installUpdate();
       void updater.installUpdate();
-      updater.setChannel("stable");
       void updater.checkForUpdates();
     });
-    expect(mocks.install).toHaveBeenCalledExactlyOnceWith("0.2.0-beta.1", "beta");
-    expect(updater.state.channel).toBe("beta");
+    expect(mocks.install).toHaveBeenCalledExactlyOnceWith("0.2.0");
+    expect(mocks.check).toHaveBeenCalledOnce();
     expect(updater.state.phase).toBe("installing");
+
     await act(async () => installation.reject(new Error("Download failed")));
-    expect(updater.state.phase).toBe("error");
-    mocks.check.mockResolvedValue(null);
-    await act(async () => updater.setChannel("stable"));
-    expect(updater.state.update).toBeNull();
-    expect(updater.state.channel).toBe("stable");
+    expect(updater.state).toEqual({
+      phase: "error",
+      update: newerRelease,
+      error: "Vidra could not install the update: Download failed",
+    });
+
+    mocks.install.mockResolvedValueOnce(undefined);
+    await act(async () => updater.installUpdate());
+    expect(mocks.install).toHaveBeenCalledTimes(2);
   });
 });

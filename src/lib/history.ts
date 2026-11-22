@@ -11,7 +11,7 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
   timeStyle: "short",
 });
 
-export function historyDate(finishedAtMs: number): string {
+function historyDate(finishedAtMs: number): string {
   return dateFormatter.format(new Date(finishedAtMs));
 }
 

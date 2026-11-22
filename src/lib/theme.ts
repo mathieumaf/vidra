@@ -1,5 +1,5 @@
 export const THEME_STORAGE_KEY = "vidra.theme-preference";
-export const SYSTEM_DARK_THEME_QUERY = "(prefers-color-scheme: dark)";
+const SYSTEM_DARK_THEME_QUERY = "(prefers-color-scheme: dark)";
 
 export type ThemePreference = "auto" | "light" | "dark";
 export type ResolvedTheme = Exclude<ThemePreference, "auto">;

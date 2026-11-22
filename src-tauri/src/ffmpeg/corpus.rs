@@ -63,6 +63,21 @@ struct Case {
     speed: EncodingSpeed,
 }
 
+/// The encoders `encode/video.rs` and `encode/audio.rs` can select.
+const REQUIRED_ENCODERS: [&str; 7] = [
+    "libx264",
+    "libx265",
+    "libsvtav1",
+    "h264_videotoolbox",
+    "hevc_videotoolbox",
+    "aac",
+    "libopus",
+];
+/// HDR to SDR tone mapping for H.264 needs both.
+const REQUIRED_FILTERS: [&str; 2] = ["zscale", "tonemap"];
+/// H.265 and AV1 keep HDR and deeper sources as 10-bit video.
+const TEN_BIT_ENCODERS: [&str; 2] = ["libx265", "libsvtav1"];
+
 struct Capabilities {
     encoders: HashSet<String>,
     filters: HashSet<String>,
@@ -72,23 +87,10 @@ struct Capabilities {
 struct Stats {
     encoded: u32,
     rejected: u32,
-    skipped: Vec<String>,
-    reported: Vec<String>,
     profiles: HashSet<&'static str>,
     qualities: Vec<QualityLevel>,
     codecs: Vec<VideoCodec>,
     containers: Vec<OutputContainer>,
-}
-
-#[test]
-fn labels_ffmpeg_6_as_an_older_smoke_test() {
-    assert_eq!(
-        ffmpeg_major("ffmpeg version 6.1.1-3ubuntu5 Copyright"),
-        Some(6)
-    );
-    assert_eq!(ffmpeg_major("ffmpeg version n8.1.3 Copyright"), Some(8));
-    assert!(ffmpeg_major("ffmpeg version 6.1.1").is_some_and(|major| major < 7));
-    assert!(ffmpeg_major("ffmpeg version 8.1.3").is_some_and(|major| major >= 7));
 }
 
 #[test]
@@ -191,16 +193,7 @@ fn reduced_matrix_covers_presets_profiles_codecs_and_containers() {
 fn conversion_corpus() {
     let started = Instant::now();
     let full = full_matrix();
-    let (manifest, _corpus_directory) = match prepare_corpus() {
-        CorpusPrep::Skip(message) => {
-            if corpus_required() {
-                panic!("{message}");
-            }
-            eprintln!("{message}");
-            return;
-        }
-        CorpusPrep::Ready(manifest, directory) => (manifest, directory),
-    };
+    let (manifest, _corpus_directory) = prepare_corpus();
 
     for entry in &manifest.unavailable {
         eprintln!("{}: {}", entry.id, entry.reason);
@@ -208,16 +201,11 @@ fn conversion_corpus() {
 
     let ffmpeg = PathBuf::from(&manifest.ffmpeg);
     let ffprobe = PathBuf::from(&manifest.ffprobe);
-    let capabilities = Capabilities::load(&ffmpeg);
-    if strict_encoders() {
-        capabilities.require_strict();
-    }
+    Capabilities::load(&ffmpeg).require_all();
 
     let mut stats = Stats {
         encoded: 0,
         rejected: 0,
-        skipped: Vec::new(),
-        reported: Vec::new(),
         profiles: HashSet::new(),
         qualities: Vec::new(),
         codecs: Vec::new(),
@@ -250,7 +238,6 @@ fn conversion_corpus() {
                 &EncodeTools {
                     ffmpeg: &ffmpeg,
                     ffprobe: &ffprobe,
-                    capabilities: &capabilities,
                 },
                 &mut stats,
             );
@@ -260,43 +247,16 @@ fn conversion_corpus() {
 
     assert_source_unchanged(&source_hashes);
     assert_coverage(&stats);
-    if corpus_required() && stats.encoded == 0 {
-        panic!(
-            "The corpus did not complete any encode. Skips: {}",
-            stats.skipped.join("; ")
-        );
-    }
+    assert!(stats.encoded > 0, "The corpus did not complete any encode.");
 
     let elapsed = started.elapsed().as_secs_f64();
-    let older_ffmpeg = ffmpeg_major(&manifest.ffmpeg_version).is_some_and(|major| major < 7);
-    let ffmpeg_label = if manifest.ffmpeg_version.is_empty() {
-        "unknown".to_owned()
-    } else {
-        manifest.ffmpeg_version.clone()
-    };
-    let smoke = if older_ffmpeg {
-        " | older-FFmpeg smoke test"
-    } else {
-        ""
-    };
     eprintln!(
-        "Corpus matrix: {} | FFmpeg: {ffmpeg_label}{smoke} | encodes: {} | clean rejections: {} | skipped: {} | elapsed: {elapsed:.1}s",
+        "Corpus matrix: {} | FFmpeg: {} | encodes: {} | clean rejections: {} | elapsed: {elapsed:.1}s",
         if full { "full" } else { "reduced" },
+        manifest.ffmpeg_version,
         stats.encoded,
         stats.rejected,
-        stats.skipped.len(),
     );
-    for skip in &stats.skipped {
-        eprintln!("skipped: {skip}");
-    }
-    for note in &stats.reported {
-        eprintln!("reported: {note}");
-    }
-}
-
-enum CorpusPrep {
-    Skip(String),
-    Ready(Manifest, CorpusDir),
 }
 
 struct CorpusDir(PathBuf);
@@ -307,15 +267,11 @@ impl Drop for CorpusDir {
     }
 }
 
-fn prepare_corpus() -> CorpusPrep {
+/// Generates the clips with the prepared sidecars. A missing Node.js or a
+/// missing sidecar fails the test: the corpus never passes without encoding.
+fn prepare_corpus() -> (Manifest, CorpusDir) {
     let root = repo_root();
     let script = root.join("scripts/corpus/generate.mjs");
-    if !script.is_file() {
-        return CorpusPrep::Skip(format!(
-            "Corpus generator is missing at {}.",
-            script.display()
-        ));
-    }
     let directory = std::env::temp_dir().join(format!(
         "vidra-corpus-{}-{}",
         std::process::id(),
@@ -324,23 +280,13 @@ fn prepare_corpus() -> CorpusPrep {
     fs::create_dir_all(&directory).expect("the corpus directory should be created");
     let corpus_directory = CorpusDir(directory.clone());
     let media = directory.join("media");
-    let status = Command::new("node")
+    let output = Command::new("node")
         .arg(&script)
         .arg("--output")
         .arg(&media)
         .current_dir(&root)
-        .output();
-    let output = match status {
-        Ok(output) => output,
-        Err(error) => {
-            return CorpusPrep::Skip(format!(
-                "Node is required to generate the corpus ({error})."
-            ));
-        }
-    };
-    if output.status.code() == Some(2) {
-        return CorpusPrep::Skip(text(&output.stderr));
-    }
+        .output()
+        .unwrap_or_else(|error| panic!("Node.js is required to generate the corpus ({error})."));
     if !output.status.success() {
         panic!(
             "Corpus generation failed.\n{}",
@@ -352,7 +298,7 @@ fn prepare_corpus() -> CorpusPrep {
         &fs::read(&manifest_path).unwrap_or_else(|error| panic!("manifest: {error}")),
     )
     .unwrap_or_else(|error| panic!("manifest JSON: {error}"));
-    CorpusPrep::Ready(manifest, corpus_directory)
+    (manifest, corpus_directory)
 }
 
 fn remove_corpus_dir(path: &Path) {
@@ -373,7 +319,6 @@ struct CaseInput<'a> {
 struct EncodeTools<'a> {
     ffmpeg: &'a Path,
     ffprobe: &'a Path,
-    capabilities: &'a Capabilities,
 }
 
 fn run_case(input: CaseInput<'_>, tools: &EncodeTools<'_>, stats: &mut Stats) {
@@ -432,16 +377,6 @@ fn run_case(input: CaseInput<'_>, tools: &EncodeTools<'_>, stats: &mut Stats) {
         "{label}: encode arguments did not request progress on standard output"
     );
 
-    if let Some(reason) = skip_reason(case, media, tools.capabilities) {
-        assert_cleanup(&label, discard_partial(&partial));
-        assert_absent(&label, &normalized);
-        if strict_encoders() {
-            panic!("{label}: {reason}");
-        }
-        stats.skipped.push(format!("{label}: {reason}"));
-        return;
-    }
-
     let ran =
         run_ffmpeg(tools.ffmpeg, &arguments).unwrap_or_else(|error| panic!("{label}: {error}"));
     if !ran.status.success() {
@@ -491,13 +426,12 @@ fn run_case(input: CaseInput<'_>, tools: &EncodeTools<'_>, stats: &mut Stats) {
     )
     .unwrap_or_else(|error| panic!("{label}: output probe: {}", error.message));
     assert_output(&label, case, media, &output.media);
-    report_static_hdr_metadata(
+    assert_static_hdr_metadata(
         &label,
         case,
         media,
         source_side_data,
         &output.video_side_data,
-        stats,
     );
     stats.encoded += 1;
 }
@@ -547,16 +481,13 @@ fn expect_rejection(label: &str, case: Case, media: &MediaInfo, error: &ApiError
 
 fn expected_rejection(case: Case, media: &MediaInfo) -> Option<(&'static str, &'static str)> {
     // Match `video_arguments`: Dolby Vision is refused before the encoder is
-    // chosen, and hardware encoding is refused before tone-map validation.
+    // chosen.
     if case.codec != VideoCodec::Copy
         && media.video.as_ref().is_some_and(|video| {
             video.hdr_format == Some(HdrFormat::DolbyVision) && !compatible_dolby(video)
         })
     {
         return Some(("invalid_input", "Dolby Vision"));
-    }
-    if case.speed == EncodingSpeed::Fast && !cfg!(target_os = "macos") {
-        return Some(("unsupported_platform", "not supported on this platform"));
     }
     if case.codec == VideoCodec::Copy && media.video.is_none() {
         return Some(("invalid_input", "no video stream"));
@@ -639,13 +570,12 @@ fn assert_output(label: &str, case: Case, source: &MediaInfo, output: &MediaInfo
     assert_hdr(label, case.codec, source_video, output_video);
 }
 
-fn report_static_hdr_metadata(
+fn assert_static_hdr_metadata(
     label: &str,
     case: Case,
     source: &MediaInfo,
     source_side_data: &[String],
     output_side_data: &[String],
-    stats: &mut Stats,
 ) {
     let hdr10 = source
         .video
@@ -659,22 +589,14 @@ fn report_static_hdr_metadata(
     if output_mastering && output_light {
         return;
     }
-    // FFmpeg 8.1.3 keeps this metadata on the re-encoded stream even when the
-    // source only reports it on frames. Strict mode requires the output stream,
-    // which is what Vidra reads. Older builds often have neither.
-    let detail = format!(
-        "{label}: stream-level static HDR metadata (source mastering={source_mastering}, content light={source_light}; output mastering={output_mastering}, content light={output_light}; source side data: {}; output side data: {})",
+    // The pinned FFmpeg keeps this metadata on the re-encoded stream even when
+    // the source only reports it on frames. The output stream is what Vidra
+    // reads, so it must be there.
+    panic!(
+        "{label}: stream-level static HDR metadata (source mastering={source_mastering}, content light={source_light}; output mastering={output_mastering}, content light={output_light}; source side data: {}; output side data: {}). The sidecar must keep mastering display and content light on the video stream through H.265 and AV1 re-encoding, because that is what Vidra reads.",
         side_data_list(source_side_data),
         side_data_list(output_side_data),
     );
-    if strict_encoders() {
-        panic!(
-            "{detail}. The macOS sidecar must keep mastering display and content light on the video stream through H.265 and AV1 re-encoding, because that is what Vidra reads."
-        );
-    }
-    stats.reported.push(format!(
-        "{detail}. This older FFmpeg build often attaches that metadata only to frames, so the smoke test does not fail."
-    ));
 }
 
 fn static_hdr_metadata(side_data: &[String]) -> (bool, bool) {
@@ -691,12 +613,6 @@ fn side_data_list(side_data: &[String]) -> String {
     } else {
         side_data.join(", ")
     }
-}
-
-fn ffmpeg_major(version: &str) -> Option<u32> {
-    let token = version.split_whitespace().nth(2)?;
-    let token = token.trim_start_matches('n');
-    token.split(['.', '-']).next()?.parse().ok()
 }
 
 fn assert_hdr(label: &str, codec: VideoCodec, source: &VideoStream, output: &VideoStream) {
@@ -795,77 +711,6 @@ fn compatible_dolby(video: &VideoStream) -> bool {
     video.dolby_vision.as_ref().is_some_and(|info| {
         matches!(info.base_layer_compatibility_id, Some(1 | 4)) && !info.has_enhancement_layer
     })
-}
-
-fn skip_reason(case: Case, media: &MediaInfo, capabilities: &Capabilities) -> Option<String> {
-    if let Some(encoder) = encoder_name(case.codec, case.speed) {
-        if !capabilities.encoders.contains(encoder) {
-            return Some(format!(
-                "encoder {encoder} is not available in this FFmpeg build"
-            ));
-        }
-        if let Some(pixel_format) = required_pixel_format(case, media) {
-            if !capabilities.supports_pixel_format(encoder, pixel_format) {
-                return Some(format!(
-                    "encoder {encoder} does not list the {pixel_format} pixel format"
-                ));
-            }
-        }
-    }
-    if needs_tone_map(case.codec, media) {
-        for filter in ["zscale", "tonemap"] {
-            if !capabilities.filters.contains(filter) {
-                return Some(format!(
-                    "filter {filter} is not available, so H.264 HDR tone mapping cannot run"
-                ));
-            }
-        }
-    }
-    None
-}
-
-fn encoder_name(codec: VideoCodec, speed: EncodingSpeed) -> Option<&'static str> {
-    match (codec, speed) {
-        (VideoCodec::Copy, _) => None,
-        (VideoCodec::H264, EncodingSpeed::Efficient) => Some("libx264"),
-        (VideoCodec::H265, EncodingSpeed::Efficient) => Some("libx265"),
-        (VideoCodec::Av1, EncodingSpeed::Efficient) => Some("libsvtav1"),
-        (VideoCodec::H264, EncodingSpeed::Fast) => Some("h264_videotoolbox"),
-        (VideoCodec::H265, EncodingSpeed::Fast) => Some("hevc_videotoolbox"),
-        (VideoCodec::Av1, EncodingSpeed::Fast) => None,
-    }
-}
-
-fn required_pixel_format(case: Case, media: &MediaInfo) -> Option<&'static str> {
-    if !matches!(case.codec, VideoCodec::H265 | VideoCodec::Av1) {
-        return None;
-    }
-    let ten_bit = media.video.as_ref().is_some_and(|video| {
-        video.hdr_format.is_some() || video.bit_depth.is_some_and(|depth| depth > 8)
-    });
-    if !ten_bit {
-        return None;
-    }
-    Some(match case.speed {
-        EncodingSpeed::Efficient => "yuv420p10le",
-        EncodingSpeed::Fast => "p010le",
-    })
-}
-
-fn needs_tone_map(codec: VideoCodec, media: &MediaInfo) -> bool {
-    codec == VideoCodec::H264
-        && media.video.as_ref().is_some_and(|video| {
-            matches!(
-                video.hdr_format,
-                Some(
-                    HdrFormat::Hdr10
-                        | HdrFormat::Hlg
-                        | HdrFormat::Pq
-                        | HdrFormat::Hdr10Plus
-                        | HdrFormat::DolbyVision
-                )
-            )
-        })
 }
 
 fn request_for(media: &MediaInfo, case: Case, destination: &str) -> EncodeRequest {
@@ -1128,20 +973,15 @@ impl Capabilities {
     fn load(ffmpeg: &Path) -> Self {
         let encoders = capability_names(&command_text(ffmpeg, &["-hide_banner", "-encoders"]));
         let filters = capability_names(&command_text(ffmpeg, &["-hide_banner", "-filters"]));
-        let encoder_help = [
-            "libx264",
-            "libx265",
-            "libsvtav1",
-            "h264_videotoolbox",
-            "hevc_videotoolbox",
-        ]
-        .into_iter()
-        .filter(|name| encoders.contains(*name))
-        .map(|name| {
-            let help = command_text(ffmpeg, &["-hide_banner", "-h", &format!("encoder={name}")]);
-            (name.to_owned(), help)
-        })
-        .collect();
+        let encoder_help = TEN_BIT_ENCODERS
+            .into_iter()
+            .filter(|name| encoders.contains(*name))
+            .map(|name| {
+                let help =
+                    command_text(ffmpeg, &["-hide_banner", "-h", &format!("encoder={name}")]);
+                (name.to_owned(), help)
+            })
+            .collect();
         Self {
             encoders,
             filters,
@@ -1156,42 +996,29 @@ impl Capabilities {
             .is_some_and(|(_, help)| help.contains(pixel_format))
     }
 
-    fn require_strict(&self) {
+    /// Every encoder and filter Vidra uses must be in the pinned sidecar.
+    fn require_all(&self) {
         let mut missing = Vec::new();
-        for name in [
-            "libx264",
-            "libx265",
-            "libsvtav1",
-            "aac",
-            "zscale",
-            "tonemap",
-        ] {
-            let present = if name == "zscale" || name == "tonemap" {
-                self.filters.contains(name)
-            } else {
-                self.encoders.contains(name)
-            };
-            if !present {
-                missing.push(name.to_owned());
-            }
-        }
-        for encoder in ["libx265", "libsvtav1"] {
-            if !self.supports_pixel_format(encoder, "yuv420p10le") {
-                missing.push(format!("{encoder} yuv420p10le"));
-            }
-        }
-        #[cfg(target_os = "macos")]
-        for encoder in ["h264_videotoolbox", "hevc_videotoolbox"] {
+        for encoder in REQUIRED_ENCODERS {
             if !self.encoders.contains(encoder) {
                 missing.push(encoder.to_owned());
             }
         }
-        if !missing.is_empty() {
-            panic!(
-                "This FFmpeg build is missing encoders or filters required by the corpus: {}",
-                missing.join(", ")
-            );
+        for filter in REQUIRED_FILTERS {
+            if !self.filters.contains(filter) {
+                missing.push(filter.to_owned());
+            }
         }
+        for encoder in TEN_BIT_ENCODERS {
+            if !self.supports_pixel_format(encoder, "yuv420p10le") {
+                missing.push(format!("{encoder} yuv420p10le"));
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "This FFmpeg build is missing encoders or filters required by the corpus: {}",
+            missing.join(", ")
+        );
     }
 }
 
@@ -1352,21 +1179,6 @@ fn full_matrix() -> bool {
         Ok(value) => panic!("VIDRA_CORPUS_MATRIX must be reduced or full, not {value}."),
         Err(_) => false,
     }
-}
-
-fn corpus_required() -> bool {
-    env_flag("VIDRA_CORPUS_REQUIRED")
-}
-
-fn strict_encoders() -> bool {
-    env_flag("VIDRA_CORPUS_STRICT_ENCODERS")
-}
-
-fn env_flag(name: &str) -> bool {
-    matches!(
-        env::var(name).ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE")
-    )
 }
 
 fn unique_nanos() -> u128 {

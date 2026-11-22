@@ -8,22 +8,21 @@ import { checkForApplicationUpdate, installApplicationUpdate } from "./updates";
 describe("application update service", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("checks the selected channel through the Rust boundary", async () => {
-    const update = { currentVersion: "0.1.0", version: "0.2.0-beta.1", date: null, notes: null };
+  it("checks for an update through the Rust boundary", async () => {
+    const update = { currentVersion: "0.1.0", version: "0.2.0", date: null, notes: null };
     mocks.invoke.mockResolvedValue(update);
 
-    await expect(checkForApplicationUpdate("beta")).resolves.toEqual(update);
-    expect(mocks.invoke).toHaveBeenCalledWith("check_application_update", { channel: "beta" });
+    await expect(checkForApplicationUpdate()).resolves.toEqual(update);
+    expect(mocks.invoke).toHaveBeenCalledWith("check_application_update");
   });
 
-  it("passes the version and channel to the guarded installation command", async () => {
+  it("passes the expected version to the guarded installation command", async () => {
     mocks.invoke.mockResolvedValue(undefined);
 
-    await installApplicationUpdate("0.1.1", "stable");
+    await installApplicationUpdate("0.1.1");
 
     expect(mocks.invoke).toHaveBeenCalledWith("install_application_update", {
       expectedVersion: "0.1.1",
-      channel: "stable",
     });
   });
 });

@@ -14,56 +14,36 @@ import {
   resolveSidecars,
 } from "./generate.mjs";
 
-test("prefers prepared sidecar filenames over VIDRA_FFMPEG_DIR", () => {
-  const root = mkdtempSync(join(tmpdir(), "vidra-sidecars-"));
+test("uses the prepared sidecars for the host target", () => {
+  const root = join(tmpdir(), "vidra-sidecars");
   const present = new Set([
     join(root, "ffmpeg-aarch64-apple-darwin"),
     join(root, "ffprobe-aarch64-apple-darwin"),
-    join(root, "override", "ffmpeg"),
-    join(root, "override", "ffprobe"),
   ]);
-  try {
-    const resolved = resolveSidecars({
-      ffmpegDir: join(root, "override"),
+  assert.deepEqual(
+    resolveSidecars({
       binaryDirectory: root,
       target: "aarch64-apple-darwin",
       exists: (path) => present.has(path),
-    });
-    assert.equal(resolved.source, "sidecar");
-    assert.equal(resolved.ffmpeg, join(root, "ffmpeg-aarch64-apple-darwin"));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("uses VIDRA_FFMPEG_DIR when the sidecar files are absent", () => {
-  const root = mkdtempSync(join(tmpdir(), "vidra-sidecars-"));
-  const override = join(root, "override");
-  const present = new Set([join(override, "ffmpeg"), join(override, "ffprobe")]);
-  try {
-    const resolved = resolveSidecars({
-      ffmpegDir: override,
-      binaryDirectory: join(root, "missing"),
-      target: "x86_64-unknown-linux-gnu",
-      exists: (path) => present.has(path),
-    });
-    assert.equal(resolved.source, "VIDRA_FFMPEG_DIR");
-    assert.equal(resolved.ffprobe, join(override, "ffprobe"));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("explains how to provide FFmpeg when neither location has it", () => {
-  assert.throws(
-    () => resolveSidecars({
-      ffmpegDir: "",
-      binaryDirectory: join(tmpdir(), "vidra-missing-sidecars"),
-      target: "x86_64-unknown-linux-gnu",
-      exists: () => false,
     }),
-    /pnpm ffmpeg:prepare/,
+    {
+      ffmpeg: join(root, "ffmpeg-aarch64-apple-darwin"),
+      ffprobe: join(root, "ffprobe-aarch64-apple-darwin"),
+    },
   );
+});
+
+test("explains how to prepare FFmpeg when a sidecar is missing", () => {
+  for (const present of [[], ["ffmpeg-aarch64-apple-darwin"], ["ffprobe-aarch64-apple-darwin"]]) {
+    assert.throws(
+      () => resolveSidecars({
+        binaryDirectory: join(tmpdir(), "vidra-sidecars"),
+        target: "aarch64-apple-darwin",
+        exists: (path) => present.some((name) => path.endsWith(name)),
+      }),
+      /Run pnpm ffmpeg:prepare\./,
+    );
+  }
 });
 
 test("mastering display metadata uses the ISO BMFF box layout", () => {

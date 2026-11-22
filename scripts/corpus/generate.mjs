@@ -84,30 +84,18 @@ export const DOLBY_VISION_SKIP_REASON = [
   "HDR10 and HLG clips still cover the backward-compatible base layer: H.264 tone-maps it to SDR, and H.265 and AV1 keep it as 10-bit video.",
 ].join(" ");
 
+/** The corpus is always generated with the pinned sidecars that Vidra bundles. */
 export function resolveSidecars({
-  ffmpegDir = process.env.VIDRA_FFMPEG_DIR?.trim() ?? "",
   binaryDirectory = join(rootDirectory, "src-tauri", "binaries"),
   target = hostTargetTriple(),
   exists = existsSync,
 } = {}) {
-  const sidecarFfmpeg = join(binaryDirectory, `ffmpeg-${target}`);
-  const sidecarFfprobe = join(binaryDirectory, `ffprobe-${target}`);
-  if (exists(sidecarFfmpeg) && exists(sidecarFfprobe)) {
-    return { ffmpeg: sidecarFfmpeg, ffprobe: sidecarFfprobe, source: "sidecar" };
+  const ffmpeg = join(binaryDirectory, `ffmpeg-${target}`);
+  const ffprobe = join(binaryDirectory, `ffprobe-${target}`);
+  if (exists(ffmpeg) && exists(ffprobe)) {
+    return { ffmpeg, ffprobe };
   }
-  if (ffmpegDir) {
-    const ffmpeg = join(ffmpegDir, "ffmpeg");
-    const ffprobe = join(ffmpegDir, "ffprobe");
-    if (exists(ffmpeg) && exists(ffprobe)) {
-      return { ffmpeg, ffprobe, source: "VIDRA_FFMPEG_DIR" };
-    }
-    throw new Error(
-      `VIDRA_FFMPEG_DIR does not contain ffmpeg and ffprobe. Expected them in ${ffmpegDir}.`,
-    );
-  }
-  throw new Error(
-    `FFmpeg sidecars are missing (${sidecarFfmpeg}). Run pnpm ffmpeg:prepare, or set VIDRA_FFMPEG_DIR to a directory that contains ffmpeg and ffprobe.`,
-  );
+  throw new Error(`FFmpeg sidecars are missing (${ffmpeg}). Run pnpm ffmpeg:prepare.`);
 }
 
 // ISO/IEC 14496-12 MasteringDisplayColourVolumeBox and ContentLightLevelBox.
@@ -212,7 +200,6 @@ export async function generateCorpus(outputDirectory, sidecars = resolveSidecars
     ffmpeg: sidecars.ffmpeg,
     ffprobe: sidecars.ffprobe,
     ffmpegVersion: ffmpegVersionLine(sidecars.ffmpeg),
-    sidecarSource: sidecars.source,
     clips,
     unavailable,
   };
@@ -671,14 +658,7 @@ async function main() {
     console.log("Writes tiny synthetic clips and manifest.json. Media is not committed.");
     return;
   }
-  let sidecars;
-  try {
-    sidecars = resolveSidecars();
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 2;
-    return;
-  }
+  const sidecars = resolveSidecars();
   const output = options.output
     ? resolve(options.output)
     : await mkdtemp(join(tmpdir(), "vidra-corpus-"));

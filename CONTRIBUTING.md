@@ -6,8 +6,6 @@ Thank you for helping improve Vidra. Keep changes focused, preserve the local-fi
 
 Vidra currently targets macOS on Apple Silicon. Install Node.js 26, pnpm 12, Rust, the Tauri prerequisites, and Xcode when regenerating native icon assets. `pnpm ffmpeg:prepare` downloads the checksum-pinned development archive for the current release recipe. It does not compile FFmpeg. macOS pull-request CI runs the same download. To compile the release recipe locally, run `pnpm ffmpeg:prepare -- --build` after installing the native build tools listed in [docs/RELEASING.md](docs/RELEASING.md).
 
-Linux can compile the Rust crate and run the portable checks before a Linux port exists. Install the Tauri Linux dependencies and a local FFmpeg, then run `VIDRA_FFMPEG_DIR=/usr/bin pnpm ffmpeg:prepare` so the sidecar filenames exist. That override is for development and CI only. Release builds reject `VIDRA_FFMPEG_DIR` and still require the pinned Apple Silicon recipe. Vidra reports the engine as ready only when FFmpeg and FFprobe report the pinned release version. A different local build still prepares the filenames, and the app explains that it is not the pinned engine.
-
 ```sh
 pnpm install
 pnpm tauri dev
@@ -17,7 +15,7 @@ Use pnpm for every JavaScript dependency operation. Do not commit generated FFmp
 
 ## Conversion corpus
 
-The 1.0 conversion check encodes a small synthetic corpus. Nothing from that corpus is committed. `scripts/corpus/generate.mjs` asks the prepared FFmpeg sidecar (or `VIDRA_FFMPEG_DIR` when the sidecar files are not there yet) for short lavfi clips:
+The 1.0 conversion check encodes a small synthetic corpus. Nothing from that corpus is committed. `scripts/corpus/generate.mjs` asks the prepared FFmpeg sidecar for short lavfi clips:
 
 | Clip | What it exercises |
 | --- | --- |
@@ -31,7 +29,7 @@ The 1.0 conversion check encodes a small synthetic corpus. Nothing from that cor
 | `corrupt` | The first bytes of a real MP4, truncated so inspection fails. |
 | `unknown-transfer` | 10-bit HEVC with BT.2020 primaries, no transfer characteristic, and stream-level mastering-display metadata. |
 
-A Dolby Vision clip is added only when this FFmpeg build writes a DOVI configuration record that FFprobe reports on the video stream. libx265 can name a Dolby Vision profile, but the record is not written unless an external RPU bitstream is passed to `dolby-vision-rpu`. lavfi cannot synthesize that RPU, and Vidra does not bundle Dolby's tools or `dovi_tool`. The generator prints that reason and still writes the HDR10 and HLG clips, which cover the backward-compatible base layer. Color tags are written with `setparams` so lavfi frames carry them on both FFmpeg 6 and FFmpeg 8. An existing `--output` folder is replaced only when it already holds this corpus's manifest and only the files the generator wrote. Each FFmpeg invocation may run for 180 seconds.
+A Dolby Vision clip is added only when this FFmpeg build writes a DOVI configuration record that FFprobe reports on the video stream. libx265 can name a Dolby Vision profile, but the record is not written unless an external RPU bitstream is passed to `dolby-vision-rpu`. lavfi cannot synthesize that RPU, and Vidra does not bundle Dolby's tools or `dovi_tool`. The generator prints that reason and still writes the HDR10 and HLG clips, which cover the backward-compatible base layer. Color tags are written with `setparams` so lavfi frames carry them. An existing `--output` folder is replaced only when it already holds this corpus's manifest and only the files the generator wrote. Each FFmpeg invocation may run for 180 seconds.
 
 The Rust test `conversion_corpus` is ignored during ordinary `cargo test` so those checks stay fast. It probes every clip with the application's FFprobe parser, builds each command with `encode::command_arguments`, and publishes the result through the same temporary-file helper as the queue. Encodes run one at a time. From the repository root, after `pnpm ffmpeg:prepare`:
 
@@ -42,7 +40,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ign
 
 `VIDRA_CORPUS_MATRIX=reduced` is the default and the matrix CI runs. On `sdr-h264-aac` it encodes every quality preset with efficient H.264 MP4, the Smaller file profile (efficient H.265 MP4), and the Fast export profile (hardware H.264 MP4). Every clip is also encoded with Copy, H.264, H.265, and AV1 into both MP4 and MKV at the balanced preset. `VIDRA_CORPUS_MATRIX=full` repeats every quality preset for every re-encode codec and container, and adds hardware H.264 and H.265 where the platform supports them. Fast AV1 is not part of either matrix because the app rejects it.
 
-`VIDRA_CORPUS_REQUIRED=1` fails the test when Node or the FFmpeg sidecar is missing. Without that variable the test prints the reason and returns. `VIDRA_CORPUS_STRICT_ENCODERS=1` fails when libx264, libx265, libsvtav1, AAC, zscale, tonemap, or 10-bit output for H.265 and AV1 is missing. macOS CI sets it. Linux CI uses the system FFmpeg and skips a combination, with a message, when that build lacks the encoder or filter. On Linux, Fast export is expected to stop before FFmpeg with the unsupported-platform error. `VIDRA_CORPUS_KEEP=1` leaves the temporary clips and outputs in place.
+The test fails when Node.js or the FFmpeg sidecar is missing, and when the sidecar lacks libx264, libx265, libsvtav1, the VideoToolbox encoders, AAC, zscale, tonemap, or 10-bit output for H.265 and AV1. No combination is skipped. `VIDRA_CORPUS_KEEP=1` leaves the temporary clips and outputs in place.
 
 ## Dependency policy
 

@@ -2,16 +2,9 @@ import { describe, expect, it } from "vitest";
 import { releaseTag, releaseUrl, THIRD_PARTY_NOTICE_GROUPS } from "./legal";
 
 describe("legal product information", () => {
-  it("links a built version to its exact injected release tag", () => {
-    expect(releaseUrl("1.2.3", "v1.2.3-beta.1")).toBe(
-      "https://github.com/mathieumaf/vidra/releases/tag/v1.2.3-beta.1",
-    );
-  });
-
-  it("falls back to the version tag when release metadata is absent or invalid", () => {
-    expect(releaseTag("1.2.3", null)).toBe("v1.2.3");
-    expect(releaseTag("1.2.3", "v9.0.0")).toBe("v1.2.3");
-    expect(releaseTag("1.2.3", "v1.2.3/unsafe")).toBe("v1.2.3");
+  it("links a version to the release tagged with that exact version", () => {
+    expect(releaseTag("1.2.3")).toBe("v1.2.3");
+    expect(releaseUrl("1.2.3")).toBe("https://github.com/mathieumaf/vidra/releases/tag/v1.2.3");
   });
 
   it("covers every bundled media component named in the notices", () => {
