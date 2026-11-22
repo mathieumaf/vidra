@@ -20,8 +20,8 @@ The [threat model](docs/security/threat-model.md) describes the system, its untr
 4. **Conversion writes only Vidra's own files:** the temporary output in the destination folder, the published output, and work files in a folder Vidra creates under the system temporary folder. Cleanup removes only files and folders Vidra created or recorded as its own.
 5. **Media stays on the device.** The only network requests are the update check at the fixed endpoint in `src-tauri/tauri.conf.json`, the download of the archive that the update feed names, and the two kinds of GitHub link the user can open from Settings.
 6. **The interface is not trusted.** Every source and output path is validated in Rust. Text from the user or from a media file reaches FFmpeg only as an argument value or a file, never as an option or a shell string. The interface has no shell, filesystem, or HTTP plugin permission: it reaches files only through Vidra's own commands.
-7. **An update is offered only for a newer official version, and installed only with a valid signature** for the public key in `src-tauri/tauri.conf.json`, while no conversion is queued, running, or paused.
-8. **The bundled FFmpeg comes from pinned sources.** The sources and the prepared archive are checked against a pinned SHA-256 when they are downloaded. A system FFmpeg is never used.
+7. **An update is offered only for a newer official version, and installed only with a valid signature** for the public key in `src-tauri/tauri.conf.json`. The signature must have been made for the version the update announces. Nothing is installed while a conversion is queued, running, or paused.
+8. **The bundled FFmpeg comes from pinned sources.** The sources and the engine archive are checked against a pinned SHA-256 when they are downloaded. Development, CI, and the release install that same archive. A system FFmpeg is never used.
 9. **The repository holds no signing secret.** The release workflow reads the signing key and the Apple credentials from GitHub Actions secrets.
 
 ## What to report
@@ -47,5 +47,5 @@ The [threat model](docs/security/threat-model.md) describes the system, its untr
 
 - **Bugs inside FFmpeg or its codec libraries.** Report them upstream. Vidra's part is to ship a fixed version: report a bundled version that is known to be vulnerable when a fixed release exists.
 - **An attacker who already runs code as the user and attacks the application, its bundle, or its data files directly.** Interference with files in a destination folder while a job waits or runs is in scope.
-- **The known limits listed in the threat model**, as described there: confirmation inferred by the interface, the check-then-rename windows when publishing an output, the temporary output addressed by path, recovery by recorded path, a kept video that depends on the ledger, and the update version checked on the manifest.
+- **The known limits listed in the threat model**, as described there: confirmation inferred by the interface, the check-then-rename windows when publishing an output, the temporary output addressed by path, recovery by recorded path, and a kept video that depends on the ledger.
 - **Builds that Vidra did not publish.** Only the signed and notarized artifacts on the GitHub Releases page are covered.

@@ -15,9 +15,10 @@ Vidra is an open-source, local-first desktop video converter built with Tauri, R
 
 ## Tooling
 
-- pnpm is the only JavaScript package manager. Its version is pinned in `package.json`.
-- `pnpm ffmpeg:prepare` installs the FFmpeg and FFprobe sidecars into `src-tauri/binaries/` from the checksum-pinned archive in `scripts/ffmpeg/dev-archive.json`. A system FFmpeg is never used. The app treats the sidecars as ready only when both report the version pinned in `scripts/ffmpeg/sources.json`.
-- Keep the release recipe's sources and checksums pinned in `scripts/ffmpeg/sources.json`, and the archive pinned in `scripts/ffmpeg/dev-archive.json`. The archive's FFmpeg version and recipe fingerprint must match that recipe. `pnpm ffmpeg:prepare -- --build` compiles the recipe locally.
+- pnpm is the only JavaScript package manager. Its version is pinned in `package.json`, Node.js in `.node-version`, and Rust in `rust-toolchain.toml`.
+- The engine is the FFmpeg and FFprobe build that Vidra bundles. One archive serves development, CI, and the release: `pnpm ffmpeg:prepare` installs it into `src-tauri/binaries/` after checking its SHA-256. A system FFmpeg is never used. The app treats the sidecars as ready only when both report the version pinned in `scripts/ffmpeg/sources.json`.
+- Keep the engine's sources and checksums pinned in `scripts/ffmpeg/sources.json`, and the published archive pinned in `scripts/ffmpeg/engine.json`. The archive's FFmpeg version and recipe fingerprint must match that recipe. `pnpm ffmpeg:prepare -- --build` compiles the recipe locally. `docs/RELEASING.md` has the steps to update the engine.
+- A release is the tag `vX.Y.Z`, with that exact version in the four version files. Vidra publishes no prerelease.
 - `pnpm icon:prepare` regenerates the macOS Icon Composer assets with Xcode 26 or later. The generated fallback assets in `src-tauri/generated/` stay committed for machines without Xcode.
 
 ## Frontend architecture
@@ -61,20 +62,23 @@ Prove a change with these commands from the repository root. Each one passes on 
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm ffmpeg:prepare   # Pinned, checksum-verified sidecars into src-tauri/binaries (gitignored)
-pnpm build
-pnpm test
-cargo fmt --manifest-path src-tauri/Cargo.toml --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml   # conversion_corpus is the one ignored test
-cargo test --manifest-path src-tauri/Cargo.toml --lib conversion_corpus -- --ignored --nocapture   # Prints a "Corpus matrix:" line
+pnpm ffmpeg:prepare   # The pinned, checksum-verified engine into src-tauri/binaries (gitignored)
+pnpm check            # Build, Vitest and script tests, cargo fmt, Clippy, Rust tests, conversion corpus, version files
 git diff --check
 ```
+
+`pnpm check` stops at the first failure. Its steps are in `package.json`, and CI runs each one as its own step. The corpus prints a "Corpus matrix:" line. `VIDRA_CORPUS_MATRIX=full pnpm test:corpus` runs every preset with every codec and container.
 
 - A behavior change comes with a test: Rust tests for queue state, FFmpeg arguments, path validation, and parsers; Vitest for hooks, components, and helpers.
 - A test that cannot run fails. The corpus and the FFmpeg-backed tests fail when a sidecar, an encoder, or a filter is missing. Add no skip.
 - `pnpm ffmpeg:prepare` reuses a verified archive in `.cache/ffmpeg/aarch64-apple-darwin/`. When the GitHub download fails, copy that file from another checkout. The checksum is still enforced.
 - CI also runs `cargo deny check --manifest-path src-tauri/Cargo.toml --locked` (cargo-deny 0.20.2). Run it locally when Rust dependencies change and cargo-deny is installed.
+- CI builds the unsigned application bundle and checks it. Do the same after a change to bundling, the Tauri configuration, or the engine:
+
+  ```sh
+  pnpm tauri build --bundles app --target aarch64-apple-darwin --no-sign --config '{"bundle":{"createUpdaterArtifacts":false}}'
+  node scripts/release/verify-bundle.mjs src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Vidra.app
+  ```
 - Observe a UI change in the Tauri app, not only in a browser, under a throwaway identifier. A plain `pnpm tauri dev` writes conversion history and the partial-output ledger into the installed Vidra's `~/Library/Application Support/io.github.mathieumaf.vidra/`:
 
   ```sh
@@ -83,7 +87,7 @@ git diff --check
 
   The dev binary keeps its WebKit storage in `~/Library/WebKit/vidra`, apart from the installed app, but every dev run shares it. Decline any pending-queue restore offer.
 - Convert only synthetic clips, into a temporary destination folder. `node scripts/corpus/generate.mjs --output <new folder>` writes them. Never open the user's own media or write into their folders.
-- Off limits: pushing a `v*` tag, running or dispatching `release.yml`, `publish-updater.yml`, or `ffmpeg-dev-archive.yml`, `gh release` writes, `pnpm ffmpeg:release`, release signing or notarization, and installing an update into `/Applications/Vidra.app`. Prove release and updater changes with `pnpm test` (the `scripts/release` node tests) instead.
+- Off limits: pushing a `v*` tag, dispatching `ffmpeg-engine.yml`, `gh release` writes, release signing or notarization, and installing an update into `/Applications/Vidra.app`. `release.yml` and `publish-update-feed.yml` run only from a tag and a published release. Prove a change to a workflow or to a release script with `pnpm test`: the node tests in `scripts/release` and `scripts/ci` cover them.
 
 ## Code Review Rules
 
@@ -91,7 +95,7 @@ git diff --check
 - **It silently loses streams or quality.** Mapping in `ffmpeg/encode.rs` and `ffmpeg/encode/` that drops audio, subtitle, chapter, or HDR metadata the container can hold, raises a known audio bitrate, or changes a preset without a test.
 - **It trusts the frontend.** A Tauri command that uses an IPC path or value without Rust validation (`ffmpeg/paths.rs`), lets user text become an FFmpeg option, or widens `src-tauri/capabilities/` or opener URLs.
 - **It stalls or races the queue.** A mutex held across an `.await` or a process wait in `jobs/` or `queue.rs`, a second concurrent FFmpeg process, or job state left behind after cancel, failure, or shutdown.
-- **It weakens the supply or update chain.** An unpinned or unverified sidecar in `scripts/ffmpeg/`, a changed updater endpoint or `pubkey` in `tauri.conf.json`, an update offered for anything other than a newer official release, a release script that can publish to the wrong channel or publish an unverified manifest, or any new network call, telemetry, or upload.
+- **It weakens the supply or update chain.** An unpinned or unverified sidecar in `scripts/ffmpeg/`, a changed updater endpoint or `pubkey` in `tauri.conf.json`, a weakened `requireSignedVersion`, an update offered for anything other than a newer official release, a release that does not bundle the pinned engine archive, an engine checksum that is not the one the "FFmpeg engine" workflow published, a script that can move the update feed backward or publish an unverified manifest, a workflow action not pinned to a commit, or any new network call, telemetry, or upload.
 
 The security invariants and what counts as a vulnerability are in `SECURITY.md`. The threat model is `docs/security/threat-model.md`.
 
@@ -101,6 +105,6 @@ Cite file:line for every finding, and post at most 3 nits.
 
 ## Risk
 
-- **High:** `src-tauri/src/output/**`, `src-tauri/src/ffmpeg/paths.rs`, `src-tauri/src/ffmpeg/segment.rs`, `src-tauri/src/ffmpeg/queue.rs`, `src-tauri/src/ffmpeg/encode.rs`, `src-tauri/src/ffmpeg/encode/**`, `src-tauri/src/ffmpeg/binary.rs`, `src-tauri/src/jobs/**`, `src-tauri/src/history/**`, `src-tauri/src/commands/**`, `src-tauri/src/application_update.rs`, `src-tauri/src/lib.rs`, `src/types/media.ts`, `src/services/**`, `src-tauri/tauri*.conf.json`, `src-tauri/capabilities/**`, `src-tauri/build.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/deny.toml`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `scripts/ffmpeg/**`, `scripts/release/**`, `.github/**`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md`, `docs/security/**`, `LICENSE`, `COPYRIGHT`, `THIRD_PARTY_NOTICES.md`.
+- **High:** `src-tauri/src/output/**`, `src-tauri/src/ffmpeg/paths.rs`, `src-tauri/src/ffmpeg/segment.rs`, `src-tauri/src/ffmpeg/queue.rs`, `src-tauri/src/ffmpeg/encode.rs`, `src-tauri/src/ffmpeg/encode/**`, `src-tauri/src/ffmpeg/binary.rs`, `src-tauri/src/jobs/**`, `src-tauri/src/history/**`, `src-tauri/src/commands/**`, `src-tauri/src/application_update.rs`, `src-tauri/src/lib.rs`, `src/types/media.ts`, `src/services/**`, `src-tauri/tauri*.conf.json`, `src-tauri/capabilities/**`, `src-tauri/build.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/deny.toml`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `rust-toolchain.toml`, `.node-version`, `scripts/ffmpeg/**`, `scripts/release/**`, `scripts/ci/**`, `.github/**`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md`, `docs/security/**`, `LICENSE`, `COPYRIGHT`, `THIRD_PARTY_NOTICES.md`.
 - **Low:** the rest of `docs/**`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `design/**`, and tests: `*.test.ts`, `*.test.tsx`, `*.test.mjs`, `*.node-test.mjs`, `src/test/**`, `src-tauri/src/**/tests.rs`, `src-tauri/src/ffmpeg/queue_tests.rs`, `src-tauri/src/ffmpeg/corpus.rs`, and `#[cfg(test)]` modules.
 - **Medium:** everything else. When paths overlap, the higher tier wins.

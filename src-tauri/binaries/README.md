@@ -7,6 +7,4 @@ Prepared executables are intentionally ignored by Git. Each sidecar is named `<n
 - `ffmpeg-aarch64-apple-darwin`
 - `ffprobe-aarch64-apple-darwin`
 
-macOS on Apple Silicon downloads the archive pinned in `scripts/ffmpeg/dev-archive.json`, at the same FFmpeg version as the release recipe in `scripts/ffmpeg/sources.json`. Other targets fail with an unsupported-target error until a pinned sidecar is added. The app treats an engine as ready only when both tools report the pinned release version.
-
-Release artifacts must be built from pinned source by Vidra's release pipeline before public distribution. The development archive is not a substitute for that pipeline.
+They come from the engine archive pinned in `scripts/ffmpeg/engine.json`, which development, CI, and the release all install. A hidden `.ffmpeg-engine-<target>.sha256` file records which engine is installed. Other targets fail with an unsupported-target error until an engine is pinned for them. See "The FFmpeg engine" in `docs/RELEASING.md`.

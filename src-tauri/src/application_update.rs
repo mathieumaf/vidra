@@ -124,15 +124,27 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_update_feed_is_the_fixed_github_endpoint() {
+    fn updater_config() -> tauri_plugin_updater::Config {
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        serde_json::from_value(config["plugins"]["updater"].clone())
+            .expect("the updater plugin accepts its configuration")
+    }
+
+    #[test]
+    fn the_update_feed_is_the_fixed_github_endpoint() {
+        let endpoints = updater_config().endpoints;
         assert_eq!(
-            config["plugins"]["updater"]["endpoints"],
-            serde_json::json!([
-                "https://github.com/mathieumaf/vidra/releases/download/updater-manifest/latest.json"
-            ])
+            endpoints.iter().map(|url| url.as_str()).collect::<Vec<_>>(),
+            ["https://github.com/mathieumaf/vidra/releases/download/updater-manifest/latest.json"]
         );
+    }
+
+    /// The feed is not signed. Only the archive's signature says which version
+    /// the archive is, so an update whose signature records no version, or
+    /// another version than the feed announces, must be refused.
+    #[test]
+    fn an_update_must_be_signed_for_the_version_it_announces() {
+        assert!(updater_config().require_signed_version);
     }
 }

@@ -1,87 +1,123 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import {
-  assertDevArchiveMatchesRecipe,
-  assertDevArchivePinned,
-  downloadDevArchive,
-  installDevArchiveBinaries,
-  readDevArchivePin,
-} from "./dev-archive.mjs";
-import { developmentEntry, hostTargetTriple, releaseEntry } from "./target.mjs";
-import { ffmpegVersionMatches, pinnedReleaseFfmpegVersion } from "./version.mjs";
+  assertEngineMatchesRecipe,
+  assertEnginePinned,
+  downloadEngine,
+  engineArchiveRoot,
+  engineMarkerPath,
+  exportCorrespondingSources,
+  installEngineBinaries,
+  localBuildMarker,
+  readEnginePin,
+  trustedMarker,
+} from "./engine.mjs";
+import { recipeFingerprint } from "./recipe.mjs";
+import { hostTargetTriple, recipeEntry } from "./target.mjs";
+import { ffmpegVersionMatches } from "./version.mjs";
 
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const rootDirectory = join(scriptDirectory, "..", "..");
-const buildRequested = process.argv.includes("--build") || process.env.VIDRA_FFMPEG_MODE === "release";
+// pnpm ffmpeg:prepare                               install the pinned engine archive
+// pnpm ffmpeg:prepare -- --build                    compile the recipe on this machine instead
+// pnpm ffmpeg:prepare -- --export-sources <folder>  also write the archive's corresponding sources
 
-if (buildRequested) {
-  await import("./build-release.mjs");
+const USAGE = "Usage: node scripts/ffmpeg/prepare.mjs [--build | --export-sources <folder>]";
+const options = parseArguments(process.argv.slice(2));
+
+if (options.build) {
+  await import("./build.mjs");
   process.exit(0);
 }
 
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const rootDirectory = join(scriptDirectory, "..", "..");
 const target = hostTargetTriple();
 const binaryDirectory = join(rootDirectory, "src-tauri", "binaries");
 const manifest = JSON.parse(await readFile(join(scriptDirectory, "sources.json"), "utf8"));
-const expectedVersion = pinnedReleaseFfmpegVersion(manifest);
+const recipe = recipeEntry(manifest, target);
+const expectedVersion = recipe.sources.ffmpeg.version;
+const markerPath = engineMarkerPath(binaryDirectory, target);
+const marker = trustedMarker(process.env, await readOptional(markerPath));
 
-function versionOutput(binary) {
-  const result = spawnSync(binary, ["-version"], { encoding: "utf8" });
-  if (result.status !== 0) return "";
-  return result.stdout ?? "";
+// An engine compiled here from the current recipe stays in place, so a recipe
+// change can be developed before its archive is published.
+if (!options.exportSources && marker === localBuildMarker(recipeFingerprint(recipe)) && sidecarsReport(expectedVersion)) {
+  console.log(`FFmpeg ${expectedVersion}, compiled on this machine, is ready for ${target}.`);
+  process.exit(0);
 }
 
+const pin = await readEnginePin();
+assertEnginePinned(pin);
+assertEngineMatchesRecipe(pin, recipe);
+if (pin.target !== target) {
+  throw new Error(`The engine archive is built for ${pin.target}, not ${target}.`);
+}
+
+const archivePath = join(rootDirectory, ".cache", "ffmpeg", target, pin.archiveName);
+await downloadEngine(pin, archivePath);
+
+if (marker !== "" && marker === pin.sha256 && sidecarsReport(expectedVersion)) {
+  console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);
+} else {
+  await installEngineBinaries({
+    archivePath,
+    root: engineArchiveRoot(pin),
+    binaryDirectory,
+    target,
+    expectedVersion,
+    sign: signExecutable,
+  });
+  await writeFile(markerPath, `${pin.sha256}\n`);
+  console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);
+}
+
+if (options.exportSources) {
+  const files = await exportCorrespondingSources({
+    archivePath,
+    root: engineArchiveRoot(pin),
+    recipe,
+    outputDirectory: resolve(options.exportSources),
+  });
+  console.log(`Wrote ${files.length} corresponding-source files to ${resolve(options.exportSources)}.`);
+}
+
+function parseArguments(argv) {
+  const parsed = { build: false, exportSources: "" };
+  const args = argv.filter((argument) => argument !== "--");
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === "--build") {
+      parsed.build = true;
+    } else if (args[index] === "--export-sources" && args[index + 1]) {
+      parsed.exportSources = args[index + 1];
+      index += 1;
+    } else {
+      throw new Error(`Unknown or incomplete argument ${args[index]}. ${USAGE}`);
+    }
+  }
+  if (parsed.build && parsed.exportSources) {
+    throw new Error(`A local build writes its sources to release-assets/ffmpeg-sources. ${USAGE}`);
+  }
+  return parsed;
+}
+
+function sidecarsReport(version) {
+  return ["ffmpeg", "ffprobe"].every((name) => {
+    const result = spawnSync(join(binaryDirectory, `${name}-${target}`), ["-version"], { encoding: "utf8" });
+    return result.status === 0 && ffmpegVersionMatches(result.stdout ?? "", version);
+  });
+}
+
+// The archive's executables are ad-hoc signed again after extraction, so
+// macOS runs them from this checkout. A release build signs them with the
+// Developer ID certificate when Tauri bundles the application.
 function signExecutable(executable, destination) {
   spawnSync("xattr", ["-cr", destination], { stdio: "ignore" });
-  const signing = spawnSync("codesign", ["--force", "--sign", "-", destination], {
-    encoding: "utf8",
-  });
+  const signing = spawnSync("codesign", ["--force", "--sign", "-", destination], { encoding: "utf8" });
   if (signing.status !== 0) {
     throw new Error(`Unable to ad-hoc sign ${executable}: ${signing.stderr}`);
   }
 }
-
-const development = developmentEntry(manifest, target);
-if (development.version !== expectedVersion) {
-  throw new Error(
-    `Development FFmpeg ${development.version} does not match the release FFmpeg ${expectedVersion}.`,
-  );
-}
-if (development.distribution !== "dev-archive") {
-  throw new Error(`The ${target} development sidecar must be downloaded from the pinned development archive.`);
-}
-
-const pin = await readDevArchivePin();
-assertDevArchivePinned(pin);
-assertDevArchiveMatchesRecipe(pin, releaseEntry(manifest, pin.target));
-if (pin.target !== target) {
-  throw new Error(`The development archive is built for ${pin.target}, not ${target}.`);
-}
-
-const cacheDirectory = join(rootDirectory, ".cache", "ffmpeg", target);
-const archivePath = join(cacheDirectory, pin.archiveName);
-const markerPath = join(binaryDirectory, `.ffmpeg-dev-archive-${target}.sha256`);
-const marker = await readOptional(markerPath);
-const ready = marker === pin.sha256 && ["ffmpeg", "ffprobe"].every((name) => {
-  const binary = join(binaryDirectory, `${name}-${target}`);
-  return ffmpegVersionMatches(versionOutput(binary), expectedVersion);
-});
-if (ready) {
-  console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);
-  process.exit(0);
-}
-
-await downloadDevArchive(pin, archivePath);
-await installDevArchiveBinaries({
-  archivePath,
-  binaryDirectory,
-  target,
-  expectedVersion,
-  sign: signExecutable,
-});
-await writeFile(markerPath, `${pin.sha256}\n`);
-console.log(`FFmpeg ${expectedVersion} is ready for ${target}.`);
 
 async function readOptional(path) {
   try {

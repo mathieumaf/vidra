@@ -6,6 +6,8 @@ All notable changes to Vidra are documented in this file.
 
 ### Changed
 
+- Bundle the FFmpeg engine that the conversion tests ran on. A release used to compile FFmpeg again, so the shipped build was never the tested one. Development, CI, and the release now install one checksum-pinned archive.
+- Refuse an update whose signature was not made for the version it announces.
 - Offer one kind of update: newer official releases. The Beta update channel and its selector in Settings are gone, and Vidra no longer publishes beta or release-candidate builds. An installed 0.2.0 beta or release candidate keeps its own updater and still moves to the next official release.
 
 ### Removed

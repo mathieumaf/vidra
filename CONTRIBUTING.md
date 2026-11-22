@@ -4,7 +4,7 @@ Thank you for helping improve Vidra. Keep changes focused, preserve the local-fi
 
 ## Development setup
 
-Vidra currently targets macOS on Apple Silicon. Install Node.js 26, pnpm 12, Rust, the Tauri prerequisites, and Xcode when regenerating native icon assets. `pnpm ffmpeg:prepare` downloads the checksum-pinned development archive for the current release recipe. It does not compile FFmpeg. macOS pull-request CI runs the same download. To compile the release recipe locally, run `pnpm ffmpeg:prepare -- --build` after installing the native build tools listed in [docs/RELEASING.md](docs/RELEASING.md).
+Vidra currently targets macOS on Apple Silicon. Install Node.js 26, pnpm 12, Rust, the Tauri prerequisites, and Xcode when regenerating native icon assets. `pnpm ffmpeg:prepare` downloads the checksum-pinned FFmpeg engine archive. It does not compile FFmpeg. CI and the release install the same archive. To compile the recipe locally, run `pnpm ffmpeg:prepare -- --build` after installing the native build tools listed in [docs/RELEASING.md](docs/RELEASING.md).
 
 ```sh
 pnpm install

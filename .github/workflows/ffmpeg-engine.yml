@@ -1,0 +1,100 @@
+name: FFmpeg engine
+
+# Manual only. It compiles FFmpeg and FFprobe from the pinned recipe in
+# scripts/ffmpeg/sources.json and uploads one archive to the release named in
+# scripts/ffmpeg/engine.json. Development, CI, and the application release all
+# install that archive, so run this once per recipe change, then pin the
+# archive's SHA-256 in engine.json.
+# The engine's tag never starts with `v`, so it starts no application release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ffmpeg-engine
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    name: Build and upload the FFmpeg engine archive
+    runs-on: macos-26
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require Apple Silicon runner
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # Checked first, because compiling takes several minutes.
+      - name: Refuse a tag that already has an archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const pin = JSON.parse(readFileSync("scripts/ffmpeg/engine.json", "utf8"));
+            if (!pin.tag || pin.tag.startsWith("v")) {
+              throw new Error("The engine tag must not start with v.");
+            }
+            process.stdout.write(pin.tag);
+          ')"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already has an engine archive. A published archive is never replaced: raise the recipe version and use a new tag." >&2
+            exit 1
+          fi
+
+      - name: Install native build tools
+        run: brew install autoconf automake libtool cmake meson ninja pkgconf nasm
+
+      # Compiles, then checks the result: required encoders and filters, AV1
+      # decoding, and no library outside the macOS system paths.
+      - name: Build FFmpeg from the pinned recipe
+        run: node scripts/ffmpeg/prepare.mjs --build
+
+      - name: Package the engine archive
+        run: node scripts/ffmpeg/package-engine.mjs
+
+      - name: Upload the engine archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          META="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const pin = JSON.parse(readFileSync("scripts/ffmpeg/engine.json", "utf8"));
+            if (!pin.tag || pin.tag.startsWith("v")) {
+              throw new Error("The engine tag must not start with v.");
+            }
+            process.stdout.write(`${pin.tag}\n${pin.archiveName}\n${pin.version}\n`);
+          ')"
+          TAG="$(printf "%s\n" "$META" | sed -n 1p)"
+          NAME="$(printf "%s\n" "$META" | sed -n 2p)"
+          VERSION="$(printf "%s\n" "$META" | sed -n 3p)"
+          ARCHIVE="release-assets/engine/$NAME"
+          SUM="$ARCHIVE.sha256"
+          test -f "$ARCHIVE"
+          test -f "$SUM"
+          NOTES="$(cat <<EOF
+          FFmpeg ${VERSION} and FFprobe for Vidra, built with scripts/ffmpeg/build.mjs from the sources pinned in scripts/ffmpeg/sources.json.
+
+          This is the engine that Vidra bundles. It is not a Vidra application release and it is not an application update. The archive contains the executables, the corresponding source archives, and the recipe that built them.
+
+          Pin the SHA-256 from the attached .sha256 file in scripts/ffmpeg/engine.json.
+          EOF
+          )"
+          cat "$SUM"
+          gh release create "$TAG" "$ARCHIVE" "$SUM" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "FFmpeg engine ${VERSION}" \
+            --notes "$NOTES"

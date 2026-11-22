@@ -18,7 +18,16 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: github-actions
+  # rust-toolchain.toml. Keep `rust-version` in .github/workflows/ci.yml on the
+  # same version when this moves.
+  - package-ecosystem: rust-toolchain
     directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/setup
     schedule:
       interval: weekly

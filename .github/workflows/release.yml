@@ -1,60 +1,60 @@
-name: Release macOS
+name: Release
 
+# Runs when a vX.Y.Z tag is pushed. It builds, signs, and notarizes the
+# application from the commit CI already proved, and leaves a draft release.
+# Publishing that draft by hand is what offers the update to installed copies.
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
 
+# One run per tag. Runs for different tags do not wait for each other, so a
+# pending release is never dropped.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  BUNDLE_DIRECTORY: src-tauri/target/aarch64-apple-darwin/release/bundle
+
 jobs:
   release:
-    name: Build, notarize, and publish draft
+    name: Build, sign, notarize, and draft the release
     runs-on: macos-26
     environment: release
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Require Apple Silicon runner
-        run: test "$(uname -m)" = "arm64"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          run_install: false
+          fetch-depth: 0
 
-      - name: Install Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Require a tag on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+
+      - name: Set up the build
+        uses: ./.github/actions/setup
         with:
-          node-version: 26
-          cache: pnpm
+          cache: "false"
 
-      - name: Install Rust target and checks
-        run: |
-          rustup target add aarch64-apple-darwin
-          rustup component add clippy rustfmt
+      - name: Check the release version and its notes
+        run: pnpm release:check -- "$GITHUB_REF_NAME"
 
-      - name: Install native build tools
-        run: brew install autoconf automake libtool cmake meson ninja pkgconf nasm
+      # The same checks as CI, on the tagged commit, with the same engine.
+      - name: Prove the source
+        run: pnpm check
 
-      - name: Install JavaScript dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Write the release notes
+        run: node scripts/release/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
 
-      - name: Prepare release FFmpeg sidecars
-        run: pnpm ffmpeg:release
-
-      - name: Validate source and release version
-        run: |
-          pnpm check
-          pnpm release:check -- "$GITHUB_REF_NAME"
+      # GPL corresponding sources of the bundled engine, checked against the
+      # checksums the recipe pins.
+      - name: Export the FFmpeg corresponding sources
+        run: pnpm ffmpeg:prepare -- --export-sources release-assets/ffmpeg-sources
 
       - name: Install Developer ID G2 intermediate certificate
         run: |
@@ -72,8 +72,8 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VIDRA_FFMPEG_MODE: release
-          VIDRA_RELEASE_TAG: ${{ github.ref_name }}
+          # Only a build made here checks for updates when it starts.
+          VIDRA_OFFICIAL_BUILD: "1"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -85,43 +85,41 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Vidra ${{ github.ref_name }}
-          releaseBody: See CHANGELOG.md for the changes in this release. FFmpeg corresponding sources and checksums are attached.
+          # This line also becomes the note the app shows with the update. The
+          # release page gets the changelog section in the last step.
+          releaseBody: The changes in this release are listed on its GitHub release page.
           releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: false
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
           args: --bundles app,dmg --target aarch64-apple-darwin
 
-      # The build signs the updater archive for the bundle version, which has no
-      # prerelease suffix. The updater requires the signed version to equal the
-      # announced one, so sign the archive built on this runner again for the
-      # exact tag version and publish that signature with the manifest. Only
-      # runner-built bytes are signed; the draft asset must be identical to them.
-      - name: Bind the updater signature and manifest to the exact release tag
+      - name: Verify the application bundle
+        run: node scripts/release/verify-bundle.mjs "$BUNDLE_DIRECTORY/macos/Vidra.app"
+
+      # An installed copy refuses an update whose signature was made for
+      # another version or another archive. Check both on the draft, with the
+      # archive built on this runner, before the draft can be published.
+      - name: Verify the update manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          BUNDLE_DIRECTORY="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
-          test "$(find "$BUNDLE_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' | wc -l | tr -d ' ')" = "1"
-          LOCAL_ARCHIVE="$(find "$BUNDLE_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
+          test "$(find "$BUNDLE_DIRECTORY/macos" -maxdepth 1 -name '*.app.tar.gz' | wc -l | tr -d ' ')" = "1"
+          LOCAL_ARCHIVE="$(find "$BUNDLE_DIRECTORY/macos" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
 
-          UPDATER_DIRECTORY="$RUNNER_TEMP/updater"
-          mkdir -p "$UPDATER_DIRECTORY"
-          gh release download "$GITHUB_REF_NAME" --pattern latest.json --pattern '*.app.tar.gz' --dir "$UPDATER_DIRECTORY"
-          test "$(find "$UPDATER_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' | wc -l | tr -d ' ')" = "1"
-          ASSET_ARCHIVE="$(find "$UPDATER_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
-          cmp "$LOCAL_ARCHIVE" "$ASSET_ARCHIVE"
+          DRAFT_DIRECTORY="$RUNNER_TEMP/draft"
+          mkdir -p "$DRAFT_DIRECTORY"
+          gh release download "$GITHUB_REF_NAME" --pattern latest.json --pattern '*.app.tar.gz' --dir "$DRAFT_DIRECTORY"
+          test "$(find "$DRAFT_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' | wc -l | tr -d ' ')" = "1"
+          cmp "$LOCAL_ARCHIVE" "$(find "$DRAFT_DIRECTORY" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
 
-          pnpm tauri signer sign --app-version "${GITHUB_REF_NAME#v}" "$LOCAL_ARCHIVE"
-          cp "$LOCAL_ARCHIVE.sig" "$ASSET_ARCHIVE.sig"
-          pnpm release:prepare-updater-manifest -- "$UPDATER_DIRECTORY/latest.json" "$GITHUB_REF_NAME" "$ASSET_ARCHIVE"
-          gh release upload "$GITHUB_REF_NAME" "$ASSET_ARCHIVE.sig" "$UPDATER_DIRECTORY/latest.json" --clobber
+          gh release view "$GITHUB_REF_NAME" --json assets > "$DRAFT_DIRECTORY/release.json"
+          node scripts/release/verify-updater-manifest.mjs \
+            "$DRAFT_DIRECTORY/latest.json" "$GITHUB_REF_NAME" "$LOCAL_ARCHIVE" "$DRAFT_DIRECTORY/release.json"
 
       - name: Verify signature and notarization
         run: |
-          DMG_PATH="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          DMG_PATH="$(find "$BUNDLE_DIRECTORY/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$DMG_PATH"
           codesign --verify --strict --verbose=2 "$DMG_PATH"
 
@@ -138,21 +136,42 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           xcrun stapler validate "$APP_PATH"
           spctl --assess --type execute --verbose=2 "$APP_PATH"
+          node scripts/release/verify-bundle.mjs "$APP_PATH"
 
           detach_dmg
           trap - EXIT
 
-      - name: Create artifact checksums
-        run: |
-          DMG_PATH="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
-          test -n "$DMG_PATH"
-          DMG_DIRECTORY="$(dirname "$DMG_PATH")"
-          DMG_NAME="$(basename "$DMG_PATH")"
-          (cd "$DMG_DIRECTORY" && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
-
-      - name: Attach corresponding sources and checksums
+      - name: Attach the notes, the checksum, and the corresponding sources
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          DMG_CHECKSUM="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg.sha256' -print -quit)"
-          gh release upload "$GITHUB_REF_NAME" release-assets/ffmpeg-sources/* "$DMG_CHECKSUM" --clobber
+          DMG_PATH="$(find "$BUNDLE_DIRECTORY/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$DMG_PATH"
+          DMG_NAME="$(basename "$DMG_PATH")"
+          (cd "$(dirname "$DMG_PATH")" && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
+
+          gh release upload "$GITHUB_REF_NAME" release-assets/ffmpeg-sources/* "$DMG_PATH.sha256" --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      # The marker lists what is attached, read back from GitHub after every
+      # upload. The update feed refuses a release without it, so an
+      # interrupted upload can never pass for a finished release.
+      - name: Mark the release complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json assets > "$RUNNER_TEMP/attached.json"
+          node scripts/release/mark-complete.mjs \
+            "$RUNNER_TEMP/attached.json" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUNNER_TEMP/release-complete.json"
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-complete.json"
+
+      # A draft that failed a check, or whose run was cancelled or timed out,
+      # must not stay publishable. The tag stays.
+      - name: Delete the draft unless every step succeeded
+        if: ${{ !success() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi
