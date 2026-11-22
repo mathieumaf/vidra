@@ -11,6 +11,8 @@ Vidra is a local-first desktop video converter. Its core promise is to inspect v
 | 0.2.0 and later 0.x releases | Core workflow improvements and progressive Windows and Linux support. Platform work is not tied to a specific minor version or date yet. |
 | 1.0.0 | A dependable core workflow with validated distribution on macOS, Windows, and Linux. |
 
+Vidra has no validated Windows or Linux build yet, and no FFmpeg engine for them. The Rust code keeps platform-specific behavior behind `cfg` gates with a clear unsupported-platform error, and some of it already has a Linux implementation, but CI builds and tests the application on macOS only. A port begins with a pinned FFmpeg engine and a CI job for that platform.
+
 One version sequence covers the product across platforms. A new platform is announced in the release that first ships it; its availability and supported architectures must be stated in the release notes. Additional architectures, including Intel Macs, require their own build and validation work and are not a prerequisite for 1.0.
 
 ## Version policy

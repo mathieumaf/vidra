@@ -2,6 +2,8 @@
 
 Vidra is an open-source, local-first desktop video converter built with Tauri, Rust, React, and bundled FFmpeg tools. macOS on Apple Silicon is the only supported target.
 
+`docs/ARCHITECTURE.md` maps the code and has step-by-step recipes for adding an encoding option, a command, or a codec. `docs/TESTING.md` says which kind of test goes where. `docs/RELEASING.md` covers the workflows, a release, and the FFmpeg engine.
+
 ## Product rules
 
 - Media stays on the user's device. Add no upload, telemetry, account, or network processing without explicit approval.
