@@ -68,7 +68,7 @@ Do not commit FFmpeg binaries, credentials, signing material, or media.
 
 Vidra is GPL-3.0-or-later, and it bundles FFmpeg. Before adding a dependency or a codec, check that its license can be combined with that. Record a bundled component in `THIRD_PARTY_NOTICES.md` and in `src/config/legal.ts`, which is what Settings shows.
 
-Rust crate licenses, security advisories, and crate sources are checked with [cargo-deny](https://embarkstudios.github.io/cargo-deny/) 0.20.2. The rules are in `src-tauri/deny.toml`. CI runs it on every pull request. To run it yourself when Rust dependencies change:
+Rust crate licenses, security advisories, and crate sources are checked with [cargo-deny](https://embarkstudios.github.io/cargo-deny/) 0.22.0. The rules are in `src-tauri/deny.toml`. CI runs it on every pull request. To run it yourself when Rust dependencies change:
 
 ```sh
 cargo deny check --manifest-path src-tauri/Cargo.toml --locked

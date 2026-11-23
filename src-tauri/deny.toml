@@ -15,6 +15,9 @@ all-features = false
 
 [advisories]
 version = 2
+# cargo-deny 0.22 checks only workspace crates for unmaintained advisories by
+# default. Keep checking every crate in the graph, as the ignores below expect.
+unmaintained = "all"
 ignore = [
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error 1.0.4 is unmaintained and has no patched release. glib-macros 0.18 and gtk3-macros 0.18, used by Tauri 2.12 for its Linux GTK backend, still depend on it. It is a compile-time proc macro and is not linked into the application. Remove this ignore when Tauri no longer depends on those gtk-rs 0.18 crates." },
     { id = "RUSTSEC-2026-0370", reason = "zvariant 5 was folded into zbus 6 and has no patched 5.x release. tauri-plugin-opener and tauri-plugin-single-instance 2.x depend on zbus 5 for Linux D-Bus. This is an unmaintained-crate notice, not a vulnerability advisory. Remove this ignore when those plugins move to zbus 6." },
@@ -30,7 +33,7 @@ ignore = [
 # VariantStrIter is constructed only by Variant::array_iter_str. Vidra, Tauri
 # 2.12.5, wry 0.57.0, the gtk-rs 0.18 crates in this lockfile, and the Tauri
 # plugins here do not call that method, so the unsound iterator is not on a
-# reachable path. cargo-deny 0.20.2 reports unsound advisories for workspace
+# reachable path. cargo-deny 0.22.0 reports unsound advisories for workspace
 # crates only, so this transitive crate does not fail the advisory check.
 # Listing the id in ignore would be an unused ignore and would warn. Remove
 # this note when Tauri no longer depends on gtk-rs 0.18.
