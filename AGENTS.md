@@ -74,7 +74,7 @@ git diff --check
 - A behavior change comes with a test: Rust tests for queue state, FFmpeg arguments, path validation, and parsers; Vitest for hooks, components, and helpers.
 - A test that cannot run fails. The corpus and the FFmpeg-backed tests fail when a sidecar, an encoder, or a filter is missing. Add no skip.
 - `pnpm ffmpeg:prepare` reuses a verified archive in `.cache/ffmpeg/aarch64-apple-darwin/`. When the GitHub download fails, copy that file from another checkout. The checksum is still enforced.
-- CI also runs `cargo deny check --manifest-path src-tauri/Cargo.toml --locked` (cargo-deny 0.20.2). Run it locally when Rust dependencies change and cargo-deny is installed.
+- CI also runs `cargo deny check --manifest-path src-tauri/Cargo.toml --locked` (cargo-deny 0.22.0). Run it locally when Rust dependencies change and cargo-deny is installed.
 - CI builds the unsigned application bundle and checks it. Do the same after a change to bundling, the Tauri configuration, or the engine:
 
   ```sh
