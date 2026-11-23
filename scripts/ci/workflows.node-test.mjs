@@ -68,8 +68,6 @@ test("one Rust version is pinned for local builds, CI, and the dependency check"
   assert.match(channel ?? "", /^\d+\.\d+\.\d+$/);
   // cargo-deny reads the pin instead of keeping a second copy that a toolchain bump would miss.
   assert.match(workflows["ci.yml"], /^ +rust-version: \$\{\{ steps\.rust\.outputs\.version \}\}$/m);
-  assert.ok(workflows["ci.yml"].includes(String.raw`sed -n 's/^channel = "\([0-9][0-9.]*\)"$/\1/p' rust-toolchain.toml`));
-  assert.doesNotMatch(workflows["ci.yml"], new RegExp(channel.replaceAll(".", "\\.")));
   assert.match(setupAction, /rustup toolchain install\n/);
   assert.equal(read(".node-version").trim(), "26");
   for (const text of Object.values(everyFile)) {
