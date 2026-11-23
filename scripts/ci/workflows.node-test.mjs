@@ -66,7 +66,8 @@ test("CI runs every command of `pnpm check`", () => {
 test("one Rust version is pinned for local builds, CI, and the dependency check", () => {
   const channel = read("rust-toolchain.toml").match(/^channel = "([^"]+)"$/m)?.[1];
   assert.match(channel ?? "", /^\d+\.\d+\.\d+$/);
-  assert.equal(workflows["ci.yml"].match(/rust-version: "([^"]+)"/)?.[1], channel);
+  // cargo-deny reads the pin instead of keeping a second copy that a toolchain bump would miss.
+  assert.match(workflows["ci.yml"], /^ +rust-version: \$\{\{ steps\.rust\.outputs\.version \}\}$/m);
   assert.match(setupAction, /rustup toolchain install\n/);
   assert.equal(read(".node-version").trim(), "26");
   for (const text of Object.values(everyFile)) {

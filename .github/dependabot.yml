@@ -18,8 +18,7 @@ updates:
         patterns:
           - "*"
 
-  # rust-toolchain.toml. Keep `rust-version` in .github/workflows/ci.yml on the
-  # same version when this moves.
+  # rust-toolchain.toml, the one Rust pin. CI and cargo-deny read it.
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:

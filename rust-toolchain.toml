@@ -1,5 +1,4 @@
-# The Rust version that CI and the release workflow build with.
-# Keep `rust-version` in .github/workflows/ci.yml (cargo-deny) on the same version.
+# The Rust version that CI, cargo-deny, and the release workflow build with.
 [toolchain]
 channel = "1.99.1"
 components = ["clippy", "rustfmt"]
