@@ -1,5 +1,5 @@
 # The Rust version that CI, cargo-deny, and the release workflow build with.
 [toolchain]
-channel = "1.100.0"
+channel = "1.100.1"
 components = ["clippy", "rustfmt"]
 targets = ["aarch64-apple-darwin"]
